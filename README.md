@@ -16,16 +16,21 @@ peer-to-peer over WebRTC, so game traffic goes directly between computers.
 
 | | |
 |---|---|
-| `W` / `↑` · `S` / `↓` | climb · dive (straight up and down, no turning) |
-| `←` `→` | slide left and right without turning |
-| Mouse · `A` / `D` · `Q` / `E` | aim the nose · roll · rudder |
+| `W` · `S` | climb · dive (straight up and down, no turning) |
+| `Q` · `E` | slide left and right without turning |
+| Mouse · `A` / `D` | aim the nose · roll |
 | Mouse wheel · `Shift` | throttle · afterburner |
-| `LMB` / `Space` · `RMB` / `F` | guns · missiles |
-| `1`–`5` · `X` · `R` | weapon · flares · rearm at base |
+| `LMB` / `Space` · `RMB` / `F` | fire selected weapon · quick missile |
+| `1`–`5` · `X` · `R` | weapon (`4` = homing missiles) · flares · rearm at base |
 | `B` · `C` · `Tab` | hangar · camera · scoreboard |
+| `Esc` / `P` · `M` | pause &amp; exit · mute sound |
 
-New players should start with **FLIGHT TRAINING**, a nine-step course covering
+New players should start with **FLIGHT TRAINING**, a ten-step course covering
 flying, gunnery, missiles, flares and building base defenses.
+
+**Missions** are short solo contracts — precision strikes, fighter sweeps, a
+low-level gate course, and base defence. Completing one pays **tokens**, which
+buy permanent upgrades on the menu that carry into every mode.
 
 ## The game
 

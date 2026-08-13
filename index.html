@@ -125,6 +125,45 @@ kbd{background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.16);bord
 .tagm{font-size:9px;letter-spacing:1.5px;color:#c9a3ff;border:1px solid rgba(201,163,255,.3);
   padding:2px 7px;border-radius:10px}
 
+/* --- centre-screen warnings --- */
+#warn{position:absolute;left:50%;top:34%;transform:translateX(-50%);text-align:center;
+  pointer-events:none;width:max-content;max-width:90vw}
+#warn div{font-size:19px;font-weight:700;letter-spacing:3px;margin-bottom:6px;
+  text-shadow:0 2px 10px #000,0 0 22px rgba(0,0,0,.9)}
+@keyframes warnpulse{0%,100%{opacity:1}50%{opacity:.45}}
+#warn .crit{color:#ff5b4a;animation:warnpulse .7s infinite}
+#warn .six{color:#ffd451}
+
+/* --- mission tracker --- */
+#mission{position:absolute;right:14px;top:222px;width:250px;padding:13px 15px;display:none}
+#mission.on{display:block}
+#mission .eye{font-size:10px;letter-spacing:3px;color:#c9a3ff}
+#mission h4{font-size:14px;margin:7px 0 5px;color:#e6f2ff}
+#mission p{font-size:11px;color:#8fa8c4;line-height:1.6}
+#mission .prog{margin-top:9px;height:8px;border-radius:4px;background:rgba(255,255,255,.1);overflow:hidden}
+#mission .prog i{display:block;height:100%;background:linear-gradient(90deg,#8b5cf6,#c9a3ff);transition:width .2s}
+#mission .tm{margin-top:6px;font-size:11px;color:#ffd451;font-variant-numeric:tabular-nums}
+
+/* --- pause / round end --- */
+.mid{width:min(560px,92vw);padding:30px 34px;text-align:center}
+.mid h2{font-size:30px;letter-spacing:6px;margin-bottom:6px}
+.mid p{font-size:12px;color:#8fa8c4;line-height:1.8;margin-bottom:20px}
+.mid .btns{display:flex;gap:10px;justify-content:center;flex-wrap:wrap}
+#tokline{font-size:13px;color:#ffd451;margin:14px 0 0;letter-spacing:1px}
+
+/* --- token shop on the menu --- */
+#perm{margin-top:16px;border-top:1px solid rgba(110,180,255,.16);padding-top:14px;display:none}
+#perm.on{display:block}
+#perm .hd{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px}
+#perm .hd b{font-size:12px;letter-spacing:3px;color:#c9a3ff}
+#perm .tk{font-size:16px;color:#ffd451;font-weight:700}
+#permList{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:8px}
+.pitem{border:1px solid rgba(201,163,255,.22);background:rgba(201,163,255,.05);border-radius:8px;padding:10px 12px}
+.pitem h5{font-size:12px;color:#e6f2ff;display:flex;justify-content:space-between;gap:8px}
+.pitem span{font-size:10px;color:#8fa8c4;display:block;margin:4px 0 7px;line-height:1.5}
+.pitem button{width:100%;padding:6px;font-size:10px}
+.sndbtn{font-size:11px;padding:8px 14px}
+
 /* --- floating base health bars --- */
 .bbar{position:absolute;transform:translate(-50%,-100%);display:none;text-align:center}
 .bbar.on{display:block}
@@ -181,6 +220,8 @@ td{padding:6px 8px;border-bottom:1px solid rgba(255,255,255,.045)}
     <div class="bar"><i id="hpBar" style="width:100%;background:linear-gradient(90deg,#2ecc8f,#7fe6c0)"></i></div>
     <div class="lbl"><span>Flares</span><span id="flTxt">0</span></div>
     <div class="bar"><i id="flBar" style="width:0%;background:linear-gradient(90deg,#d4952a,#ffd451)"></i></div>
+    <div class="lbl"><span>Home Base</span><span id="hbTxt">—</span></div>
+    <div class="bar"><i id="hbBar" style="width:100%;background:linear-gradient(90deg,#2a7fd4,#5fb2ff)"></i></div>
     <div id="credits">0 <small>CREDITS · press B for HANGAR</small></div>
   </div>
 
@@ -191,6 +232,15 @@ td{padding:6px 8px;border-bottom:1px solid rgba(255,255,255,.045)}
   </div>
 
   <div id="basebars"></div>
+  <div id="warn"></div>
+
+  <div id="mission" class="panel">
+    <div class="eye">MISSION</div>
+    <h4 id="msTitle">—</h4>
+    <p id="msDesc"></p>
+    <div class="prog"><i id="msProg" style="width:0%"></i></div>
+    <div class="tm" id="msTime"></div>
+  </div>
 
   <div id="tut" class="panel">
     <div class="eye"><span>FLIGHT TRAINING</span><span id="tutNum"></span></div>
@@ -213,6 +263,30 @@ td{padding:6px 8px;border-bottom:1px solid rgba(255,255,255,.045)}
 
 <div id="dead"><div><h2>SHOT DOWN</h2><p id="deadTxt">RESPAWN IN 5</p></div></div>
 
+<div id="pause" class="ovl">
+  <div class="mid panel">
+    <h2 style="color:#7fe6c0">PAUSED</h2>
+    <p>The world is frozen. Nothing moves until you resume.</p>
+    <div class="btns">
+      <button class="primary" id="btnResume">RESUME</button>
+      <button class="sndbtn" id="btnSound2">SOUND: ON</button>
+      <button id="btnQuit">EXIT TO MENU</button>
+    </div>
+  </div>
+</div>
+
+<div id="over" class="ovl">
+  <div class="mid panel">
+    <h2 id="overTitle">ROUND OVER</h2>
+    <p id="overText"></p>
+    <div id="tokline"></div>
+    <div class="btns" style="margin-top:18px">
+      <button class="primary" id="btnAgain">PLAY AGAIN</button>
+      <button id="btnMenu">EXIT TO MENU</button>
+    </div>
+  </div>
+</div>
+
 <!-- ================= MENU ================= -->
 <div id="menu" class="ovl on">
   <div class="box panel">
@@ -225,9 +299,11 @@ td{padding:6px 8px;border-bottom:1px solid rgba(255,255,255,.045)}
       <button id="btnSolo">SOLO vs BOTS</button>
     </div>
     <div class="row">
+      <button id="btnMission" style="border-color:rgba(201,163,255,.5);color:#e9dcff">FLY A MISSION</button>
       <button id="btnHost">HOST GAME</button>
       <input id="joinIn" placeholder="ROOM CODE" maxlength="5" style="width:150px;text-transform:uppercase" />
       <button id="btnJoin">JOIN GAME</button>
+      <button class="sndbtn" id="btnSound">SOUND: ON</button>
     </div>
     <div id="netmsg"></div>
     <div class="row" id="codeRow" style="display:none">
@@ -237,13 +313,19 @@ td{padding:6px 8px;border-bottom:1px solid rgba(255,255,255,.045)}
       </div>
     </div>
 
+    <div id="perm">
+      <div class="hd"><b>PERMANENT UPGRADES</b><span class="tk" id="tokCount">0 ⬢ TOKENS</span></div>
+      <div id="permList"></div>
+    </div>
+
     <div class="hint" style="margin-top:18px">
       New here? <b>FLIGHT TRAINING</b> walks you through flying, gunnery, missiles and building base defenses in about four minutes.<br/><br/>
-      <b>MOVE</b> <kbd>W</kbd>/<kbd>↑</kbd> climb · <kbd>S</kbd>/<kbd>↓</kbd> dive · <kbd>←</kbd><kbd>→</kbd> slide sideways — straight up, down and across, no turning<br/>
-      <b>FLY</b> mouse aims · <kbd>A</kbd><kbd>D</kbd> roll · <kbd>Q</kbd><kbd>E</kbd> rudder · mouse wheel throttle · <kbd>Shift</kbd> afterburner<br/>
-      <b>FIGHT</b> <kbd>LMB</kbd>/<kbd>Space</kbd> fire · <kbd>RMB</kbd>/<kbd>F</kbd> missile · <kbd>1</kbd>–<kbd>5</kbd> weapon · <kbd>X</kbd> flares · <kbd>R</kbd> resupply at base<br/>
+      <b>MOVE</b> <kbd>W</kbd> climb · <kbd>S</kbd> dive · <kbd>Q</kbd><kbd>E</kbd> slide sideways — straight up, down and across, no turning<br/>
+      <b>FLY</b> mouse aims · <kbd>A</kbd><kbd>D</kbd> roll · mouse wheel throttle · <kbd>Shift</kbd> afterburner<br/>
+      <b>FIGHT</b> <kbd>LMB</kbd>/<kbd>Space</kbd> fire · <kbd>1</kbd>–<kbd>5</kbd> weapon (<kbd>4</kbd> = missiles) · <kbd>RMB</kbd>/<kbd>F</kbd> quick missile · <kbd>X</kbd> flares · <kbd>R</kbd> resupply<br/>
       <b>BUILD</b> <kbd>B</kbd> hangar &amp; shop — buy weapons, armor, <b>Sniper Towers</b> and <b>Surface-to-Air Missile sites</b><br/>
-      <b>VIEW</b> you fly from the <b>cockpit</b> — <kbd>C</kbd> cycles cockpit / chase / cinematic · <kbd>Tab</kbd> scoreboard · <kbd>Esc</kbd> release mouse<br/><br/>
+      <b>VIEW</b> you fly from the <b>cockpit</b> — <kbd>C</kbd> cycles cockpit / chase / cinematic · <kbd>Tab</kbd> scoreboard<br/>
+      <b>GAME</b> <kbd>Esc</kbd> or <kbd>P</kbd> pause &amp; exit · <kbd>M</kbd> mute sound<br/><br/>
       Destroy the enemy <b>Command HQ</b> to win the round. Credits come from kills, structure hits and passive income.
     </div>
   </div>
@@ -625,6 +707,14 @@ function buildWorld(){
   MESH.missile=ms.build();
   const pc=new Builder(); pc.box(1,1,1,[1,1,1]); MESH.cube=pc.build();
 
+  // mission gate: a ring of segments you fly through
+  const rg=new Builder(), RR=52;
+  for(let i=0;i<20;i++){
+    const a=i/20*Math.PI*2;
+    rg.push(); rg.tr(Math.cos(a)*RR,Math.sin(a)*RR,0); rg.rz(a); rg.box(7,17,7,[1,1,1]); rg.pop();
+  }
+  MESH.ring=rg.build();
+
   /* --- structures --- */
   MESH.struct={};
   for(const t in STRUCTS) MESH.struct[t]={
@@ -801,10 +891,12 @@ const STRUCTS={
            desc:'Paints every enemy inside 2.8&nbsp;km on your minimap and sharpens SAM lock-on.'},
   repair: {name:'Repair Pad',       hp:640,  cost:850,  range:340,  r:24, y:2,  turret:null, heal:16,
            desc:'Friendly aircraft flying low over the pad repair and rearm rapidly.'},
-  spawner:{name:'Aircraft Hangar',  hp:1400, cost:1900, range:0,    r:28, y:10, turret:null, cd:20, cap:6,
-           desc:'Launches a friendly fighter every 20&nbsp;seconds, up to six airborne at once. Destroy the enemy hangar to choke off their reinforcements.'}
+  spawner:{name:'Aircraft Hangar',  hp:1400, cost:1900, range:0,    r:28, y:10, turret:null, cd:34, cap:5,
+           desc:'Sits beside the HQ and launches a fighter every 34&nbsp;seconds. Buy <b>Hangar Crews</b> to speed it up. Destroy the enemy hangar and their reinforcements stop.'}
 };
-const BOT_HP=55;   // bots are deliberately fragile — a short burst downs one
+const BOT_HP=55;        // deliberately fragile — a short burst downs one
+const BOT_SPEED=165;    // well under the player's 270+, so you can always disengage
+const BOT_AGILITY=.42;  // lazy on the controls: easy to track and out-turn
 
 /* `len`/`wid` scale the tracer mesh. Firing forward you see a round end-on, so
    its cross-section is what makes it visible, not its length — hence the wide
@@ -813,7 +905,7 @@ const WEAPONS={
   mg:     {name:'Machine Guns', slot:1, rpm:640, dmg:7,  speed:1150, spread:.014, ammo:-1,  col:[1,.88,.42], len:9.0,  wid:1.6, unlocked:true},
   cannon: {name:'Heavy Cannon', slot:2, rpm:130, dmg:38, speed:980,  spread:.004, ammo:180, col:[1,.60,.24], len:12.0, wid:2.6},
   rocket: {name:'Rocket Pods',  slot:3, rpm:260, dmg:30, speed:560,  spread:.030, ammo:60,  col:[1,.45,.25], len:10.0, wid:2.4, salvo:2, splash:34},
-  missile:{name:'Homing Missile',slot:4,rpm:42,  dmg:78, speed:360,  spread:0,    ammo:6,   col:[1,.5,.3],  homing:true, splash:46},
+  missile:{name:'Homing Missile',slot:4,rpm:48,  dmg:78, speed:430,  spread:0,    ammo:6,   col:[1,.5,.3],  homing:true, splash:46},
   laser:  {name:'Plasma Lance', slot:5, rpm:900, dmg:4.6,speed:1900, spread:.002, ammo:520, col:[.45,1,.92], len:18.0, wid:2.2}
 };
 
@@ -842,7 +934,8 @@ const SHOP=[
   {id:'agility',cat:'Airframe', name:'Control Surfaces',max:4,cost:l=>Math.round(460*Math.pow(1.6,l)),
    desc:'Larger elevons and a fly-by-wire tune — turn tighter than anything in the sky.', eff:l=>`+${l*15}% turn rate`},
   {id:'flare',  cat:'Airframe', name:'Flare Dispenser',max:4, cost:l=>Math.round(400*Math.pow(1.55,l)),
-   desc:'Decoy flares that break incoming missile locks. Press X.', eff:l=>`${l*2} flares carried`},
+   desc:'Decoy flares that break incoming missile locks. Press X — hold a few in reserve.',
+   eff:l=>`${l*6} flares carried`},
   {id:'repairk',cat:'Airframe', name:'Field Repair Kit',max:99,cost:()=>320, repeat:true,
    desc:'Instantly patch your hull back to full, right now, mid-flight.', eff:()=>'Restores hull to 100%'},
 
@@ -852,8 +945,33 @@ const SHOP=[
   {id:'s_flak',  cat:'Defenses', struct:'flak'},
   {id:'s_radar', cat:'Defenses', struct:'radar'},
   {id:'s_repair',cat:'Defenses', struct:'repair'},
-  {id:'s_spawner',cat:'Defenses',struct:'spawner'}
+  {id:'s_spawner',cat:'Defenses',struct:'spawner'},
+  {id:'hangar', cat:'Defenses', name:'Hangar Crews', max:5, cost:l=>Math.round(700*Math.pow(1.5,l)),
+   desc:'Faster turnarounds at every hangar you own — each level cuts the launch interval by a fifth.',
+   eff:l=>`launch every ${(34*Math.pow(.8,l)).toFixed(0)}s (from 34s)`}
 ];
+
+/* ------------------- persistent profile (tokens + perks) ----------------- */
+const PERKS=[
+  {id:'hull',   name:'Reinforced Airframe', max:5, cost:l=>1+l, eff:l=>`+${l*30} starting hull`},
+  {id:'guns',   name:'Weapon Calibration',  max:5, cost:l=>1+l, eff:l=>`+${l*12}% damage, all weapons`},
+  {id:'thrust', name:'Uprated Engine',      max:4, cost:l=>2+l, eff:l=>`+${l*22} km/h top speed`},
+  {id:'wings',  name:'Composite Wings',     max:4, cost:l=>2+l, eff:l=>`+${l*10}% turn rate`},
+  {id:'chaff',  name:'Expanded Countermeasures', max:4, cost:l=>1+l, eff:l=>`+${l*8} flares carried`}
+];
+const PROFILE={tokens:0,perks:{},muted:false};
+function loadProfile(){
+  try{
+    const raw=localStorage.getItem('ironskies.profile');
+    if(raw){ const d=JSON.parse(raw);
+      PROFILE.tokens=d.tokens|0; PROFILE.perks=d.perks||{}; PROFILE.muted=!!d.muted; }
+  }catch(e){}
+}
+function saveProfile(){
+  try{ localStorage.setItem('ironskies.profile',JSON.stringify(PROFILE)); }catch(e){}
+}
+const perk=id=>PROFILE.perks[id]||0;
+loadProfile();
 
 /* ----------------------------- state ------------------------------------ */
 const G={
@@ -862,7 +980,9 @@ const G={
   me:null, myId:uid(), team:'blue',
   credits:600, kills:0, deaths:0, score:0,
   camMode:0, camPos:[0,120,300], camLook:[0,60,0],
-  round:null, botFill:5, economyT:0
+  round:null, botFill:5, economyT:0,
+  paused:false, over:false, mission:null,
+  hangarLvl:{blue:0,red:0}, rings:[]
 };
 
 function newPlane(o){
@@ -878,17 +998,19 @@ function newPlane(o){
 
 function applyUpgrades(p){
   const u=p.upg;
-  // bots are fixed-fragile and turn lazily, so they read as targets rather
-  // than as rivals — see stepBot, which also holds them near one altitude
-  p.maxHp=p.isBot?BOT_HP:100+(u.armor||0)*40;
-  p.maxFlares=(u.flare||0)*2;
-  p.topSpeed=270+(u.engine||0)*30;
-  p.agility=(1+(u.agility||0)*.15)*(p.isBot?.68:1);
+  // Bots are fixed-fragile, slow and lazy on the controls, so they read as
+  // targets rather than as rivals. stepBot also holds them near one altitude.
+  const pl=!p.isBot&&p.isLocal;   // permanent perks apply to you only
+  p.maxHp=p.isBot?BOT_HP:100+(u.armor||0)*40+(pl?perk('hull')*30:0);
+  p.maxFlares=(u.flare||0)*6+(pl?perk('chaff')*8:0);
+  p.topSpeed=p.isBot?BOT_SPEED:270+(u.engine||0)*30+(pl?perk('thrust')*22/3.6:0);
+  p.agility=(1+(u.agility||0)*.15)*(p.isBot?BOT_AGILITY:1+(pl?perk('wings')*.10:0));
   p.have={mg:true, cannon:(u.cannon||0)>0, rocket:(u.rocket||0)>0, missile:(u.missile||0)>0, laser:(u.laser||0)>0};
+  const gp=pl?1+perk('guns')*.12:1;
   p.dmgMul={
-    mg:1+(u.mg||0)*.22, cannon:1+Math.max(0,(u.cannon||0)-1)*.25,
-    rocket:1+Math.max(0,(u.rocket||0)-1)*.22, missile:1+Math.max(0,(u.missile||0)-1)*.15,
-    laser:1+Math.max(0,(u.laser||0)-1)*.40
+    mg:(1+(u.mg||0)*.22)*gp, cannon:(1+Math.max(0,(u.cannon||0)-1)*.25)*gp,
+    rocket:(1+Math.max(0,(u.rocket||0)-1)*.22)*gp, missile:(1+Math.max(0,(u.missile||0)-1)*.15)*gp,
+    laser:(1+Math.max(0,(u.laser||0)-1)*.40)*gp
   };
   p.rateMul={mg:1+(u.mg||0)*.15};
   p.ammoMax={
@@ -910,9 +1032,17 @@ function structPos(team,idx){
   const x=b[0]+Math.cos(a)*r, z=b[2]+Math.sin(a)*r;
   return [x,terrainH(x,z),z];
 }
+/** hangars sit right beside the HQ they defend, alternating left and right */
+let hangarSlot={blue:0,red:0};
+function hangarPos(team){
+  const b=BASES[team], i=hangarSlot[team]++;
+  const x=b[0]+(i%2?150:-150), z=b[2]+(i<2?95:-95);
+  return [x,terrainH(x,z),z];
+}
 function addStruct(type,team,ownerId,idx){
   const cfg=STRUCTS[type];
   const pos = type==='hq' ? [BASES[team][0],terrainH(BASES[team][0],BASES[team][2]),BASES[team][2]]
+            : type==='spawner' ? hangarPos(team)
                           : structPos(team,idx===undefined?structSlot[team]++:idx);
   const s={id:uid(),type,team,owner:ownerId||null,pos,hp:cfg.hp,maxHp:cfg.hp,cd:0,yaw:team==='blue'?Math.PI:0,pitch:0,spin:0,alive:true};
   G.structures.push(s);
@@ -921,10 +1051,19 @@ function addStruct(type,team,ownerId,idx){
 
 /* ----------------------------- audio ------------------------------------ */
 let AC=null, engineOsc=null, engineGain=null, masterGain=null;
+function setMuted(m){
+  PROFILE.muted=!!m; saveProfile();
+  if(masterGain) masterGain.gain.value=PROFILE.muted?0:.35;
+  const lbl='SOUND: '+(PROFILE.muted?'OFF':'ON');
+  const a=$('btnSound'), b=$('btnSound2');
+  if(a) a.textContent=lbl;
+  if(b) b.textContent=lbl;
+  if(G.started) toast(PROFILE.muted?'SOUND MUTED':'SOUND ON','grn',1.2);
+}
 function audioInit(){
   if(AC) return;
   try{ AC=new (window.AudioContext||window.webkitAudioContext)(); }catch(e){ return; }
-  masterGain=AC.createGain(); masterGain.gain.value=.35; masterGain.connect(AC.destination);
+  masterGain=AC.createGain(); masterGain.gain.value=PROFILE.muted?0:.35; masterGain.connect(AC.destination);
   engineOsc=AC.createOscillator(); engineOsc.type='sawtooth'; engineOsc.frequency.value=70;
   engineGain=AC.createGain(); engineGain.gain.value=0;
   const f=AC.createBiquadFilter(); f.type='lowpass'; f.frequency.value=420;
@@ -974,11 +1113,12 @@ let mouseLocked=false;
 addEventListener('keydown',e=>{
   if(e.code==='Tab'){e.preventDefault();$('board').classList.add('on');updateBoard()}
   keys[e.code]=true;
+  if(e.code==='KeyM'){ setMuted(!PROFILE.muted); }
   if(!G.started) return;
-  if(e.code.startsWith('Arrow')) e.preventDefault();
-  if(e.code==='KeyB'){e.preventDefault();toggleShop()}
+  if(e.code==='KeyB'&&!G.over){e.preventDefault();toggleShop()}
   if(e.code==='KeyC'){G.camMode=(G.camMode+1)%3}
-  if(e.code==='Escape'&&mouseLocked) document.exitPointerLock();
+  if(e.code==='Escape'&&!G.over){ e.preventDefault(); togglePause(); }
+  if(e.code==='KeyP'&&!G.over){ togglePause(); }
   if(/^Digit[1-5]$/.test(e.code)&&G.me){
     const n=+e.code.slice(5), w=Object.keys(WEAPONS).find(k=>WEAPONS[k].slot===n);
     if(w&&G.me.have[w]){G.me.wep=w;updateWeps()}
@@ -1017,16 +1157,15 @@ function readInput(p,dt){
   // stick slowly self-centres so the plane recovers if you let go
   stick.x=lerp(stick.x,0,clamp(dt*1.1,0,1));
   stick.y=lerp(stick.y,0,clamp(dt*1.1,0,1));
-  let pitch=-stick.y, roll=stick.x, yaw=0;
+  let pitch=-stick.y, roll=stick.x;
   if(keys.KeyA)roll-=1; if(keys.KeyD)roll+=1;
-  if(keys.KeyQ)yaw-=1; if(keys.KeyE)yaw+=1;
-  c.pitch=clamp(pitch,-1,1); c.roll=clamp(roll,-1,1); c.yaw=clamp(yaw,-1,1);
+  c.pitch=clamp(pitch,-1,1); c.roll=clamp(roll,-1,1); c.yaw=0;
   // direct translation: climb/dive and slide, with no attitude change at all
   let lift=0, strafe=0;
-  if(keys.KeyW||keys.ArrowUp)   lift+=1;
-  if(keys.KeyS||keys.ArrowDown) lift-=1;
-  if(keys.ArrowLeft)  strafe-=1;
-  if(keys.ArrowRight) strafe+=1;
+  if(keys.KeyW) lift+=1;
+  if(keys.KeyS) lift-=1;
+  if(keys.KeyQ) strafe-=1;
+  if(keys.KeyE) strafe+=1;
   c.lift=lift; c.strafe=strafe;
   // throttle moved off W/S when those became altitude
   if(keys.BracketRight) p.thr=clamp(p.thr+dt*.55,0,1);
@@ -1139,7 +1278,10 @@ function fireWeapon(p,dt){
   p.cool.t=(p.cool.t||0);
   for(const k in p.cool) if(k!=='t') p.cool[k]=Math.max(0,p.cool[k]-dt);
 
-  const wantPrimary=c.fire, wantMissile=c.fire2;
+  // missiles are just weapon 4: the trigger fires them like any other gun,
+  // and the dedicated button stays as a shortcut from any weapon
+  const wantMissile=c.fire2||(c.fire&&p.wep==='missile');
+  const wantPrimary=c.fire&&p.wep!=='missile';
   // ---- primary ----
   const w=WEAPONS[p.wep], id=p.wep;
   if(wantPrimary && (p.cool[id]||0)<=0 && p.have[id]){
@@ -1160,7 +1302,8 @@ function fireWeapon(p,dt){
         const l=Math.hypot(...dir); dir[0]/=l;dir[1]/=l;dir[2]/=l;
         const dmg=w.dmg*(p.dmgMul&&p.dmgMul[id]?p.dmgMul[id]:1);
         spawnBullet({pos:org.slice(),vel:[dir[0]*w.speed+f[0]*p.speed*.3,dir[1]*w.speed+f[1]*p.speed*.3,dir[2]*w.speed+f[2]*p.speed*.3],
-          dmg,team:p.team,owner:p.id,col:w.col,len:w.len,wid:w.wid||1,splash:w.splash||0,life:id==='laser'?1.4:3.0,kind:id});
+          dmg,team:p.team,owner:p.id,col:w.col,len:w.len,wid:w.wid||1,splash:w.splash||0,
+          antiStruct:p.isBot?3.2:1, life:id==='laser'?1.4:3.0,kind:id});
       }
       if(p.isLocal||dist(p.pos,G.me?G.me.pos:[0,0,0])<900)
         sfxAt(id==='cannon'||id==='rocket'?'cannon':'gun',p.pos,p.isLocal?.55:.3);
@@ -1187,7 +1330,8 @@ function fireWeapon(p,dt){
   }
 }
 function spawnMissile(o){
-  G.missiles.push(Object.assign({life:14,dmg:70,turn:2.4,speed:WEAPONS.missile.speed,target:null,flared:false,fromStruct:false},o));
+  G.missiles.push(Object.assign({life:14,dmg:70,turn:4.2,speed:WEAPONS.missile.speed,
+    target:null,flared:false,fromStruct:false,fuse:34},o));
 }
 function dropFlares(){
   const p=G.me; if(!p||!p.alive||p.flares<1) return;
@@ -1279,7 +1423,7 @@ function stepBullets(dt){
     if(!hit) for(const s of myStructs){
       if(s.team===b.team) continue;
       const R=STRUCTS[s.type].r+4, cy=s.pos[1]+(STRUCTS[s.type].y||8);
-      if(segSphere(px,py,pz,b.pos,[s.pos[0],cy,s.pos[2]],R)){ damageStruct(s,b.dmg,b.owner); hit=true; hitPos=[s.pos[0],cy,s.pos[2]]; break; }
+      if(segSphere(px,py,pz,b.pos,[s.pos[0],cy,s.pos[2]],R)){ damageStruct(s,b.dmg*(b.antiStruct||1),b.owner); hit=true; hitPos=[s.pos[0],cy,s.pos[2]]; break; }
     }
     if(!hit && b.pos[1]<Math.max(terrainH(b.pos[0],b.pos[2]),SEA)){ hit=true; }
     if(hit){
@@ -1310,13 +1454,23 @@ function stepMissiles(dt){
     let tgt=m.target;
     if(tgt&&(!tgt.alive)) tgt=m.target=null;
     if(tgt){
-      const to=[tgt.pos[0]-m.pos[0],tgt.pos[1]-m.pos[1],tgt.pos[2]-m.pos[2]];
-      const l=Math.hypot(...to)||1; to[0]/=l;to[1]/=l;to[2]/=l;
       const v=m.vel, vl=Math.hypot(...v)||1;
-      const k=clamp(m.turn*dt,0,1);
-      v[0]=lerp(v[0]/vl,to[0],k); v[1]=lerp(v[1]/vl,to[1],k); v[2]=lerp(v[2]/vl,to[2],k);
+      // Aim at where the target will be, not where it is: without this lead the
+      // missile chases the tail and a turning target simply outruns the arc.
+      const rel=[tgt.pos[0]-m.pos[0],tgt.pos[1]-m.pos[1],tgt.pos[2]-m.pos[2]];
+      const range=Math.hypot(...rel)||1;
+      const tf=fwdOf(tgt,[0,0,0]);
+      const tspd=tgt.speed||0;
+      const lead=clamp(range/Math.max(vl,1),0,3.2);
+      const aim=[rel[0]+tf[0]*tspd*lead, rel[1]+tf[1]*tspd*lead, rel[2]+tf[2]*tspd*lead];
+      const al=Math.hypot(...aim)||1;
+      aim[0]/=al; aim[1]/=al; aim[2]/=al;
+      // tighten up as it closes so terminal guidance is near-perfect
+      const agility=m.turn*(1+clamp(600/Math.max(range,60),0,3));
+      const k=clamp(agility*dt,0,1);
+      v[0]=lerp(v[0]/vl,aim[0],k); v[1]=lerp(v[1]/vl,aim[1],k); v[2]=lerp(v[2]/vl,aim[2],k);
       const nl=Math.hypot(...v)||1;
-      const sp=Math.min(m.speed*1.5,vl+320*dt);
+      const sp=Math.min(m.speed*1.6,vl+520*dt);
       v[0]=v[0]/nl*sp; v[1]=v[1]/nl*sp; v[2]=v[2]/nl*sp;
     }
     m.pos[0]+=m.vel[0]*dt; m.pos[1]+=m.vel[1]*dt; m.pos[2]+=m.vel[2]*dt;
@@ -1325,7 +1479,7 @@ function stepMissiles(dt){
     let boom=false;
     for(const p of myPlanes){
       if(p.team===m.team||p.id===m.owner) continue;
-      if(dist(p.pos,m.pos)<22){ boom=true; break; }
+      if(dist(p.pos,m.pos)<m.fuse){ boom=true; break; }
     }
     if(!boom) for(const s of myStructs){
       if(s.team===m.team) continue;
@@ -1377,7 +1531,7 @@ function stepStructs(dt){
       if(!authority) continue;
       s.cd-=dt;
       if(s.cd<=0){
-        s.cd=cfg.cd;
+        s.cd=cfg.cd*Math.pow(.8,G.hangarLvl[s.team]||0);
         const up=[...G.planes.values()].filter(q=>q.isBot&&q.team===s.team&&q.alive&&!q.passive).length;
         if(up<cfg.cap) spawnBotFrom(s);
       }
@@ -1452,20 +1606,29 @@ function stepBot(p,dt){
   p.aiT-=dt;
   if(p.aiT<=0||!p.aiTarget||(p.aiTarget.alive===false)){
     p.aiT=rnd(2.5,5);
-    let best=null,bd=1e9,bs=null;
+    // Raiders are on a bombing run and all but ignore fighters, so the strike
+    // actually reaches your HQ instead of dissolving into a midfield furball.
+    // Interceptors are the ones that come for you.
+    if(!p.role) p.role='raider';
+    let best=null,bd=p.role==='raider'?300:980;
     for(const q of G.planes.values()){
       if(q===p||!q.alive||q.team===p.team) continue;
       const d=dist(q.pos,p.pos); if(d<bd){bd=d;best=q}
     }
-    // if no plane nearby, go bomb enemy structures
-    if(!best||bd>1900){
-      for(const s of G.structures){
-        if(!s.alive||s.team===p.team) continue;
-        const d=dist(s.pos,p.pos); if(d<bd*1.2){bd=d;bs=s}
+    let ground=null;
+    if(!best){
+      const hq=G.structures.find(s=>s.alive&&s.type==='hq'&&s.team!==p.team);
+      if(hq) ground=hq;
+      else{
+        let gd=1e9;
+        for(const s of G.structures){
+          if(!s.alive||s.team===p.team) continue;
+          const d=dist(s.pos,p.pos); if(d<gd){gd=d;ground=s}
+        }
       }
     }
-    p.aiTarget=best||bs||null;
-    p.aiStruct=!best&&!!bs;
+    p.aiTarget=best||ground||null;
+    p.aiStruct=!best&&!!ground;
   }
   const t=p.aiTarget;
   const c=p.ctrl;
@@ -1619,6 +1782,26 @@ function render(){
     }
   }
 
+  // --- base marker beams: a column of light you can find from anywhere ---
+  gl.enable(gl.BLEND); gl.depthMask(false); gl.disable(gl.CULL_FACE);
+  for(const s of G.structures){
+    if(s.type!=='hq'||!s.alive) continue;
+    const foe=s.team!==G.team;
+    M4.trans(model,s.pos[0],s.pos[1]+700,s.pos[2]);
+    M4.mul(model,model,M4.scl(tmpM,9,1400,9));
+    draw(MESH.cube,model,{unlit:true,alpha:.30,tint:foe?[1,.18,.13]:[.25,1,.62]});
+    M4.trans(model,s.pos[0],s.pos[1]+700,s.pos[2]);
+    M4.mul(model,model,M4.scl(tmpM,26,1400,26));
+    draw(MESH.cube,model,{unlit:true,alpha:.10,tint:foe?[1,.25,.2]:[.3,1,.68]});
+  }
+  // mission rings, if one is running
+  for(const r of G.rings){
+    if(r.done) continue;
+    M4.fromRTS(model,r.quat,r.pos,1);
+    draw(MESH.ring,model,{unlit:true,alpha:.85,tint:r.next?[1,.85,.25]:[.55,.75,1]});
+  }
+  gl.enable(gl.CULL_FACE); gl.depthMask(true); gl.disable(gl.BLEND);
+
   // --- planes ---
   for(const p of G.planes.values()){
     if(!p.alive) continue;
@@ -1750,9 +1933,57 @@ function updateHUD(dt){
   for(let i=feeds.length-1;i>=0;i--){feeds[i].t-=dt;if(feeds[i].t<=0)feeds.splice(i,1)}
   $('feed').innerHTML=feeds.map(f=>`<div style="opacity:${clamp(f.t/2,0,1)}">${f.html}</div>`).join('');
 
+  // home base readout
+  const home=G.structures.find(s=>s.type==='hq'&&s.team===G.team);
+  if(home){
+    const hf=clamp(home.hp/home.maxHp,0,1);
+    $('hbTxt').textContent=home.alive?Math.max(0,Math.round(home.hp))+' / '+home.maxHp:'DESTROYED';
+    const hb=$('hbBar'); hb.style.width=(hf*100)+'%';
+    hb.style.background=hf>.5?'linear-gradient(90deg,#2a7fd4,#5fb2ff)'
+      :hf>.25?'linear-gradient(90deg,#d4a02a,#ffd451)':'linear-gradient(90deg,#c0392b,#ff7a6b)';
+  }
+
   if(!p.alive) $('deadTxt').textContent='RESPAWN IN '+Math.ceil(p.respawn);
+  updateWarnings(dt);
   updateBaseBars();
+  updateMissionHUD();
   drawMini();
+}
+
+/* Threat callouts. Each has its own cooldown so they announce a change in the
+   situation rather than nagging every frame. */
+const warns=[];
+let warnCd={six:0,msl:0,base:0};
+function pushWarn(key,txt,cls,hold,cool){
+  if(warnCd[key]>0) return;
+  warnCd[key]=cool;
+  warns.push({txt,cls,t:hold,max:hold});
+  if(key!=='six') sfx('lock',.5);
+}
+function updateWarnings(dt){
+  const p=G.me;
+  for(const k in warnCd) warnCd[k]=Math.max(0,warnCd[k]-dt);
+  if(p&&p.alive){
+    // missile inbound — any missile currently tracking you
+    if(G.missiles.some(m=>m.target===p))
+      pushWarn('msl', p.flares>0?'⚠ MISSILE INBOUND — PRESS X FOR FLARES':'⚠ MISSILE INBOUND — NO FLARES','crit',2.6,3.0);
+    // bandit on your six
+    const f=fwdOf(p,[0,0,0]);
+    for(const q of G.planes.values()){
+      if(q===p||!q.alive||q.team===p.team) continue;
+      const to=[q.pos[0]-p.pos[0],q.pos[1]-p.pos[1],q.pos[2]-p.pos[2]];
+      const l=Math.hypot(...to); if(l>750) continue;
+      if((to[0]*f[0]+to[1]*f[1]+to[2]*f[2])/l < -.55){
+        pushWarn('six','ENEMY ON YOUR SIX','six',2.2,4.5); break;
+      }
+    }
+    const home=G.structures.find(s=>s.type==='hq'&&s.team===G.team);
+    if(home&&home.alive&&home.hp<home.maxHp*.55)
+      pushWarn('base','⚠ HOME BASE UNDER ATTACK','crit',2.6,14);
+  }
+  for(let i=warns.length-1;i>=0;i--){ warns[i].t-=dt; if(warns[i].t<=0) warns.splice(i,1); }
+  $('warn').innerHTML=warns.map(w=>
+    `<div class="${w.cls}" style="opacity:${clamp(w.t/Math.min(w.max,1),0,1)}">${w.txt}</div>`).join('');
 }
 
 /* Health bars pinned above each Command HQ. Projected from the world every
@@ -1925,6 +2156,7 @@ function buy(id,cost){
     p.hp=Math.min(p.maxHp,p.hp+ (id==='armor'?40:0));
     if(id==='flare') p.flares=p.maxFlares;
   }
+  if(id==='hangar') G.hangarLvl[G.team]=p.upg.hangar||0;
   if(G.tut) G.tut.buys++;
   sfx('buy',.6); renderShop(); updateWeps();
   net.send({t:'upg',id:G.myId,upg:p.upg});
@@ -1945,17 +2177,37 @@ function buyStruct(type,cost){
 }
 
 /* ------------------------- round management ------------------------------ */
+function togglePause(){
+  if(!G.started||G.over) return;
+  G.paused=!G.paused;
+  $('pause').classList.toggle('on',G.paused);
+  if(G.paused){ if(mouseLocked) document.exitPointerLock(); }
+  else canvas.requestPointerLock();
+}
+/** Destroying an HQ ends the round outright — no auto-restart. */
 function endRound(winner){
   if(G.round) return;
-  G.round=winner;
+  G.round=winner; G.over=true; G.paused=false;
+  $('pause').classList.remove('on');
+  if(mouseLocked) document.exitPointerLock();
   const win=winner===G.team;
-  toast(win?'★ VICTORY — ENEMY HQ DESTROYED ★':'✖ DEFEAT — HQ LOST ✖',win?'gold':'red',6);
+  let tok=0;
+  if(win&&!G.tut){ tok=3; PROFILE.tokens+=tok; saveProfile(); }
+  $('overTitle').textContent=win?'VICTORY':'DEFEAT';
+  $('overTitle').style.color=win?'#7fe6c0':'#ff7a6b';
+  $('overText').innerHTML=win
+    ? `You levelled the enemy Command HQ.<br/>${G.kills} kills · ${G.deaths} losses`
+    : `Your Command HQ was destroyed.<br/>${G.kills} kills · ${G.deaths} losses`;
+  $('tokline').textContent=tok?`+${tok} ⬢ TOKENS EARNED`:'';
+  $('over').classList.add('on');
   feed(`<span class="${winner}">${winner.toUpperCase()} TEAM WINS</span>`);
-  setTimeout(()=>{ if(net.isHost||net.mode==='solo') resetRound(); },8000);
+  sfx(win?'buy':'boom',.9);
 }
 function resetRound(){
-  G.round=null;
-  G.structures.length=0; structSlot={blue:0,red:0};
+  G.round=null; G.over=false;
+  $('over').classList.remove('on');
+  G.structures.length=0; structSlot={blue:0,red:0}; hangarSlot={blue:0,red:0};
+  G.bullets.length=0; G.missiles.length=0; G.parts.length=0;
   addStruct('hq','blue'); addStruct('hq','red');
   addStruct('spawner','blue'); addStruct('spawner','red');
   addStruct('flak','red'); addStruct('sniper','red');
@@ -1963,6 +2215,27 @@ function resetRound(){
   for(const p of G.planes.values()){ p.hp=p.maxHp; p.alive=true; doRespawn(p); }
   toast('NEW ROUND — GO','grn',3);
   net.send({t:'world',structs:G.structures.map(packStruct)});
+  canvas.requestPointerLock();
+}
+/** Tear everything down and go back to the menu. */
+function quitToMenu(){
+  if(net.peer){ try{ net.peer.destroy() }catch(e){} }
+  net.mode='solo'; net.isHost=false; net.ready=false; net.conns=[]; net.peer=null;
+  G.started=false; G.paused=false; G.over=false; G.round=null; G.tut=null; G.mission=null;
+  G.planes.clear(); G.structures.length=0; G.bullets.length=0; G.missiles.length=0;
+  G.parts.length=0; G.rings.length=0;
+  structSlot={blue:0,red:0}; hangarSlot={blue:0,red:0};
+  G.hangarLvl={blue:0,red:0};
+  G.me=null; G.credits=600; G.kills=0; G.deaths=0; G.score=0; G.camMode=0;
+  baseBarEls.forEach(el=>el.classList.remove('on'));
+  for(const id of ['pause','over','shop','dead','tut','mission']) $(id).classList.remove('on');
+  $('hud').classList.remove('on');
+  $('menu').classList.add('on');
+  $('codeRow').style.display='none'; netmsg('');
+  unlockButtons();
+  renderPerm();
+  if(mouseLocked) document.exitPointerLock();
+  if(engineGain) engineGain.gain.value=0;
 }
 
 /* ------------------------------ networking ------------------------------- */
@@ -2207,6 +2480,138 @@ function netTick(dt){
   }
 }
 
+/* ------------------------------ missions --------------------------------- */
+/* Short solo contracts. Winning pays tokens, which buy permanent perks on the
+   menu that carry across every mode. */
+const MISSIONS=[
+  {id:'strike', name:'Precision Strike', tokens:2, time:210,
+   desc:()=>'Destroy the marked enemy installation. It is defended.',
+   setup(){
+     const kinds=['sniper','sam','flak','radar','spawner'];
+     const s=addStruct(kinds[rndi(0,kinds.length-1)],'red',null);
+     addStruct('flak','red'); addStruct('sniper','red');
+     addBots(2);
+     G.mission.target=s;
+     G.mission.goal=1;
+   },
+   progress(){ return G.mission.target.alive?0:1 },
+   label(){ return G.mission.target.alive?'Target standing':'Target destroyed' }},
+
+  {id:'sweep', name:'Fighter Sweep', tokens:2, time:240,
+   desc(){ return `Shoot down ${G.mission.goal} enemy aircraft.` },
+   setup(){
+     G.mission.goal=rndi(5,8); G.mission.start=G.kills;
+     addStruct('spawner','red'); addBots(4);
+   },
+   progress(){ return clamp((G.kills-G.mission.start)/G.mission.goal,0,1) },
+   label(){ return (G.kills-G.mission.start)+' / '+G.mission.goal+' shot down' }},
+
+  {id:'gates', name:'Low-Level Course', tokens:3, time:150,
+   desc(){ return `Fly through all ${G.mission.goal} gates in order.` },
+   setup(){
+     const n=rndi(6,9); G.mission.goal=n;
+     let x=rnd(-500,500), z=rnd(600,1100), head=rnd(0,Math.PI*2);
+     for(let i=0;i<n;i++){
+       head+=rnd(-.5,.5);
+       x+=Math.sin(head)*rnd(420,620); z-=Math.cos(head)*rnd(420,620);
+       x=clamp(x,-2400,2400); z=clamp(z,-2400,2400);
+       const y=Math.max(terrainH(x,z),SEA)+rnd(180,420);
+       const q=qLookDir([0,0,0,1],[Math.sin(head),0,-Math.cos(head)],[0,1,0]);
+       G.rings.push({pos:[x,y,z],quat:q,done:false,next:i===0,i});
+     }
+     G.mission.ring=0;
+   },
+   progress(){ return clamp(G.mission.ring/G.mission.goal,0,1) },
+   label(){ return G.mission.ring+' / '+G.mission.goal+' gates' }},
+
+  {id:'defend', name:'Hold the Line', tokens:3, time:180,
+   desc(){ return 'Keep your Command HQ above 60% until the clock runs out.' },
+   setup(){
+     addStruct('spawner','red'); addStruct('spawner','red'); addBots(5);
+     G.mission.floor=.6;
+   },
+   progress(){ return clamp(G.mission.t/G.mission.time,0,1) },
+   label(){
+     const h=G.structures.find(s=>s.type==='hq'&&s.team===G.team);
+     return h?'HQ at '+Math.round(h.hp/h.maxHp*100)+'% (hold 60%)':'—' },
+   fail(){
+     const h=G.structures.find(s=>s.type==='hq'&&s.team===G.team);
+     return !h||!h.alive||h.hp<h.maxHp*G.mission.floor },
+   winOnTimeout:true}
+];
+
+function startMission(){
+  const def=MISSIONS[rndi(0,MISSIONS.length-1)];
+  net.mode='solo';
+  G.mission={def,t:0,time:def.time,goal:1,done:false,ring:0,start:0};
+  startGame('blue');
+  G.credits=1500;
+  def.setup();
+  $('mission').classList.add('on');
+  $('msTitle').textContent=def.name;
+  $('msDesc').textContent=def.desc();
+  toast('MISSION: '+def.name.toUpperCase(),'gold',4);
+}
+function updateMissionHUD(){
+  const M=G.mission; if(!M||M.done) return;
+  $('msDesc').textContent=M.def.label();
+  $('msProg').style.width=(M.def.progress()*100)+'%';
+  const left=Math.max(0,M.time-M.t);
+  $('msTime').textContent='T-'+String(Math.floor(left/60)).padStart(2,'0')+':'+
+    String(Math.floor(left%60)).padStart(2,'0');
+}
+function stepMission(dt){
+  const M=G.mission; if(!M||M.done) return;
+  M.t+=dt;
+  // gates are checked by proximity to the ring plane
+  if(M.def.id==='gates'&&G.me&&G.me.alive){
+    const r=G.rings[M.ring];
+    if(r&&!r.done&&dist(G.me.pos,r.pos)<64){
+      r.done=true; M.ring++;
+      sfx('buy',.7); toast('GATE '+M.ring+' / '+M.goal,'grn',1.2);
+      if(G.rings[M.ring]) G.rings[M.ring].next=true;
+    }
+  }
+  if(M.def.fail&&M.def.fail()) return endMission(false);
+  if(M.def.progress()>=1&&!M.def.winOnTimeout) return endMission(true);
+  if(M.t>=M.time) return endMission(!!M.def.winOnTimeout);
+}
+function endMission(won){
+  const M=G.mission; if(!M||M.done) return;
+  M.done=true; G.over=true; G.paused=false;
+  if(mouseLocked) document.exitPointerLock();
+  let tok=0;
+  if(won){ tok=M.def.tokens; PROFILE.tokens+=tok; saveProfile(); }
+  $('overTitle').textContent=won?'MISSION COMPLETE':'MISSION FAILED';
+  $('overTitle').style.color=won?'#7fe6c0':'#ff7a6b';
+  $('overText').innerHTML=M.def.name+'<br/>'+M.def.label();
+  $('tokline').textContent=tok?`+${tok} ⬢ TOKENS EARNED`:'No tokens awarded';
+  $('over').classList.add('on');
+  $('btnAgain').textContent='NEW MISSION';
+  sfx(won?'buy':'boom',.9);
+}
+
+/* --------------------- permanent upgrade shop (menu) --------------------- */
+function renderPerm(){
+  $('perm').classList.add('on');
+  $('tokCount').textContent=PROFILE.tokens+' ⬢ TOKENS';
+  $('permList').innerHTML=PERKS.map(k=>{
+    const l=perk(k.id), maxed=l>=k.max, c=k.cost(l);
+    const can=!maxed&&PROFILE.tokens>=c;
+    return `<div class="pitem">
+      <h5>${k.name}<em style="font-style:normal;color:#c9a3ff">${l}/${k.max}</em></h5>
+      <span>${k.eff(Math.min(l+1,k.max))}</span>
+      <button data-perk="${k.id}" ${can?'':'disabled'}>${maxed?'MAXED':c+' ⬢ UNLOCK'}</button>
+    </div>`;
+  }).join('');
+  [...document.querySelectorAll('[data-perk]')].forEach(b=>b.onclick=()=>{
+    const k=PERKS.find(x=>x.id===b.dataset.perk), l=perk(k.id);
+    if(l>=k.max||PROFILE.tokens<k.cost(l)) return;
+    PROFILE.tokens-=k.cost(l); PROFILE.perks[k.id]=l+1; saveProfile();
+    sfx('buy',.6); renderPerm();
+  });
+}
+
 /* ------------------------------ training --------------------------------- */
 /* Each step gates on the player actually performing the action. `setup` runs
    once when the step opens, `tick` runs every frame, `check` advances it. */
@@ -2253,10 +2658,10 @@ const TUTORIAL=[
    d:'Roll the <b>mouse wheel</b> forward to run the throttle to full — the bar sits at the bottom-left. <kbd>[</kbd> and <kbd>]</kbd> work too. Speed is life up here.',
    check:()=>G.me.thr>0.92},
   {t:'Climb away',
-   d:'Hold <kbd>W</kbd> or <kbd>↑</kbd> to gain altitude — you rise straight up, no need to pull the nose. Climb to <b>800 m</b> above the ground.',
+   d:'Hold <kbd>W</kbd> to gain altitude — you rise straight up, no need to pull the nose. <kbd>S</kbd> drops you. Climb to <b>800 m</b> above the ground.',
    check:()=>altAGL(G.me)>800},
   {t:'Slide sideways',
-   d:'<kbd>←</kbd> and <kbd>→</kbd> slide you left and right without turning — this is how you dodge fire. Slide <b>left</b>, then <b>right</b>.',
+   d:'<kbd>Q</kbd> and <kbd>E</kbd> slide you left and right without turning — this is how you dodge fire. Slide <b>left</b>, then <b>right</b>.',
    tick:()=>{ if(G.me.ctrl.strafe<0)G.tut.slidL=true; if(G.me.ctrl.strafe>0)G.tut.slidR=true; },
    check:()=>G.tut.slidL&&G.tut.slidR},
   {t:'Bank and turn',
@@ -2274,7 +2679,7 @@ const TUTORIAL=[
    d:'In the hangar, open the <b>Defenses</b> tab and build a <b>Sniper Tower</b> or a <b>Surface-to-Air Missile site</b>. It deploys at your HQ and defends it while you are away.',
    check:()=>G.tut.builds>0},
   {t:'Missile lock',
-   d:'Hold the reticle on the drone until the orange <b>LOCK</b> box appears, then launch with <kbd>RMB</kbd> or <kbd>F</kbd>.',
+   d:'Select missiles with <kbd>4</kbd> and hold the reticle on the drone until the orange <b>LOCK</b> box appears, then fire — same trigger as the guns, or <kbd>RMB</kbd> from any weapon.',
    setup:()=>{ grantMissiles(); spawnDrone(rnd(-70,70)); },
    tick:dt=>keepOneDrone(dt),
    check:()=>G.tut.missileFired},
@@ -2345,7 +2750,7 @@ function botName(){ return BOT_NAMES[rndi(0,BOT_NAMES.length-1)]+'-'+rndi(10,99)
 function addBots(n){
   for(let i=0;i<n;i++){
     const team=i%2===0?'red':'blue';
-    const p=newPlane({name:botName(),team,isBot:true});
+    const p=newPlane({name:botName(),team,isBot:true,role:Math.random()<.65?'raider':'interceptor'});
     p.upg={mg:rndi(1,2),engine:rndi(0,1),flare:0,missile:Math.random()<.25?1:0};
     applyUpgrades(p); rearm(p); doRespawn(p);
     G.planes.set(p.id,p);
@@ -2353,7 +2758,7 @@ function addBots(n){
 }
 /** launch a fighter from a hangar — host/solo only, clients receive it in the snapshot */
 function spawnBotFrom(s){
-  const p=newPlane({name:botName(),team:s.team,isBot:true});
+  const p=newPlane({name:botName(),team:s.team,isBot:true,role:Math.random()<.65?'raider':'interceptor'});
   p.upg={mg:rndi(1,2),engine:rndi(0,1)};
   applyUpgrades(p); rearm(p);
   p.pos=[s.pos[0]+rnd(-50,50), s.pos[1]+rnd(200,330), s.pos[2]+rnd(-50,50)];
@@ -2375,7 +2780,7 @@ function startGame(team){
 
   if(net.isHost||net.mode==='solo'){
     addStruct('hq','blue'); addStruct('hq','red');
-    if(!G.tut){   // training starts on an empty, quiet map; the war begins when it ends
+    if(!G.tut&&!G.mission){   // training and missions build their own worlds
       addStruct('spawner','blue'); addStruct('spawner','red');
       addStruct('flak','red'); addStruct('sniper','red'); addStruct('flak','blue');
       addBots(net.mode==='solo'?4:3);
@@ -2389,6 +2794,17 @@ function startGame(team){
 }
 
 $('btnSolo').onclick=()=>{ net.mode='solo'; startGame('blue') };
+$('btnMission').onclick=()=>startMission();
+$('btnSound').onclick=()=>setMuted(!PROFILE.muted);
+$('btnSound2').onclick=()=>setMuted(!PROFILE.muted);
+$('btnResume').onclick=()=>togglePause();
+$('btnQuit').onclick=()=>quitToMenu();
+$('btnMenu').onclick=()=>quitToMenu();
+$('btnAgain').onclick=()=>{
+  $('over').classList.remove('on');
+  if(G.mission){ const m=G.mission; G.mission=null; quitToMenu(); startMission(); }
+  else { G.over=false; resetRound(); }
+};
 $('btnTutorial').onclick=()=>{
   net.mode='solo';
   G.tut={i:0,t:0,done:false,setupDone:false,buys:0,builds:0,drones:[],
@@ -2414,7 +2830,7 @@ function frame(now){
   let dt=(now-last)/1000; last=now;
   dt=Math.min(dt,.05); G.dt=dt; G.t+=dt;
 
-  if(G.started){
+  if(G.started&&!G.paused&&!G.over){
     const p=G.me;
     if(p){
       if(!shopOpen&&p.alive) readInput(p,dt);
@@ -2447,7 +2863,7 @@ function frame(now){
     // passive income + enemy AI economy
     G.credits+=9*dt;
     if(G.tut&&!G.tut.done) stepTutorial(dt);
-    if(authority()&&!(G.tut&&!G.tut.done)){
+    if(authority()&&!(G.tut&&!G.tut.done)&&!G.mission){
       G.economyT-=dt;
       if(G.economyT<=0){
         G.economyT=rnd(150,240);
@@ -2461,12 +2877,13 @@ function frame(now){
         }
       }
     }
+    stepMission(dt);
     netTick(dt);
     updateCamera(dt);
     updateHUD(dt);
     if($('board').classList.contains('on')) updateBoard();
     if(shopOpen&&Math.floor(G.t*4)%2===0) $('shopCred').textContent=Math.floor(G.credits);
-  }else{
+  }else if(!G.started){
     // slow orbit of the map behind the menu
     const a=G.t*.06;
     G.camPos=[Math.cos(a)*1500,760,Math.sin(a)*1500+400];
@@ -2479,6 +2896,8 @@ function frame(now){
 
 buildTurrets();
 buildWorld();
+renderPerm();
+setMuted(PROFILE.muted);
 requestAnimationFrame(frame);
 
 // warn once if the peer library is unreachable (e.g. strict sandbox)
