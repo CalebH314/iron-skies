@@ -318,6 +318,7 @@ td{padding:6px 8px;border-bottom:1px solid rgba(255,255,255,.045)}
 
     <div id="perm">
       <div class="hd"><b>PERMANENT UPGRADES</b><span class="tk" id="tokCount">0 ⬢ TOKENS</span></div>
+      <div id="career"></div>
       <div id="permList"></div>
     </div>
 
@@ -733,9 +734,9 @@ function buildPlaneMesh(tc){
   b.push(); b.box(2.0,1.9,11,body,[0,0,-.5]); b.pop();
   // nose cone — rx(-90) points the prism's +Y axis along -Z, i.e. forward
   b.push(); b.tr(0,0,-6); b.rx(-Math.PI/2); b.prism(.95,.12,3.4,10,body); b.pop();
-  // canopy — tall enough to sit inside; the interior frame matches these bounds
-  b.push(); b.tr(0,1.10,-1.6); b.box(1.30,1.25,3.4,glass); b.pop();
-  b.push(); b.tr(0,1.00,.9); b.box(1.5,1.15,2.2,body); b.pop();
+  // bubble canopy — wide and tall enough that the interior frame fits inside it
+  b.push(); b.tr(0,1.16,-1.7); b.box(1.74,1.45,3.9,glass); b.pop();
+  b.push(); b.tr(0,1.00,1.0); b.box(1.5,1.15,2.0,body); b.pop();
   // main wings (swept)
   for(const s of [1,-1]){
     b.push(); b.tr(s*3.9,-.25,.7); b.ry(s*0.30); b.box(7.4,.34,3.1,body); b.pop();
@@ -810,37 +811,124 @@ function buildStructMesh(type,tc){
 /* Sizes below are chosen from the angle each part should subtend from EYE, not
    picked by eye: coaming ~10 deg below the sight line, panel 9-25 deg below,
    canopy bow ~16 deg up and ~17 deg outboard. */
+/* F-22 style cockpit: a bubble canopy with no centre post, a low glareshield,
+   and a glass panel of three colour displays. PANEL is the frame every
+   instrument is positioned in, so the static bezels and the live symbology
+   below stay in lockstep. */
 const EYE=[0,1.10,-1.2];
-const STICK_AT=[0,.36,-2.3];
+const STICK_AT=[0,.36,-2.25];
+const PANEL={y:.44,z:-3.42,tilt:-.30};
+const MFD={ left:{x:-.56,w:.42,h:.38}, mid:{x:0,w:.62,h:.50}, right:{x:.56,w:.42,h:.38} };
+const RADAR_RANGE=2600;
+
 function buildCockpit(){
   const b=new Builder();
-  const dark=[.11,.12,.14], mid=[.19,.21,.24], rail=[.27,.29,.32], pad=[.10,.11,.13];
-  b.push(); b.tr(0,.34,-2.4); b.box(1.16,.06,2.8,pad); b.pop();          // tub floor
+  const dark=[.10,.11,.13], mid=[.17,.19,.22], rail=[.24,.26,.29], pad=[.09,.10,.12];
+  b.push(); b.tr(0,.34,-2.4); b.box(1.30,.06,2.9,pad); b.pop();          // tub floor
   for(const s of [1,-1]){
-    b.push(); b.tr(s*.58,.52,-2.4); b.box(.18,.26,1.5,mid); b.pop();     // side console
-    b.push(); b.tr(s*.64,.80,-1.5); b.box(.08,.08,3.6,rail); b.pop();    // canopy sill
-    b.push(); b.tr(s*.62,1.70,-1.5); b.box(.07,.07,3.4,rail); b.pop();   // canopy top rail
+    b.push(); b.tr(s*.66,.50,-2.4); b.box(.18,.26,1.6,mid); b.pop();     // side console
+    b.push(); b.tr(s*.80,.78,-1.5); b.box(.07,.07,3.8,rail); b.pop();    // canopy sill
+    b.push(); b.tr(s*.78,1.82,-1.5); b.box(.06,.06,3.6,rail); b.pop();   // canopy top rail
   }
-  b.push(); b.tr(0,.50,-3.15); b.rx(-.35); b.box(1.44,.55,.08,mid); b.pop();  // instrument panel
-  b.push(); b.tr(0,.80,-3.30); b.box(1.50,.10,.50,dark); b.pop();        // coaming
-  b.push(); b.tr(0,.86,-3.25); b.box(.20,.10,.22,dark); b.pop();         // gunsight housing
-  // windscreen bow frame — no centre post, it would sit on the gunsight line
-  b.push(); b.tr(0,1.72,-3.30); b.box(1.40,.08,.09,rail); b.pop();
-  for(const s of [1,-1]){ b.push(); b.tr(s*.66,1.26,-3.30); b.box(.08,.92,.09,rail); b.pop(); }
-  b.push(); b.tr(0,1.15,.55); b.box(1.26,.95,.09,pad); b.pop();          // rear bulkhead
-  b.push(); b.tr(0,1.46,.45); b.box(.44,.30,.16,pad); b.pop();           // headrest
+  // glareshield sits low and shallow so the nose and horizon stay visible
+  b.push(); b.tr(0,.74,-3.46); b.box(1.72,.08,.44,dark); b.pop();
+  b.push(); b.tr(0,.80,-3.34); b.box(.18,.09,.18,dark); b.pop();         // HUD camera bump
+  // HUD combiner glass frame, the F-22's wide-angle sight
+  b.push(); b.tr(0,1.02,-3.52); b.box(.62,.03,.05,rail); b.pop();
+  for(const s of [1,-1]){ b.push(); b.tr(s*.31,.90,-3.52); b.box(.035,.28,.05,rail); b.pop(); }
+  // instrument panel with three recessed display bezels
+  b.push(); b.tr(0,PANEL.y,PANEL.z); b.rx(PANEL.tilt);
+  b.push(); b.box(1.74,.64,.07,mid); b.pop();
+  for(const k in MFD){ const m=MFD[k];
+    b.push(); b.tr(m.x,.02,.038); b.box(m.w+.05,m.h+.05,.02,[.06,.07,.09]); b.pop(); }
+  b.push(); b.tr(0,.26,.04); b.box(.5,.07,.02,[.06,.07,.09]); b.pop();   // upfront controls
+  b.pop();
+  // bow frame: pushed forward, outboard and thinned to open up the view
+  b.push(); b.tr(0,1.86,-3.95); b.box(1.66,.06,.07,rail); b.pop();
+  for(const s of [1,-1]){ b.push(); b.tr(s*.80,1.32,-3.95); b.box(.055,1.10,.07,rail); b.pop(); }
+  b.push(); b.tr(0,1.15,.55); b.box(1.40,.95,.09,pad); b.pop();          // rear bulkhead
+  b.push(); b.tr(0,1.46,.45); b.box(.46,.30,.16,pad); b.pop();           // headrest
   return b.build();
 }
-/** instrument faces, drawn unlit so they read as backlit gauges */
+/** static backlit detail: display glass and the upfront-controls strip */
 function buildCockpitGlow(){
   const b=new Builder();
-  const amber=[1,.70,.20], grn=[.32,1,.70], cyan=[.42,.84,1], red=[1,.38,.32];
-  b.push(); b.tr(0,.50,-3.15); b.rx(-.35);
-  const faces=[[-.50,.13,amber],[-.17,.13,grn],[.17,.13,cyan],[.50,.13,amber],
-               [-.34,-.15,grn],[.00,-.15,red],[.34,-.15,cyan]];
-  for(const f of faces){ b.push(); b.tr(f[0],f[1],.055); b.box(.15,.13,.03,f[2]); b.pop(); }
+  b.push(); b.tr(0,PANEL.y,PANEL.z); b.rx(PANEL.tilt);
+  for(const k in MFD){ const m=MFD[k];
+    b.push(); b.tr(m.x,.02,.05); b.box(m.w,m.h,.012,[.03,.10,.09]); b.pop(); }
+  const t=[[-.19,.26,[.32,1,.70]],[-.06,.26,[1,.70,.20]],[.07,.26,[.42,.84,1]],[.20,.26,[.32,1,.70]]];
+  for(const f of t){ b.push(); b.tr(f[0],f[1],.052); b.box(.10,.045,.012,f[2]); b.pop(); }
   b.pop();
   return b.build();
+}
+
+/* ---- live instrument symbology, rebuilt into transforms every frame ---- */
+const _pm=M4.create(), _im=M4.create();
+/** matrix for a mark at (x,y) on the panel, sized w x h, given the plane matrix */
+function panelAt(planeM,x,y,w,h,rot){
+  M4.trans(_pm,PANEL.x||0,PANEL.y,PANEL.z);
+  M4.mul(_im,planeM,_pm);
+  M4.mul(_im,_im,M4.rotX(_pm,PANEL.tilt));
+  M4.mul(_im,_im,M4.trans(_pm,x,y,.056));
+  if(rot) M4.mul(_im,_im,M4.rotZ(_pm,rot));
+  M4.mul(_im,_im,M4.scl(_pm,w,h,.01));
+  return _im;
+}
+function drawInstruments(p,planeM){
+  const m=MFD;
+  // ---- left display: radar scope, nose-up, live contacts ----
+  const hasRadar=G.structures.some(s=>s.alive&&s.type==='radar'&&s.team===p.team);
+  draw(MESH.cube,panelAt(planeM,m.left.x,.02,m.left.w*.99,.006),{unlit:true,tint:[.16,.42,.38]});
+  draw(MESH.cube,panelAt(planeM,m.left.x,.02,.006,m.left.h*.99),{unlit:true,tint:[.16,.42,.38]});
+  const inv=[-p.quat[0],-p.quat[1],-p.quat[2],p.quat[3]];
+  for(const q of G.planes.values()){
+    if(q===p||!q.alive) continue;
+    const friend=q.team===p.team;
+    const d=dist(q.pos,p.pos);
+    if(d>RADAR_RANGE) continue;
+    if(!friend&&!hasRadar&&d>1100) continue;      // unaided sensors are short-ranged
+    const rel=qrot([0,0,0],[q.pos[0]-p.pos[0],q.pos[1]-p.pos[1],q.pos[2]-p.pos[2]],inv);
+    const x=clamp(rel[0]/RADAR_RANGE,-1,1)*m.left.w*.46;
+    const y=clamp(-rel[2]/RADAR_RANGE,-1,1)*m.left.h*.46;
+    draw(MESH.cube,panelAt(planeM,m.left.x+x,.02+y,.026,.026),
+      {unlit:true,tint:friend?[.3,1,.7]:[1,.28,.22]});
+  }
+  draw(MESH.cube,panelAt(planeM,m.left.x,.02,.016,.016),{unlit:true,tint:[1,1,1]});
+
+  // ---- centre display: attitude, with a horizon that banks and pitches ----
+  const f=fwdOf(p,[0,0,0]), u=upOf(p,[0,0,0]), r=rightOf(p,[0,0,0]);
+  const bank=Math.atan2(r[1],u[1]);
+  const pit=Math.asin(clamp(f[1],-1,1));
+  const off=clamp(-pit*.42,-m.mid.h*.36,m.mid.h*.36);
+  draw(MESH.cube,panelAt(planeM,m.mid.x,.02+off+m.mid.h*.16,m.mid.w*.86,m.mid.h*.30,-bank),
+    {unlit:true,tint:[.16,.42,.75]});                       // sky
+  draw(MESH.cube,panelAt(planeM,m.mid.x,.02+off-m.mid.h*.16,m.mid.w*.86,m.mid.h*.30,-bank),
+    {unlit:true,tint:[.34,.24,.12]});                       // ground
+  draw(MESH.cube,panelAt(planeM,m.mid.x,.02+off,m.mid.w*.88,.012,-bank),
+    {unlit:true,tint:[1,1,1]});                             // horizon line
+  draw(MESH.cube,panelAt(planeM,m.mid.x,.02,.13,.012),{unlit:true,tint:[1,.85,.2]});
+  draw(MESH.cube,panelAt(planeM,m.mid.x,.02,.012,.05),{unlit:true,tint:[1,.85,.2]});
+  // speed and altitude tapes down the sides of the centre display
+  const spd=clamp(p.speed/340,0,1), agl=clamp(altAGL(p)/1400,0,1);
+  draw(MESH.cube,panelAt(planeM,m.mid.x-m.mid.w*.46,.02-m.mid.h*.5*(1-spd),.03,m.mid.h*spd),
+    {unlit:true,tint:[.35,1,.72]});
+  draw(MESH.cube,panelAt(planeM,m.mid.x+m.mid.w*.46,.02-m.mid.h*.5*(1-agl),.03,m.mid.h*agl),
+    {unlit:true,tint:[.42,.84,1]});
+
+  // ---- right display: hull, throttle, flares, ammo ----
+  const ammo=p.ammoMax&&p.ammoMax[p.wep]?clamp((p.ammo[p.wep]||0)/p.ammoMax[p.wep],0,1):1;
+  const bars=[
+    [clamp(p.hp/p.maxHp,0,1),[.35,1,.62]],
+    [clamp(p.thr,0,1),[.42,.84,1]],
+    [p.maxFlares?clamp(p.flares/p.maxFlares,0,1):0,[1,.78,.25]],
+    [ammo,[1,.55,.25]]
+  ];
+  bars.forEach((bar,i)=>{
+    const x=m.right.x+(i-1.5)*.085;
+    draw(MESH.cube,panelAt(planeM,x,.02,.055,m.right.h*.82),{unlit:true,tint:[.05,.07,.09]});
+    const h=m.right.h*.82*bar[0];
+    draw(MESH.cube,panelAt(planeM,x,.02-(m.right.h*.82-h)/2,.055,h),{unlit:true,tint:bar[1]});
+  });
 }
 /** control column — drawn with its own transform so it answers your inputs */
 function buildStick(){
@@ -962,14 +1050,31 @@ const PERKS=[
   {id:'wings',  name:'Composite Wings',     max:4, cost:l=>2+l, eff:l=>`+${l*10}% turn rate`},
   {id:'chaff',  name:'Expanded Countermeasures', max:4, cost:l=>1+l, eff:l=>`+${l*8} flares carried`}
 ];
-const PROFILE={tokens:0,perks:{},muted:false};
+const PROFILE={tokens:0,perks:{},muted:false,level:1,wins:0,losses:0,
+               kills:0,deaths:0,missions:0,callsign:''};
 function loadProfile(){
   try{
     const raw=localStorage.getItem('ironskies.profile');
     if(raw){ const d=JSON.parse(raw);
-      PROFILE.tokens=d.tokens|0; PROFILE.perks=d.perks||{}; PROFILE.muted=!!d.muted; }
+      PROFILE.tokens=d.tokens|0; PROFILE.perks=d.perks||{}; PROFILE.muted=!!d.muted;
+      PROFILE.level=Math.max(1,d.level|0); PROFILE.wins=d.wins|0; PROFILE.losses=d.losses|0;
+      PROFILE.kills=d.kills|0; PROFILE.deaths=d.deaths|0; PROFILE.missions=d.missions|0;
+      PROFILE.callsign=d.callsign||''; }
   }catch(e){}
 }
+/* Difficulty rises with your campaign level and is saved with the profile, so
+   the enemy stays ahead of your permanent perks instead of falling behind. */
+const diff={
+  hq(){ return 1+.22*(PROFILE.level-1) },                       // tougher HQ
+  struct(){ return 1+.12*(PROFILE.level-1) },                   // tougher defences
+  hangarRate(){ return Math.pow(.90,PROFILE.level-1) },         // faster launches
+  hangars(){ return 1+Math.floor((PROFILE.level-1)/3) },        // more of them
+  cap(){ return 5+Math.floor((PROFILE.level-1)/2) },            // more airborne
+  extraDefences(){ return Math.min(PROFILE.level-1,7) },
+  bots(){ return 4+Math.floor((PROFILE.level-1)/2) }
+};
+/** is the enemy scaled right now? not during training or a mission */
+function campaign(){ return G.started&&!G.tut&&!G.mission }
 function saveProfile(){
   try{ localStorage.setItem('ironskies.profile',JSON.stringify(PROFILE)); }catch(e){}
 }
@@ -1047,7 +1152,9 @@ function addStruct(type,team,ownerId,idx){
   const pos = type==='hq' ? [BASES[team][0],terrainH(BASES[team][0],BASES[team][2]),BASES[team][2]]
             : type==='spawner' ? hangarPos(team)
                           : structPos(team,idx===undefined?structSlot[team]++:idx);
-  const s={id:uid(),type,team,owner:ownerId||null,pos,hp:cfg.hp,maxHp:cfg.hp,cd:0,yaw:team==='blue'?Math.PI:0,pitch:0,spin:0,alive:true};
+  let hp=cfg.hp;
+  if(campaign()&&team!==G.team) hp=Math.round(hp*(type==='hq'?diff.hq():diff.struct()));
+  const s={id:uid(),type,team,owner:ownerId||null,pos,hp,maxHp:hp,cd:0,yaw:team==='blue'?Math.PI:0,pitch:0,spin:0,alive:true};
   G.structures.push(s);
   return s;
 }
@@ -1534,9 +1641,11 @@ function stepStructs(dt){
       if(!authority) continue;
       s.cd-=dt;
       if(s.cd<=0){
-        s.cd=cfg.cd*Math.pow(.8,G.hangarLvl[s.team]||0);
+        const foe=campaign()&&s.team!==G.team;
+        s.cd=cfg.cd*Math.pow(.8,G.hangarLvl[s.team]||0)*(foe?diff.hangarRate():1);
+        const cap=foe?diff.cap():cfg.cap;
         const up=[...G.planes.values()].filter(q=>q.isBot&&q.team===s.team&&q.alive&&!q.passive).length;
-        if(up<cfg.cap) spawnBotFrom(s);
+        if(up<cap) spawnBotFrom(s);
       }
       continue;
     }
@@ -1880,6 +1989,7 @@ function render(){
     M4.fromRTS(model,p.quat,p.pos,1);
     draw(MESH.cockpit,model,{tint:[1.25,1.25,1.3]});
     draw(MESH.cockpitGlow,model,{unlit:true});
+    drawInstruments(p,model);
     M4.fromRTS(model,p.quat,p.pos,1);
     M4.mul(model,model,M4.trans(tmpM,STICK_AT[0],STICK_AT[1],STICK_AT[2]));
     M4.mul(model,model,M4.rotZ(tmpM,-p.ctrl.roll*.30));
@@ -2194,14 +2304,21 @@ function endRound(winner){
   $('pause').classList.remove('on');
   if(mouseLocked) document.exitPointerLock();
   const win=winner===G.team;
-  let tok=0;
-  if(win&&!G.tut){ tok=3; PROFILE.tokens+=tok; saveProfile(); }
+  let tok=0, levelled=false;
+  if(!G.tut){
+    PROFILE.kills+=G.kills; PROFILE.deaths+=G.deaths;
+    if(win){ tok=2+PROFILE.level; PROFILE.tokens+=tok; PROFILE.wins++;
+             PROFILE.level++; levelled=true; }
+    else PROFILE.losses++;
+    saveProfile();
+  }
   $('overTitle').textContent=win?'VICTORY':'DEFEAT';
   $('overTitle').style.color=win?'#7fe6c0':'#ff7a6b';
   $('overText').innerHTML=win
     ? `You levelled the enemy Command HQ.<br/>${G.kills} kills · ${G.deaths} losses`
     : `Your Command HQ was destroyed.<br/>${G.kills} kills · ${G.deaths} losses`;
-  $('tokline').textContent=tok?`+${tok} ⬢ TOKENS EARNED`:'';
+  $('tokline').innerHTML=(tok?`+${tok} ⬢ TOKENS EARNED`:'')+
+    (levelled?`<br/><span style="color:#c9a3ff">CAMPAIGN LEVEL ${PROFILE.level} — the enemy will be stronger</span>`:'');
   $('over').classList.add('on');
   feed(`<span class="${winner}">${winner.toUpperCase()} TEAM WINS</span>`);
   sfx(win?'buy':'boom',.9);
@@ -2584,7 +2701,8 @@ function endMission(won){
   M.done=true; G.over=true; G.paused=false;
   if(mouseLocked) document.exitPointerLock();
   let tok=0;
-  if(won){ tok=M.def.tokens; PROFILE.tokens+=tok; saveProfile(); }
+  if(won){ tok=M.def.tokens; PROFILE.tokens+=tok; PROFILE.missions++; }
+  PROFILE.kills+=G.kills; PROFILE.deaths+=G.deaths; saveProfile();
   $('overTitle').textContent=won?'MISSION COMPLETE':'MISSION FAILED';
   $('overTitle').style.color=won?'#7fe6c0':'#ff7a6b';
   $('overText').innerHTML=M.def.name+'<br/>'+M.def.label();
@@ -2598,6 +2716,14 @@ function endMission(won){
 function renderPerm(){
   $('perm').classList.add('on');
   $('tokCount').textContent=PROFILE.tokens+' ⬢ TOKENS';
+  $('career').innerHTML=
+    `<div style="font-size:11px;color:#8fa8c4;letter-spacing:1.5px;margin-bottom:12px">
+      CAMPAIGN LEVEL <b style="color:#c9a3ff">${PROFILE.level}</b> ·
+      ${PROFILE.wins}W / ${PROFILE.losses}L ·
+      ${PROFILE.kills} kills · ${PROFILE.missions} missions flown
+      ${PROFILE.level>1?'<span style="color:#ff9a3c"> · enemy HQ +'+Math.round((diff.hq()-1)*100)+'% hull</span>':''}
+     </div>`;
+  if($('nameIn')&&!$('nameIn').value&&PROFILE.callsign) $('nameIn').value=PROFILE.callsign;
   $('permList').innerHTML=PERKS.map(k=>{
     const l=perk(k.id), maxed=l>=k.max, c=k.cost(l);
     const can=!maxed&&PROFILE.tokens>=c;
@@ -2776,7 +2902,8 @@ function startGame(team){
   audioInit();
   G.started=true; G.team=team||'blue'; G.mode=net.mode;
   G.economyT=rnd(110,160);   // don't let the enemy build on the very first frame
-  const nm=($('nameIn').value||'').trim().toUpperCase().slice(0,12)||'PILOT-'+rndi(10,99);
+  const nm=($('nameIn').value||'').trim().toUpperCase().slice(0,12)||PROFILE.callsign||'PILOT-'+rndi(10,99);
+  PROFILE.callsign=nm; saveProfile();
   const me=newPlane({id:G.myId,name:nm,team:G.team,isLocal:true});
   me.upg={}; applyUpgrades(me); rearm(me); doRespawn(me);
   G.me=me; G.planes.set(me.id,me);
@@ -2784,9 +2911,14 @@ function startGame(team){
   if(net.isHost||net.mode==='solo'){
     addStruct('hq','blue'); addStruct('hq','red');
     if(!G.tut&&!G.mission){   // training and missions build their own worlds
-      addStruct('spawner','blue'); addStruct('spawner','red');
-      addStruct('flak','red'); addStruct('sniper','red'); addStruct('flak','blue');
-      addBots(net.mode==='solo'?4:3);
+      const foe=G.team==='blue'?'red':'blue';
+      addStruct('spawner',G.team); addStruct('spawner',foe);
+      // the enemy grows a bigger air force and more defences each campaign level
+      for(let i=1;i<diff.hangars();i++) addStruct('spawner',foe);
+      addStruct('flak',foe); addStruct('sniper',foe); addStruct('flak',G.team);
+      const kinds=['flak','sniper','sam','radar','repair'];
+      for(let i=0;i<diff.extraDefences();i++) addStruct(kinds[i%kinds.length],foe);
+      addBots(net.mode==='solo'?diff.bots():3);
     }
   }
   $('menu').classList.remove('on');

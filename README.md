@@ -28,6 +28,15 @@ peer-to-peer over WebRTC, so game traffic goes directly between computers.
 New players should start with **FLIGHT TRAINING**, a ten-step course covering
 flying, gunnery, missiles, flares and building base defenses.
 
+You fly from an F-22 style cockpit: a bubble canopy, a wide-angle HUD combiner
+and three colour displays — a live radar scope, an attitude indicator with speed
+and altitude tapes, and hull/throttle/flare/ammo gauges.
+
+The campaign gets harder as you win. Each victory raises your **campaign level**,
+and the enemy answers with a tougher HQ, more hangars launching aircraft faster,
+and more defences. Level, tokens, perks and career record are saved in your
+browser.
+
 **Missions** are short solo contracts — precision strikes, fighter sweeps, a
 low-level gate course, and base defence. Completing one pays **tokens**, which
 buy permanent upgrades on the menu that carry into every mode.
