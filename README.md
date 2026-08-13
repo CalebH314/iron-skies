@@ -16,9 +16,10 @@ peer-to-peer over WebRTC, so game traffic goes directly between computers.
 
 | | |
 |---|---|
-| Mouse | aim the nose |
-| `A` / `D` · `Q` / `E` | roll · rudder |
-| `W` / `S` · `Shift` | throttle · afterburner |
+| `W` / `↑` · `S` / `↓` | climb · dive (straight up and down, no turning) |
+| `←` `→` | slide left and right without turning |
+| Mouse · `A` / `D` · `Q` / `E` | aim the nose · roll · rudder |
+| Mouse wheel · `Shift` | throttle · afterburner |
 | `LMB` / `Space` · `RMB` / `F` | guns · missiles |
 | `1`–`5` · `X` · `R` | weapon · flares · rearm at base |
 | `B` · `C` · `Tab` | hangar · camera · scoreboard |

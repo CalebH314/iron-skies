@@ -226,7 +226,8 @@ td{padding:6px 8px;border-bottom:1px solid rgba(255,255,255,.045)}
 
     <div class="hint" style="margin-top:18px">
       New here? <b>FLIGHT TRAINING</b> walks you through flying, gunnery, missiles and building base defenses in about four minutes.<br/><br/>
-      <b>FLY</b> mouse aims · <kbd>A</kbd><kbd>D</kbd> roll · <kbd>Q</kbd><kbd>E</kbd> rudder · <kbd>W</kbd><kbd>S</kbd> throttle · <kbd>Shift</kbd> afterburner<br/>
+      <b>MOVE</b> <kbd>W</kbd>/<kbd>↑</kbd> climb · <kbd>S</kbd>/<kbd>↓</kbd> dive · <kbd>←</kbd><kbd>→</kbd> slide sideways — straight up, down and across, no turning<br/>
+      <b>FLY</b> mouse aims · <kbd>A</kbd><kbd>D</kbd> roll · <kbd>Q</kbd><kbd>E</kbd> rudder · mouse wheel throttle · <kbd>Shift</kbd> afterburner<br/>
       <b>FIGHT</b> <kbd>LMB</kbd>/<kbd>Space</kbd> fire · <kbd>RMB</kbd>/<kbd>F</kbd> missile · <kbd>1</kbd>–<kbd>5</kbd> weapon · <kbd>X</kbd> flares · <kbd>R</kbd> resupply at base<br/>
       <b>BUILD</b> <kbd>B</kbd> hangar &amp; shop — buy weapons, armor, <b>Sniper Towers</b> and <b>Surface-to-Air Missile sites</b><br/>
       <b>VIEW</b> you fly from the <b>cockpit</b> — <kbd>C</kbd> cycles cockpit / chase / cinematic · <kbd>Tab</kbd> scoreboard · <kbd>Esc</kbd> release mouse<br/><br/>
@@ -604,7 +605,7 @@ function buildWorld(){
   MESH.cockpit=buildCockpit(); MESH.cockpitGlow=buildCockpitGlow(); MESH.stick=buildStick();
 
   /* --- projectiles / fx --- */
-  const tr=new Builder(); tr.box(.18,.18,3.4,[1,1,1]); MESH.tracer=tr.build();
+  const tr=new Builder(); tr.box(.62,.62,3.4,[1,1,1]); MESH.tracer=tr.build();
   const ms=new Builder();
   ms.push();ms.rx(-Math.PI/2);ms.prism(.34,.34,3.4,8,[.80,.82,.86]);ms.tr(0,3.4,0);ms.prism(.34,0,1.1,8,[.9,.35,.25]);ms.pop();
   ms.push();ms.tr(0,0,1.5);ms.box(1.5,.1,.7,[.85,.3,.25]);ms.box(.1,1.5,.7,[.85,.3,.25]);ms.pop();
@@ -779,12 +780,14 @@ const STRUCTS={
            desc:'Friendly aircraft flying low over the pad repair and rearm rapidly.'}
 };
 
+/* `len`/`wid` scale the tracer mesh — tuned so rounds read clearly in flight
+   rather than being physically accurate specks. */
 const WEAPONS={
-  mg:     {name:'Machine Guns', slot:1, rpm:640, dmg:7,  speed:1150, spread:.014, ammo:-1,  col:[1,.88,.42], len:3.0, unlocked:true},
-  cannon: {name:'Heavy Cannon', slot:2, rpm:130, dmg:38, speed:980,  spread:.004, ammo:180, col:[1,.60,.24], len:4.2},
-  rocket: {name:'Rocket Pods',  slot:3, rpm:260, dmg:30, speed:560,  spread:.030, ammo:60,  col:[1,.45,.25], len:3.6, salvo:2, splash:34},
+  mg:     {name:'Machine Guns', slot:1, rpm:640, dmg:7,  speed:1150, spread:.014, ammo:-1,  col:[1,.88,.42], len:7.5,  wid:1.0, unlocked:true},
+  cannon: {name:'Heavy Cannon', slot:2, rpm:130, dmg:38, speed:980,  spread:.004, ammo:180, col:[1,.60,.24], len:10.0, wid:1.7},
+  rocket: {name:'Rocket Pods',  slot:3, rpm:260, dmg:30, speed:560,  spread:.030, ammo:60,  col:[1,.45,.25], len:8.5,  wid:1.6, salvo:2, splash:34},
   missile:{name:'Homing Missile',slot:4,rpm:42,  dmg:78, speed:360,  spread:0,    ammo:6,   col:[1,.5,.3],  homing:true, splash:46},
-  laser:  {name:'Plasma Lance', slot:5, rpm:900, dmg:4.6,speed:1900, spread:.002, ammo:520, col:[.45,1,.92], len:6.0}
+  laser:  {name:'Plasma Lance', slot:5, rpm:900, dmg:4.6,speed:1900, spread:.002, ammo:520, col:[.45,1,.92], len:15.0, wid:1.35}
 };
 
 const SHOP=[
@@ -839,7 +842,7 @@ function newPlane(o){
     id:uid(), name:'PILOT', team:'blue', isBot:false, isLocal:false, remote:false,
     pos:[0,BASE_Y+120,0], quat:[0,0,0,1], q2:[0,0,0,1], tpos:null, tquat:null,
     speed:150, thr:.62, hp:100, maxHp:100, alive:true, respawn:0,
-    ctrl:{pitch:0,yaw:0,roll:0,fire:0,fire2:0,ab:0},
+    ctrl:{pitch:0,yaw:0,roll:0,lift:0,strafe:0,fire:0,fire2:0,ab:0},
     wep:'mg', cool:{}, ammo:{}, flares:0, maxFlares:0,
     upg:{}, kills:0, deaths:0, score:0, lock:null, lockT:0, lastHitBy:null, aiT:0, aiTarget:null
   },o);
@@ -942,6 +945,7 @@ addEventListener('keydown',e=>{
   if(e.code==='Tab'){e.preventDefault();$('board').classList.add('on');updateBoard()}
   keys[e.code]=true;
   if(!G.started) return;
+  if(e.code.startsWith('Arrow')) e.preventDefault();
   if(e.code==='KeyB'){e.preventDefault();toggleShop()}
   if(e.code==='KeyC'){G.camMode=(G.camMode+1)%3}
   if(e.code==='Escape'&&mouseLocked) document.exitPointerLock();
@@ -965,6 +969,12 @@ canvas.addEventListener('mousedown',e=>{
 addEventListener('mouseup',e=>{if(e.button===0)mouse.fire=false;if(e.button===2)mouse.fire2=false});
 addEventListener('contextmenu',e=>{if(G.started)e.preventDefault()});
 const mouse={fire:false,fire2:false};
+// throttle lives on the wheel now that W/S climb and descend
+addEventListener('wheel',e=>{
+  if(!G.started||!G.me||shopOpen) return;   // let the hangar list scroll normally
+  e.preventDefault();
+  G.me.thr=clamp(G.me.thr-Math.sign(e.deltaY)*.07,0,1);
+},{passive:false});
 document.addEventListener('pointerlockchange',()=>{mouseLocked=document.pointerLockElement===canvas});
 addEventListener('mousemove',e=>{
   if(!mouseLocked) return;
@@ -978,13 +988,19 @@ function readInput(p,dt){
   stick.x=lerp(stick.x,0,clamp(dt*1.1,0,1));
   stick.y=lerp(stick.y,0,clamp(dt*1.1,0,1));
   let pitch=-stick.y, roll=stick.x, yaw=0;
-  if(keys.ArrowUp)pitch+=1; if(keys.ArrowDown)pitch-=1;
-  if(keys.ArrowLeft)roll-=1; if(keys.ArrowRight)roll+=1;
   if(keys.KeyA)roll-=1; if(keys.KeyD)roll+=1;
   if(keys.KeyQ)yaw-=1; if(keys.KeyE)yaw+=1;
-  if(keys.KeyW)p.thr=clamp(p.thr+dt*.55,0,1);
-  if(keys.KeyS)p.thr=clamp(p.thr-dt*.55,0,1);
   c.pitch=clamp(pitch,-1,1); c.roll=clamp(roll,-1,1); c.yaw=clamp(yaw,-1,1);
+  // direct translation: climb/dive and slide, with no attitude change at all
+  let lift=0, strafe=0;
+  if(keys.KeyW||keys.ArrowUp)   lift+=1;
+  if(keys.KeyS||keys.ArrowDown) lift-=1;
+  if(keys.ArrowLeft)  strafe-=1;
+  if(keys.ArrowRight) strafe+=1;
+  c.lift=lift; c.strafe=strafe;
+  // throttle moved off W/S when those became altitude
+  if(keys.BracketRight) p.thr=clamp(p.thr+dt*.55,0,1);
+  if(keys.BracketLeft)  p.thr=clamp(p.thr-dt*.55,0,1);
   c.ab=(keys.ShiftLeft||keys.ShiftRight)?1:0;
   c.fire=(mouse.fire||keys.Space)?1:0;
   c.fire2=(mouse.fire2||keys.KeyF)?1:0;
@@ -1000,6 +1016,7 @@ function tryResupply(p){
 }
 
 /* -------------------------- flight simulation --------------------------- */
+const LIFT_SPEED=90, STRAFE_SPEED=85;   // m/s of direct movement
 const _f=[0,0,0],_u=[0,0,0],_r=[0,0,0],_dq=[0,0,0,1],_tmp=[0,0,0];
 function fwdOf(p,out){return qrot(out||_f,[0,0,-1],p.quat)}
 function upOf(p,out){return qrot(out||_u,[0,1,0],p.quat)}
@@ -1033,6 +1050,21 @@ function simPlane(p,dt){
   p.pos[1]+=f[1]*p.speed*dt;
   p.pos[2]+=f[2]*p.speed*dt;
   p.pos[1]-=Math.max(0,(80-p.speed))*.9*dt;   // sag when slow
+
+  // direct translation, deliberately independent of attitude: climb is along
+  // world up, and the slide is flattened onto the horizontal so banking does
+  // not tip it into a dive
+  if(c.lift||c.strafe){
+    if(c.lift) p.pos[1]+=c.lift*LIFT_SPEED*dt;
+    if(c.strafe){
+      const r=rightOf(p,[0,0,0]);
+      const rl=Math.hypot(r[0],r[2]);
+      if(rl>1e-4){
+        p.pos[0]+=r[0]/rl*c.strafe*STRAFE_SPEED*dt;
+        p.pos[2]+=r[2]/rl*c.strafe*STRAFE_SPEED*dt;
+      }
+    }
+  }
 
   // soft world boundary
   for(const ax of [0,2]){
@@ -1069,7 +1101,7 @@ function doRespawn(p){
 
 /* ---------------------------- weapons ----------------------------------- */
 function spawnBullet(o){
-  G.bullets.push(Object.assign({life:3.2,dmg:10,team:'blue',owner:null,col:[1,1,1],len:3,splash:0,homing:false,target:null},o));
+  G.bullets.push(Object.assign({life:3.2,dmg:10,team:'blue',owner:null,col:[1,1,1],len:3,wid:1,splash:0,homing:false,target:null},o));
 }
 function fireWeapon(p,dt){
   const c=p.ctrl;
@@ -1097,7 +1129,7 @@ function fireWeapon(p,dt){
         const l=Math.hypot(...dir); dir[0]/=l;dir[1]/=l;dir[2]/=l;
         const dmg=w.dmg*(p.dmgMul&&p.dmgMul[id]?p.dmgMul[id]:1);
         spawnBullet({pos:org.slice(),vel:[dir[0]*w.speed+f[0]*p.speed*.3,dir[1]*w.speed+f[1]*p.speed*.3,dir[2]*w.speed+f[2]*p.speed*.3],
-          dmg,team:p.team,owner:p.id,col:w.col,len:w.len,splash:w.splash||0,life:id==='laser'?1.4:3.0,kind:id});
+          dmg,team:p.team,owner:p.id,col:w.col,len:w.len,wid:w.wid||1,splash:w.splash||0,life:id==='laser'?1.4:3.0,kind:id});
       }
       if(p.isLocal||dist(p.pos,G.me?G.me.pos:[0,0,0])<900)
         sfxAt(id==='cannon'||id==='rocket'?'cannon':'gun',p.pos,p.isLocal?.55:.3);
@@ -1358,7 +1390,7 @@ function fireStruct(s,target){
     spawnBullet({pos:org.slice(),
       vel:[(to[0]/l+rnd(-sprd,sprd))*sp,(to[1]/l+rnd(-sprd,sprd))*sp,(to[2]/l+rnd(-sprd,sprd))*sp],
       dmg:cfg.dmg, team:s.team, owner:s.owner||('s:'+s.id),
-      col:s.type==='sniper'?[.6,1,1]:[1,.7,.3], len:s.type==='sniper'?7:2.4, life:2.5, splash:s.type==='flak'?10:0});
+      col:s.type==='sniper'?[.6,1,1]:[1,.7,.3], len:s.type==='sniper'?16:6, wid:s.type==='sniper'?1.6:1.4, life:2.5, splash:s.type==='flak'?10:0});
     sfxAt(s.type==='sniper'?'cannon':'gun',org,.5);
     net.send({t:'sshot',s:s.id,p:org.map(v=>+v.toFixed(1)),v:[to[0]/l*sp,to[1]/l*sp,to[2]/l*sp].map(v=>+v.toFixed(1))});
   }
@@ -1557,7 +1589,7 @@ function render(){
     const l=Math.hypot(...b.vel)||1;
     const q=qLookDir([0,0,0,1],[b.vel[0]/l,b.vel[1]/l,b.vel[2]/l],[0,1,0]);
     M4.fromRTS(model,q,b.pos,1);
-    M4.mul(model,model,M4.scl(tmpM,1,1,b.len/3.4));
+    M4.mul(model,model,M4.scl(tmpM,b.wid,b.wid,b.len/3.4));
     draw(MESH.tracer,model,{unlit:true,tint:b.col});
   }
   // --- missiles ---
@@ -1977,7 +2009,7 @@ function onNet(raw,conn){
         const side=(i%2?-1:1)*(m.w==='mg'?2.6:m.w==='rocket'?4.6:.8);
         spawnBullet({pos:[p.pos[0]+f[0]*7+r[0]*side,p.pos[1]+f[1]*7+r[1]*side-.4,p.pos[2]+f[2]*7+r[2]*side],
           vel:[f[0]*w.speed,f[1]*w.speed,f[2]*w.speed],dmg:w.dmg*(1+(p.upg[m.w]||0)*.2),team:p.team,owner:p.id,
-          col:w.col,len:w.len,splash:w.splash||0,life:m.w==='laser'?1.4:3.0,kind:m.w});
+          col:w.col,len:w.len,wid:w.wid||1,splash:w.splash||0,life:m.w==='laser'?1.4:3.0,kind:m.w});
       }
       sfxAt('gun',p.pos,.28);
       break;
@@ -1994,7 +2026,7 @@ function onNet(raw,conn){
       relay(m,conn);
       const s=G.structures.find(x=>x.id===m.s); if(!s) break;
       spawnBullet({pos:m.p.slice(),vel:m.v.slice(),dmg:STRUCTS[s.type].dmg,team:s.team,owner:s.owner||('s:'+s.id),
-        col:s.type==='sniper'?[.6,1,1]:[1,.7,.3],len:s.type==='sniper'?7:2.4,life:2.5,splash:s.type==='flak'?10:0});
+        col:s.type==='sniper'?[.6,1,1]:[1,.7,.3],len:s.type==='sniper'?16:6,wid:s.type==='sniper'?1.6:1.4,life:2.5,splash:s.type==='flak'?10:0});
       sfxAt(s.type==='sniper'?'cannon':'gun',m.p,.4);
       break;
     }
@@ -2124,13 +2156,17 @@ function incomingMissile(){
 
 const TUTORIAL=[
   {t:'Throttle up',
-   d:'Hold <kbd>W</kbd> to run the throttle to full — the bar sits at the bottom-left. <kbd>S</kbd> pulls it back. Speed is life up here.',
+   d:'Roll the <b>mouse wheel</b> forward to run the throttle to full — the bar sits at the bottom-left. <kbd>[</kbd> and <kbd>]</kbd> work too. Speed is life up here.',
    check:()=>G.me.thr>0.92},
   {t:'Climb away',
-   d:'The mouse aims the nose — push it <b>up</b> to pull the nose up. Climb to <b>800 m</b> above the ground.',
+   d:'Hold <kbd>W</kbd> or <kbd>↑</kbd> to gain altitude — you rise straight up, no need to pull the nose. Climb to <b>800 m</b> above the ground.',
    check:()=>altAGL(G.me)>800},
+  {t:'Slide sideways',
+   d:'<kbd>←</kbd> and <kbd>→</kbd> slide you left and right without turning — this is how you dodge fire. Slide <b>left</b>, then <b>right</b>.',
+   tick:()=>{ if(G.me.ctrl.strafe<0)G.tut.slidL=true; if(G.me.ctrl.strafe>0)G.tut.slidR=true; },
+   check:()=>G.tut.slidL&&G.tut.slidR},
   {t:'Bank and turn',
-   d:'Roll with <kbd>A</kbd> and <kbd>D</kbd>, then pull the nose through the turn. Bank hard <b>left</b>, then hard <b>right</b>.',
+   d:'To change heading, roll with <kbd>A</kbd> and <kbd>D</kbd> and let the mouse pull the nose through the turn. Bank hard <b>left</b>, then hard <b>right</b>.',
    tick:()=>{ if(G.me.ctrl.roll<-.6)G.tut.rolledL=true; if(G.me.ctrl.roll>.6)G.tut.rolledR=true; },
    check:()=>G.tut.rolledL&&G.tut.rolledR},
   {t:'Gunnery',
@@ -2247,7 +2283,8 @@ $('btnSolo').onclick=()=>{ net.mode='solo'; startGame('blue') };
 $('btnTutorial').onclick=()=>{
   net.mode='solo';
   G.tut={i:0,t:0,done:false,setupDone:false,buys:0,builds:0,drones:[],
-         rolledL:false,rolledR:false,missileFired:false,flared:false,resupplied:false,mslT:4,droneT:0};
+         rolledL:false,rolledR:false,slidL:false,slidR:false,
+         missileFired:false,flared:false,resupplied:false,mslT:4,droneT:0};
   startGame('blue');
   G.credits=3500;
   $('tut').classList.add('on');
@@ -2273,7 +2310,7 @@ function frame(now){
     if(p){
       if(!shopOpen&&p.alive) readInput(p,dt);
       else if(p.alive){ // autopilot levels the wings while the hangar is open
-        p.ctrl.fire=0;p.ctrl.fire2=0;
+        p.ctrl.fire=0;p.ctrl.fire2=0;p.ctrl.lift=0;p.ctrl.strafe=0;
         const u=upOf(p,[0,0,0]),f=fwdOf(p,[0,0,0]);
         p.ctrl.roll=clamp(-u[0]*2,-1,1); p.ctrl.pitch=clamp(-f[1]*2.4,-1,1); p.ctrl.yaw=0;
       }
