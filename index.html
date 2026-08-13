@@ -780,14 +780,15 @@ const STRUCTS={
            desc:'Friendly aircraft flying low over the pad repair and rearm rapidly.'}
 };
 
-/* `len`/`wid` scale the tracer mesh — tuned so rounds read clearly in flight
-   rather than being physically accurate specks. */
+/* `len`/`wid` scale the tracer mesh. Firing forward you see a round end-on, so
+   its cross-section is what makes it visible, not its length — hence the wide
+   values here plus the distance compensation in render(). */
 const WEAPONS={
-  mg:     {name:'Machine Guns', slot:1, rpm:640, dmg:7,  speed:1150, spread:.014, ammo:-1,  col:[1,.88,.42], len:7.5,  wid:1.0, unlocked:true},
-  cannon: {name:'Heavy Cannon', slot:2, rpm:130, dmg:38, speed:980,  spread:.004, ammo:180, col:[1,.60,.24], len:10.0, wid:1.7},
-  rocket: {name:'Rocket Pods',  slot:3, rpm:260, dmg:30, speed:560,  spread:.030, ammo:60,  col:[1,.45,.25], len:8.5,  wid:1.6, salvo:2, splash:34},
+  mg:     {name:'Machine Guns', slot:1, rpm:640, dmg:7,  speed:1150, spread:.014, ammo:-1,  col:[1,.88,.42], len:9.0,  wid:1.6, unlocked:true},
+  cannon: {name:'Heavy Cannon', slot:2, rpm:130, dmg:38, speed:980,  spread:.004, ammo:180, col:[1,.60,.24], len:12.0, wid:2.6},
+  rocket: {name:'Rocket Pods',  slot:3, rpm:260, dmg:30, speed:560,  spread:.030, ammo:60,  col:[1,.45,.25], len:10.0, wid:2.4, salvo:2, splash:34},
   missile:{name:'Homing Missile',slot:4,rpm:42,  dmg:78, speed:360,  spread:0,    ammo:6,   col:[1,.5,.3],  homing:true, splash:46},
-  laser:  {name:'Plasma Lance', slot:5, rpm:900, dmg:4.6,speed:1900, spread:.002, ammo:520, col:[.45,1,.92], len:15.0, wid:1.35}
+  laser:  {name:'Plasma Lance', slot:5, rpm:900, dmg:4.6,speed:1900, spread:.002, ammo:520, col:[.45,1,.92], len:18.0, wid:2.2}
 };
 
 const SHOP=[
@@ -1390,7 +1391,7 @@ function fireStruct(s,target){
     spawnBullet({pos:org.slice(),
       vel:[(to[0]/l+rnd(-sprd,sprd))*sp,(to[1]/l+rnd(-sprd,sprd))*sp,(to[2]/l+rnd(-sprd,sprd))*sp],
       dmg:cfg.dmg, team:s.team, owner:s.owner||('s:'+s.id),
-      col:s.type==='sniper'?[.6,1,1]:[1,.7,.3], len:s.type==='sniper'?16:6, wid:s.type==='sniper'?1.6:1.4, life:2.5, splash:s.type==='flak'?10:0});
+      col:s.type==='sniper'?[.6,1,1]:[1,.7,.3], len:s.type==='sniper'?20:7, wid:s.type==='sniper'?3.0:2.4, life:2.5, splash:s.type==='flak'?10:0});
     sfxAt(s.type==='sniper'?'cannon':'gun',org,.5);
     net.send({t:'sshot',s:s.id,p:org.map(v=>+v.toFixed(1)),v:[to[0]/l*sp,to[1]/l*sp,to[2]/l*sp].map(v=>+v.toFixed(1))});
   }
@@ -1589,7 +1590,11 @@ function render(){
     const l=Math.hypot(...b.vel)||1;
     const q=qLookDir([0,0,0,1],[b.vel[0]/l,b.vel[1]/l,b.vel[2]/l],[0,1,0]);
     M4.fromRTS(model,q,b.pos,1);
-    M4.mul(model,model,M4.scl(tmpM,b.wid,b.wid,b.len/3.4));
+    // widen with range so a round holds a roughly constant on-screen size
+    // instead of shrinking to a sub-pixel speck at the distances you fight at
+    const bd=Math.hypot(b.pos[0]-G.camPos[0],b.pos[1]-G.camPos[1],b.pos[2]-G.camPos[2]);
+    const gw=b.wid*clamp(bd/90,1,12);
+    M4.mul(model,model,M4.scl(tmpM,gw,gw,b.len/3.4));
     draw(MESH.tracer,model,{unlit:true,tint:b.col});
   }
   // --- missiles ---
@@ -2026,7 +2031,7 @@ function onNet(raw,conn){
       relay(m,conn);
       const s=G.structures.find(x=>x.id===m.s); if(!s) break;
       spawnBullet({pos:m.p.slice(),vel:m.v.slice(),dmg:STRUCTS[s.type].dmg,team:s.team,owner:s.owner||('s:'+s.id),
-        col:s.type==='sniper'?[.6,1,1]:[1,.7,.3],len:s.type==='sniper'?16:6,wid:s.type==='sniper'?1.6:1.4,life:2.5,splash:s.type==='flak'?10:0});
+        col:s.type==='sniper'?[.6,1,1]:[1,.7,.3],len:s.type==='sniper'?20:7,wid:s.type==='sniper'?3.0:2.4,life:2.5,splash:s.type==='flak'?10:0});
       sfxAt(s.type==='sniper'?'cannon':'gun',m.p,.4);
       break;
     }
