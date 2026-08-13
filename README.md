@@ -1,0 +1,40 @@
+# IRON SKIES — 3D Plane Battle
+
+A self-contained 3D combat flight game in a single HTML file. No build step, no
+dependencies: the renderer is hand-written WebGL, the flight model, AI, shop and
+netcode are all plain JavaScript.
+
+**Play:** https://calebh314.github.io/iron-skies/
+
+## Playing together
+
+One player clicks **HOST GAME** and shares the 5-character room code; everyone
+else enters it under **JOIN GAME**. No accounts and no installs — players connect
+peer-to-peer over WebRTC, so game traffic goes directly between computers.
+
+## Controls
+
+| | |
+|---|---|
+| Mouse | aim the nose |
+| `A` / `D` · `Q` / `E` | roll · rudder |
+| `W` / `S` · `Shift` | throttle · afterburner |
+| `LMB` / `Space` · `RMB` / `F` | guns · missiles |
+| `1`–`5` · `X` · `R` | weapon · flares · rearm at base |
+| `B` · `C` · `Tab` | hangar · camera · scoreboard |
+
+New players should start with **FLIGHT TRAINING**, a nine-step course covering
+flying, gunnery, missiles, flares and building base defenses.
+
+## The game
+
+You fly from the cockpit. Earn credits from kills, structure damage and passive
+income, then spend them in the hangar on weapons (cannon, rocket pods, homing
+missiles, plasma lance), airframe upgrades (armour, engine, control surfaces,
+flares) and base defenses — **Sniper Towers**, **Surface-to-Air Missile sites**,
+flak cannons, radar dishes and repair pads. Destroy the enemy Command HQ to win.
+
+## Editing
+
+`index.html` is the whole game. Open it directly in a browser to play offline;
+commit a change and GitHub Pages redeploys it.
