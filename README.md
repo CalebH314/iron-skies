@@ -33,9 +33,12 @@ and three colour displays — a live radar scope, an attitude indicator with spe
 and altitude tapes, and hull/throttle/flare/ammo gauges.
 
 The landscape is rebuilt every campaign level, and the ground between the bases
-gets harder to cross. Open levels grow ridgelines you have to find gaps in. Two
-levels in three are **canyon runs**: the midfield is walled off above the flight
-ceiling and a single winding trench is the only way through.
+gets harder to cross. Open levels grow ridgelines you have to find gaps in. One level in four is a **canyon run**: the midfield is walled off above the flight
+ceiling and a single trench — three kilometres long with a bend every few hundred
+metres — is the only way through.
+
+**Settings** covers difficulty (Recruit through Ace), mouse sensitivity, sound,
+and resetting your campaign level or erasing progress entirely.
 
 The campaign gets harder as you win. Each victory raises your **campaign level**,
 and the enemy answers with a tougher HQ, more hangars launching aircraft faster,
