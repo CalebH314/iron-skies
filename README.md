@@ -32,6 +32,11 @@ You fly from an F-22 style cockpit: a bubble canopy, a wide-angle HUD combiner
 and three colour displays — a live radar scope, an attitude indicator with speed
 and altitude tapes, and hull/throttle/flare/ammo gauges.
 
+The landscape is rebuilt every campaign level, and the ground between the bases
+gets harder to cross. Open levels grow ridgelines you have to find gaps in. Two
+levels in three are **canyon runs**: the midfield is walled off above the flight
+ceiling and a single winding trench is the only way through.
+
 The campaign gets harder as you win. Each victory raises your **campaign level**,
 and the enemy answers with a tougher HQ, more hangars launching aircraft faster,
 and more defences. Level, tokens, perks and career record are saved in your

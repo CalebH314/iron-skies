@@ -264,7 +264,7 @@ td{padding:6px 8px;border-bottom:1px solid rgba(255,255,255,.045)}
   <tbody id="boardBody"></tbody></table>
 </div>
 
-<div id="dead"><div><h2>SHOT DOWN</h2><p id="deadTxt">RESPAWN IN 5</p></div></div>
+<div id="dead"><div><h2 id="deadTitle">SHOT DOWN</h2><p id="deadTxt">RESPAWN IN 5</p></div></div>
 
 <div id="pause" class="ovl">
   <div class="mid panel">
@@ -621,8 +621,78 @@ function vnoise(x,z){
   const u=xf*xf*(3-2*xf), v=zf*zf*(3-2*zf);
   return lerp(lerp(hash2(xi,zi),hash2(xi+1,zi),u), lerp(hash2(xi,zi+1),hash2(xi+1,zi+1),u), v);
 }
+
+/* ---------------------------------------------------------------------------
+   The landscape is regenerated per campaign level: a new noise offset changes
+   the whole map, and the midfield between the bases gets progressively harder
+   to cross. Canyon levels wall the midfield off entirely above the flight
+   ceiling, leaving one winding trench as the only way through.
+   ------------------------------------------------------------------------- */
+const CEILING=1500;
+const TERRAIN={level:1,trench:false,ox:0,oz:0,ph:0,ph2:0,
+               wallZ:900,wallTop:CEILING+60,floor:80,half:200,ridges:[]};
+function lrand(i){const s=Math.sin(TERRAIN.level*97.13+i*41.7+11.3)*43758.5453;return s-Math.floor(s)}
+/** the trench centreline: a function of z, so both you and the AI can follow it */
+function trenchX(z){ return Math.sin(z/1000+TERRAIN.ph)*340 + Math.sin(z/500+TERRAIN.ph2)*80 }
+/** canyon levels come up often — two in every three from level 2 */
+function isTrenchLevel(lv){ return lv>=2 && lv%3!==1 }
+
+function setTerrain(lv,trench){
+  TERRAIN.level=lv;
+  TERRAIN.ox=lv*911.3; TERRAIN.oz=lv*677.1;   // ~0.7 of the longest wavelength per level
+  TERRAIN.ph=lv*1.7; TERRAIN.ph2=lv*.83;
+  TERRAIN.trench=!!trench;
+  // walls stand above the ceiling, so the trench really is the only way
+  TERRAIN.wallTop=CEILING+60;
+  TERRAIN.wallZ=Math.min(1400,700+60*lv);      // a longer run each level
+  TERRAIN.half=Math.max(140,250-9*lv);         // and a tighter one
+  TERRAIN.floor=80;
+  TERRAIN.ridges=[];
+  if(!trench){
+    // open levels instead get ridgelines with gaps you have to find
+    const n=Math.min(1+Math.floor(lv/2),4);
+    for(let i=0;i<n;i++){
+      TERRAIN.ridges.push({
+        z:(i+1)/(n+1)*1700-850,
+        th:200+lrand(i)*120,
+        h:260+42*lv,
+        gx:(lrand(i+30)-.5)*3400,
+        gw:520-Math.min(300,18*lv)
+      });
+    }
+  }
+}
 function terrainH(x,z){
-  let h = 190*vnoise(x/1300+11,z/1300+7) + 78*vnoise(x/460,z/460) + 26*vnoise(x/165,z/165) - 96;
+  const ox=TERRAIN.ox, oz=TERRAIN.oz;
+  let h = 190*vnoise((x+ox)/1300+11,(z+oz)/1300+7)
+        + 78*vnoise((x+ox)/460,(z+oz)/460)
+        + 26*vnoise((x+ox)/165,(z+oz)/165) - 96;
+  if(TERRAIN.trench){
+    // raise the whole midfield into a plateau, then cut the trench back out
+    const edge=TERRAIN.wallZ, fade=edge*.42;
+    const band=clamp((edge-Math.abs(z))/fade,0,1);
+    if(band>0){
+      const t=band*band*(3-2*band);
+      // the corridor flares open at both ends, so you fly into a funnel rather
+      // than a slot — this is what makes the entry survivable at speed
+      const half=TERRAIN.half*lerp(2.7,1,t);
+      const d=Math.abs(x-trenchX(z));
+      let w;
+      if(d<half) w=TERRAIN.floor;
+      else{ const k=clamp((d-half)/300,0,1); w=lerp(TERRAIN.floor,TERRAIN.wallTop,k*k*(3-2*k)); }
+      h=lerp(h,w,t);
+    }
+  }else{
+    for(const r of TERRAIN.ridges){
+      const dz=Math.abs(z-r.z);
+      if(dz<r.th){
+        const t=1-dz/r.th, s=t*t*(3-2*t);
+        const dx=Math.abs(x-r.gx);
+        const g=dx<r.gw?0:clamp((dx-r.gw)/300,0,1);
+        h+=r.h*s*(g*g*(3-2*g));
+      }
+    }
+  }
   // flatten a plateau around each base so runways and structures sit level
   for(const k in BASES){
     const b=BASES[k], d=Math.hypot(x-b[0],z-b[2]);
@@ -641,8 +711,14 @@ function terrainColor(h,slope){
 }
 
 let MESH={};
-function buildWorld(){
-  /* --- terrain: split into chunks so each stays inside the 16-bit index limit --- */
+function freeMesh(m){
+  if(!m) return;
+  gl.deleteBuffer(m.pos); gl.deleteBuffer(m.nrm); gl.deleteBuffer(m.col); gl.deleteBuffer(m.idx);
+}
+/** Rebuilt whenever the level changes, so the map really is different each time. */
+function buildTerrainMesh(){
+  if(MESH.terrain) for(const m of MESH.terrain) freeMesh(m);
+  // split into chunks so each stays inside the 16-bit index limit
   const CH=2, NC=70, step=WORLD*2/(CH*NC);
   MESH.terrain=[];
   for(let cx=0;cx<CH;cx++)for(let cz=0;cz<CH;cz++){
@@ -661,6 +737,16 @@ function buildWorld(){
     }
     MESH.terrain.push(b.build());
   }
+}
+/** Pick and build the landscape for whatever we are about to play. */
+function applyTerrain(){
+  if(G.tut) setTerrain(1,false);                 // training stays open and forgiving
+  else if(G.mission) setTerrain(1+rndi(0,6),false);
+  else setTerrain(PROFILE.level,isTrenchLevel(PROFILE.level));
+  buildTerrainMesh();
+}
+function buildWorld(){
+  buildTerrainMesh();
 
   /* --- water --- */
   const w=new Builder();
@@ -1310,7 +1396,7 @@ function simPlane(p,dt){
     }
     return;
   }
-  const c=p.ctrl, ag=p.agility||1;
+  const c=p.ctrl, ag=(p.agility||1)*(p.canyonBoost||1);
   const stall=clamp((p.speed-40)/70,.25,1);
   const rP=1.35*ag*stall, rY=0.55*ag*stall, rR=2.5*ag*stall;
   qAxis(_dq,1,0,0, c.pitch*rP*dt); qmul(p.quat,p.quat,_dq);
@@ -1353,7 +1439,7 @@ function simPlane(p,dt){
       if(p.isLocal) toast('TURN BACK — LEAVING COMBAT ZONE','red',.4);
     }
   }
-  if(p.pos[1]>1500) p.pos[1]=1500;
+  if(p.pos[1]>CEILING) p.pos[1]=CEILING;
 
   // terrain / sea collision
   const gh=Math.max(terrainH(p.pos[0],p.pos[2]),SEA);
@@ -1483,7 +1569,10 @@ function killPlane(p,byId,crash){
   explode(p.pos,34,1.4);
   sfxAt('boom',p.pos,1);
   const killer=byId?G.planes.get(byId):null;
-  if(byId===G.myId&&!crash){
+  // flying into the ground is never credited as somebody's kill
+  if(crash){
+    feed(`<span class="${p.team}">${esc(p.name)}</span> flew into the ground`);
+  }else if(byId===G.myId){
     G.kills++; G.credits+=260; G.score+=100;
     feed(`<span class="grn">${esc(myName())}</span> ✜ <span class="red">${esc(p.name)}</span>`);
     toast('TARGET DESTROYED  +260','gold',1.4);
@@ -1491,10 +1580,12 @@ function killPlane(p,byId,crash){
     killer.kills++;
     feed(`<span class="${killer.team}">${esc(killer.name)}</span> ✜ <span class="${p.team}">${esc(p.name)}</span>`);
   }else{
-    feed(`<span class="${p.team}">${esc(p.name)}</span> ${crash?'crashed':'was destroyed'}`);
+    feed(`<span class="${p.team}">${esc(p.name)}</span> was destroyed`);
   }
   if(p.isLocal){
     G.deaths++;
+    G.crashed=!!crash;
+    $('deadTitle').textContent=crash?'CRASHED':'SHOT DOWN';
     $('dead').classList.add('on');
     net.send({t:'dead',id:p.id,by:byId||null,crash:!!crash});
   }
@@ -1758,8 +1849,31 @@ function stepBot(p,dt){
   const gh=Math.max(terrainH(ahead[0],ahead[2]),SEA);
   const ghNow=Math.max(terrainH(p.pos[0],p.pos[2]),SEA);
   const lowNow=p.pos[1]<ghNow+120;
-  if(ahead[1]<gh+140||lowNow){ aim=[p.pos[0]+f[0]*600, Math.max(gh,p.pos[1])+420, p.pos[2]+f[2]*600]; }
-  else if(!aim){ const b=BASES[p.team==='blue'?'red':'blue']; aim=[b[0],b[1]+320,b[2]]; }
+  // On canyon levels the midfield wall is above the ceiling, so "pull up" is
+  // suicide. Inside the band the AI flies the trench centreline instead.
+  const inCanyon=TERRAIN.trench&&Math.abs(p.pos[2])<TERRAIN.wallZ+1900;
+  if(inCanyon){
+    // head for the enemy base, never "away from where I am" — that flips sign
+    // at z=0 and leaves the aircraft oscillating in the middle of the canyon
+    const tz=t?t.pos[2]:BASES[p.team==='blue'?'red':'blue'][2];
+    const dir=Math.sign(tz-p.pos[2])||1;
+    // look well ahead down the trench so the turn stays inside the bot's turn
+    // rate, and descend into the corridor before the wall arrives
+    const zA=p.pos[2]+dir*520;
+    const off=Math.abs(p.pos[0]-trenchX(p.pos[2]));
+    const wantY=Math.abs(p.pos[2])<TERRAIN.wallZ+120 ? TERRAIN.floor+240
+              : Math.max(TERRAIN.floor+240, ghNow+300);
+    aim=[trenchX(zA),wantY,zA];
+    // hug the centreline first if badly out of position
+    if(off>TERRAIN.half*.7) aim=[trenchX(p.pos[2]+dir*200),wantY,p.pos[2]+dir*200];
+    p.thr=.72; c.ab=0;
+    p.canyonBoost=2.4;              // threading a slot needs a firmer hand
+  }
+  else{
+    p.canyonBoost=1;
+    if(ahead[1]<gh+140||lowNow){ aim=[p.pos[0]+f[0]*600, Math.max(gh,p.pos[1])+420, p.pos[2]+f[2]*600]; }
+    else if(!aim){ const b=BASES[p.team==='blue'?'red':'blue']; aim=[b[0],b[1]+320,b[2]]; }
+  }
 
   // Hold a cruise altitude while dogfighting so bots stay in a roughly
   // horizontal layer — predictable to track and much easier to hit. They still
@@ -1768,7 +1882,11 @@ function stepBot(p,dt){
   const chasingPlane=t&&t.speed!==undefined;
   // floor the layer above whatever ground is coming, otherwise a fixed world
   // height puts them a few dozen metres over the hills and they fight the terrain
-  if(chasingPlane&&!lowNow&&ahead[1]>=gh+140)
+  // Transit high and only dive on the run-in. Without this a raider starts its
+  // descent the moment it acquires a distant ground target and flies straight
+  // into the ridgelines between the bases.
+  const farGround=p.aiStruct&&aim&&Math.hypot(aim[0]-p.pos[0],aim[2]-p.pos[2])>900;
+  if((chasingPlane||farGround)&&!lowNow&&!inCanyon&&ahead[1]>=gh+140)
     aim=[aim[0],Math.max(p.cruiseY,ghNow+330,gh+330),aim[2]];
 
   // steer: convert target direction into local space
@@ -1776,12 +1894,13 @@ function stepBot(p,dt){
   const dl=Math.hypot(...to)||1; to[0]/=dl;to[1]/=dl;to[2]/=dl;
   const inv=[-p.quat[0],-p.quat[1],-p.quat[2],p.quat[3]];
   const loc=qrot([0,0,0],to,inv);
-  c.pitch=clamp(loc[1]*3.0,-.55,.55);   // capped: no looping or sudden zoom climbs
+  const pl=inCanyon?1:.55;              // capped outside the canyon: no looping
+  c.pitch=clamp(loc[1]*3.0,-pl,pl);
   c.yaw=clamp(loc[0]*1.4,-1,1);
   // bank into the turn
   c.roll=clamp(loc[0]*2.6,-1,1);
   // target behind: bank hard around rather than looping over the top
-  if(loc[2]>0){ c.roll=clamp(loc[0]>0?1:-1,-1,1); c.pitch=clamp(.6+loc[1],-.55,.55); }
+  if(loc[2]>0&&!inCanyon){ c.roll=clamp(loc[0]>0?1:-1,-1,1); c.pitch=clamp(.6+loc[1],-.55,.55); }
   p.thr=lowNow?1:clamp(.6+dl/2200,.5,1);
   if(dl>900) c.ab=1;
 
@@ -2056,7 +2175,7 @@ function updateHUD(dt){
       :hf>.25?'linear-gradient(90deg,#d4a02a,#ffd451)':'linear-gradient(90deg,#c0392b,#ff7a6b)';
   }
 
-  if(!p.alive) $('deadTxt').textContent='RESPAWN IN '+Math.ceil(p.respawn);
+  if(!p.alive) $('deadTxt').textContent=(G.crashed?'FLEW INTO THE TERRAIN — RESPAWN IN ':'RESPAWN IN ')+Math.ceil(p.respawn);
   updateWarnings(dt);
   updateBaseBars();
   updateMissionHUD();
@@ -2544,6 +2663,7 @@ function onNet(raw,conn){
       if(m.by===G.myId&&!m.crash){ G.kills++; G.credits+=260; G.score+=100;
         feed(`<span class="grn">${esc(myName())}</span> ✜ <span class="${p.team}">${esc(p.name)}</span>`);
         toast('TARGET DESTROYED  +260','gold',1.4); }
+      else if(m.crash) feed(`<span class="${p.team}">${esc(p.name)}</span> flew into the ground`);
       else if(k){ k.kills++; feed(`<span class="${k.team}">${esc(k.name)}</span> ✜ <span class="${p.team}">${esc(p.name)}</span>`); }
       else feed(`<span class="${p.team}">${esc(p.name)}</span> went down`);
       break;
@@ -2901,6 +3021,7 @@ function startGame(team){
   if(G.started) return;
   audioInit();
   G.started=true; G.team=team||'blue'; G.mode=net.mode;
+  applyTerrain();            // must precede any structure or spawn placement
   G.economyT=rnd(110,160);   // don't let the enemy build on the very first frame
   const nm=($('nameIn').value||'').trim().toUpperCase().slice(0,12)||PROFILE.callsign||'PILOT-'+rndi(10,99);
   PROFILE.callsign=nm; saveProfile();
@@ -2925,6 +3046,10 @@ function startGame(team){
   $('hud').classList.add('on');
   updateWeps();
   toast('CLICK TO CAPTURE MOUSE · <kbd>B</kbd> OPENS THE HANGAR','grn',5);
+  if(TERRAIN.trench)
+    toast('CANYON RUN — the walls top the flight ceiling. The trench is the only way through.','gold',8);
+  else if(TERRAIN.ridges.length)
+    toast('RIDGELINES AHEAD — find the gaps','gold',5);
   canvas.requestPointerLock();
 }
 
