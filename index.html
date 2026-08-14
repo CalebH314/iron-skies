@@ -1060,19 +1060,19 @@ function buildTurrets(){
 
 /* --------------------------- game config -------------------------------- */
 const STRUCTS={
-  hq:     {name:'Command HQ',       hp:5200, cost:0,    range:0,    r:44, y:0,  turret:null,     desc:'Your team’s heart. Lose it and the round is over.'},
+  hq:     {name:'Command HQ',       hp:5200, cost:0,    range:0,    r:44, y:0,  turret:null,     short:'HQ', desc:'Your team’s heart. Lose it and the round is over.'},
   sniper: {name:'Sniper Tower',     hp:340,  cost:900,  range:1500, r:12, y:35, turret:'sniper', cd:1.7, dmg:30,
-           desc:'Elevated long-barrel railgun. Pinpoint hitscan shots at aircraft up to 1.5&nbsp;km — deadly, but slow to cycle.'},
+           short:'SNIPER', desc:'Elevated long-barrel railgun. Pinpoint hitscan shots at aircraft up to 1.5&nbsp;km — deadly, but slow to cycle.'},
   sam:    {name:'Surface-to-Air Missile Site', hp:380, cost:1500, range:2100, r:14, y:8, turret:'sam', cd:5.2, dmg:62,
-           desc:'Radar-guided SAM battery. Launches homing missiles that chase enemy planes across the map. Flares can decoy it.'},
+           short:'SAM', desc:'Radar-guided SAM battery. Launches homing missiles that chase enemy planes across the map. Flares can decoy it.'},
   flak:   {name:'Flak Cannon',      hp:280,  cost:1100, range:1000, r:11, y:6,  turret:'flak', cd:0.26, dmg:8,
-           desc:'Twin rapid-fire AA guns. Shreds anything that gets close to the base.'},
+           short:'FLAK', desc:'Twin rapid-fire AA guns. Shreds anything that gets close to the base.'},
   radar:  {name:'Radar Dish',       hp:220,  cost:700,  range:2800, r:10, y:14, turret:'radar',
-           desc:'Paints every enemy inside 2.8&nbsp;km on your minimap and sharpens SAM lock-on.'},
+           short:'RADAR', desc:'Paints every enemy inside 2.8&nbsp;km on your minimap and sharpens SAM lock-on.'},
   repair: {name:'Repair Pad',       hp:260,  cost:850,  range:340,  r:24, y:2,  turret:null, heal:16,
-           desc:'Friendly aircraft flying low over the pad repair and rearm rapidly.'},
+           short:'REPAIR PAD', desc:'Friendly aircraft flying low over the pad repair and rearm rapidly.'},
   spawner:{name:'Aircraft Hangar',  hp:520,  cost:1900, range:0,    r:28, y:10, turret:null, cd:9, cap:8,
-           desc:'Sits beside the HQ and launches a fighter every 9&nbsp;seconds, up to eight airborne. Buy <b>Hangar Crews</b> to go faster still. It is lightly built — destroy the enemy hangar and their reinforcements stop dead.'}
+           short:'HANGAR', desc:'Sits beside the HQ and launches a fighter every 9&nbsp;seconds, up to eight airborne. Buy <b>Hangar Crews</b> to go faster still. It is lightly built — destroy the enemy hangar and their reinforcements stop dead.'}
 };
 const BOT_HP=55;        // deliberately fragile — a short burst downs one
 const BOT_SPEED=165;    // well under the player's 270+, so you can always disengage
@@ -2253,9 +2253,10 @@ function updateBaseBars(){
     el.style.left=sp[0]+'px'; el.style.top=sp[1]+'px'; el.style.width=w+'px';
     el.style.opacity=hq?1:clamp(1.35-d/range,.35,1);
     const nm=el.firstElementChild;
-    nm.textContent=hq?((mine?'YOUR':'ENEMY')+' COMMAND HQ'):cfg.name.toUpperCase();
+    // a full defence ring overlaps badly at range, so names fade out first
+    nm.textContent=hq?((mine?'YOUR':'ENEMY')+' COMMAND HQ'):(d<1800?(cfg.short||cfg.name):'');
     nm.style.color=mine?'#7fe6c0':'#ff8a7a';
-    nm.style.fontSize=(hq?clamp(w/19,10,15):clamp(w/13,8,11))+'px';
+    nm.style.fontSize=(hq?clamp(w/19,10,15):clamp(w/15,8,10))+'px';
     const fl=el.children[1].firstElementChild;
     fl.style.width=(f*100)+'%';
     fl.style.background=f>.5?(mine?'linear-gradient(90deg,#2ecc8f,#7fe6c0)':'linear-gradient(90deg,#c0392b,#ff7a6b)')
