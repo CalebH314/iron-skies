@@ -155,6 +155,9 @@ kbd{background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.16);bord
 #tokline{font-size:13px;color:#ffd451;margin:14px 0 0;letter-spacing:1px}
 
 /* --- settings --- */
+/* must outrank #menu and #pause, which are declared later in the document and
+   would otherwise paint over it at the same stacking level */
+#settings{z-index:30}
 #settings .box{width:min(620px,94vw);padding:28px 32px;max-height:92vh;overflow-y:auto}
 .srow{padding:14px 0;border-bottom:1px solid rgba(110,180,255,.12)}
 .srow:last-child{border-bottom:none}
