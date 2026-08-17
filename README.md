@@ -39,8 +39,10 @@ metres — is the only way through.
 
 Tokens also buy the **Inferno Beam** — a sustained plasma torrent in weapon
 slot 6 that keeps gaining ranks with no ceiling — and your own aircraft under
-**Your Aircraft**: four airframes that genuinely fly differently, and eight paint
-schemes, previewed in 3D as you pick them.
+**Your Aircraft**: swap the airframe, nose, wings, tail, engines and canopy
+independently, then pick a paint and trim — over 110,000 combinations, each one
+built as real geometry and shown on a 3D model you can drag to rotate. Parts
+change how the aircraft handles, not just how it looks.
 
 **Settings** covers difficulty (Recruit through Ace), mouse sensitivity, sound,
 and resetting your campaign level or erasing progress entirely.

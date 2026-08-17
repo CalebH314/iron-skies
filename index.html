@@ -181,7 +181,11 @@ input[type=range]{width:100%;accent-color:#7fe6c0}
   background:radial-gradient(ellipse at 50% 40%,rgba(10,24,44,.9),rgba(2,5,10,.97))}
   #custom .box{width:min(660px,94vw)}}
 #custom h1{font-size:24px;letter-spacing:5px}
-#cusGrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(185px,1fr));gap:9px;margin-bottom:6px}
+.cusrow{display:grid;grid-template-columns:repeat(auto-fill,minmax(178px,1fr));gap:8px}
+#cusSummary{font-size:11px;color:#8fa8c4;line-height:1.7;padding:10px 12px;margin-top:12px;
+  border:1px solid rgba(110,180,255,.18);border-radius:8px;background:rgba(255,255,255,.03)}
+#cusSummary b{color:#e6f2ff}
+#cusBody{margin-top:2px}
 .cus{border:1px solid rgba(110,180,255,.2);background:rgba(255,255,255,.03);border-radius:9px;
   padding:11px 13px;cursor:pointer;transition:.15s}
 .cus:hover{border-color:rgba(127,230,192,.55)}
@@ -326,12 +330,14 @@ td{padding:6px 8px;border-bottom:1px solid rgba(255,255,255,.045)}
         <div class="sub" style="margin:0">TOKENS</div>
       </div>
     </div>
-    <div class="cushead"><b>AIRFRAME</b><span id="cusFrameNote"></span></div>
-    <div id="cusGrid"></div>
-    <div class="cushead"><b>PAINT</b><span>Applies to your aircraft in every mode</span></div>
-    <div id="cusPaints" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:9px"></div>
-    <div class="btns" style="margin-top:20px;display:flex;gap:10px;justify-content:center">
+    <div id="cusSummary"></div>
+    <div id="cusBody"></div>
+    <div class="btns" style="margin-top:18px;display:flex;gap:10px;justify-content:center">
       <button class="primary" id="btnCloseCustom">DONE</button>
+      <button id="btnRandomise">RANDOMISE</button>
+    </div>
+    <div style="text-align:center;font-size:10px;color:#617991;letter-spacing:1.4px;margin-top:10px">
+      DRAG ON THE AIRCRAFT TO TURN IT
     </div>
   </div>
 </div>
@@ -927,33 +933,83 @@ function buildWorld(){
   };
 }
 
-function buildPlaneMesh(tc,fr){
-  fr=fr||{span:1,sweep:1,len:1};
+/* The aircraft is assembled from interchangeable parts. `cfg` names one option
+   per category; leaving it out builds the stock airframe every AI flies. */
+function buildPlaneMesh(tc,cfg){
+  cfg=cfg||{};
+  const fr=cfg.frame||{span:1,sweep:1,len:1};
   const SP=fr.span,SW=fr.sweep,LN=fr.len;
+  const nose=cfg.nose||'cone', wing=cfg.wing||'swept', tail=cfg.tail||'single';
+  const eng=cfg.engine||'single', can=cfg.canopy||'bubble';
+  const trim=cfg.trim||tc;
   const b=new Builder();
   const body=[tc[0]*.72+.16,tc[1]*.72+.17,tc[2]*.72+.19];
-  const dark=[.13,.15,.18], glass=[.16,.30,.40], metal=[.55,.58,.62];
-  // fuselage
+  const dark=[.13,.15,.18], metal=[.55,.58,.62];
+  const glass=can==='gold'?[.66,.50,.10]:[.16,.30,.40];
+
+  // ---- fuselage ----
   b.push(); b.box(2.0,1.9,11*LN,body,[0,0,-.5]); b.pop();
-  // nose cone — rx(-90) points the prism's +Y axis along -Z, i.e. forward
-  b.push(); b.tr(0,0,-6*LN); b.rx(-Math.PI/2); b.prism(.95,.12,3.4*LN,10,body); b.pop();
-  // bubble canopy — wide and tall enough that the interior frame fits inside it
+
+  // ---- nose ---- rx(-90) points the prism's +Y along -Z, i.e. forward
+  const nz=-6*LN;
+  if(nose==='needle'){
+    b.push(); b.tr(0,0,nz); b.rx(-Math.PI/2); b.prism(.9,.16,4.2*LN,10,body); b.pop();
+    b.push(); b.tr(0,0,nz-4.2*LN); b.rx(-Math.PI/2); b.prism(.16,.03,2.0,6,metal); b.pop();
+  }else if(nose==='radome'){
+    b.push(); b.tr(0,0,nz); b.rx(-Math.PI/2); b.prism(1.0,.64,2.0*LN,12,dark); b.pop();
+    b.push(); b.tr(0,0,nz-2.0*LN); b.rx(-Math.PI/2); b.prism(.64,.30,.7,12,dark); b.pop();
+  }else if(nose==='chisel'){
+    b.push(); b.tr(0,-.1,nz); b.sc(1,.5,1); b.rx(-Math.PI/2); b.prism(1.15,.12,3.0*LN,4,body); b.pop();
+    b.push(); b.tr(0,.42,nz-.8*LN); b.box(1.0,.55,1.7*LN,body); b.pop();
+  }else{
+    b.push(); b.tr(0,0,nz); b.rx(-Math.PI/2); b.prism(.95,.12,3.4*LN,10,body); b.pop();
+  }
+
+  // ---- canopy ---- height is fixed: the cockpit interior must fit inside it
   b.push(); b.tr(0,1.16,-1.7); b.box(1.74,1.45,3.9,glass); b.pop();
   b.push(); b.tr(0,1.00,1.0); b.box(1.5,1.15,2.0,body); b.pop();
-  // main wings (swept)
+  if(can==='framed'){
+    b.push(); b.tr(0,1.90,-1.7); b.box(.16,.16,3.9,trim); b.pop();
+    for(const s of [1,-1]){ b.push(); b.tr(s*.87,1.16,-1.7); b.box(.12,1.45,.14,trim); b.pop(); }
+  }
+
+  // ---- wings ----
   for(const s of [1,-1]){
-    b.push(); b.tr(s*3.9*SP,-.25,.7); b.ry(s*0.30*SW); b.box(7.4*SP,.34,3.1*(1+(SP-1)*.6),body); b.pop();
-    b.push(); b.tr(s*6.9*SP,.25,1.6); b.box(.36,1.0,1.5,tc); b.pop();       // wingtip fin
+    b.push();
+    if(wing==='delta'){        b.tr(s*3.4*SP,-.25,1.5); b.ry(s*0.62*SW); b.box(7.0*SP,.34,5.4,body); }
+    else if(wing==='straight'){b.tr(s*4.4*SP,-.25,.6);                   b.box(8.4*SP,.32,2.6,body); }
+    else if(wing==='forward'){ b.tr(s*3.9*SP,-.25,.7); b.ry(-s*0.28*SW); b.box(7.4*SP,.34,2.9,body); }
+    else{                      b.tr(s*3.9*SP,-.25,.7); b.ry(s*0.30*SW);  b.box(7.4*SP,.34,3.1*(1+(SP-1)*.6),body); }
+    b.pop();
+    const tipX=(wing==='straight'?8.2:wing==='delta'?6.4:6.9)*SP;
+    b.push(); b.tr(s*tipX,.25,wing==='delta'?2.6:1.6); b.box(.36,1.0,1.5,trim); b.pop();
     b.push(); b.tr(s*4.6*SP,-.7,.9); b.rx(Math.PI/2); b.prism(.42,.42,2.0,8,dark); b.pop();
   }
-  // tailplanes
-  for(const s of [1,-1]){ b.push(); b.tr(s*2.0,.15,4.4); b.ry(s*0.32); b.box(3.6,.24,1.6,body); b.pop(); }
-  // vertical stabiliser
-  b.push(); b.tr(0,1.9,4.4); b.box(.3,2.6,2.4,tc); b.pop();
-  // engine + nozzle, trailing aft to meet the afterburner flame at z=7.4
-  b.push(); b.tr(0,0,5.0); b.rx(Math.PI/2); b.prism(.95,1.05,1.6,10,metal); b.pop();
-  b.push(); b.tr(0,0,6.5); b.rx(Math.PI/2); b.prism(.8,.55,.9,10,[.9,.45,.2]); b.pop();
-  // intakes
+
+  // ---- tail ----
+  if(tail==='vtail'){
+    for(const s of [1,-1]){ b.push(); b.tr(s*1.1,1.0,4.4); b.rz(-s*0.7); b.box(.30,3.2,2.2,trim); b.pop(); }
+  }else if(tail==='twin'){
+    for(const s of [1,-1]){
+      b.push(); b.tr(s*1.5,1.7,4.4); b.rz(-s*0.22); b.box(.28,2.4,2.2,trim); b.pop();
+      b.push(); b.tr(s*2.0,.15,4.4); b.ry(s*0.32); b.box(3.6,.24,1.6,body); b.pop();
+    }
+  }else{
+    for(const s of [1,-1]){ b.push(); b.tr(s*2.0,.15,4.4); b.ry(s*0.32); b.box(3.6,.24,1.6,body); b.pop(); }
+    b.push(); b.tr(0,1.9,4.4); b.box(.3,2.6,2.4,trim); b.pop();
+    if(tail==='canard')
+      for(const s of [1,-1]){ b.push(); b.tr(s*1.9,.5,-3.4*LN); b.ry(s*0.22); b.box(2.6,.22,1.2,body); b.pop(); }
+  }
+
+  // ---- engines ---- nozzles end at z=7.4 to meet the afterburner flame
+  const noz = eng==='twin'?[-1.05,1.05] : eng==='quad'?[-1.6,-.55,.55,1.6] : [0];
+  const nr  = eng==='single'?.95 : eng==='twin'?.68 : .46;
+  for(const x of noz){
+    b.push(); b.tr(x,0,5.0); b.rx(Math.PI/2); b.prism(nr,nr*1.1,1.6,10,metal); b.pop();
+    b.push(); b.tr(x,0,6.5); b.rx(Math.PI/2); b.prism(nr*.85,nr*.58,.9,10,[.9,.45,.2]); b.pop();
+  }
+
+  // ---- intakes ----
   for(const s of [1,-1]){ b.push(); b.tr(s*1.35,-.35,-1.2); b.box(.75,1.0,3.2,dark); b.pop(); }
   return b.build();
 }
@@ -1296,7 +1352,7 @@ function resetProfile(all){
   if(all){
     PROFILE.tokens=0; PROFILE.perks={}; PROFILE.wins=0; PROFILE.losses=0;
     PROFILE.kills=0; PROFILE.deaths=0; PROFILE.missions=0; PROFILE.callsign='';
-    PROFILE.plane={frame:0,paint:0,frames:[0],paints:[0]};
+    PROFILE.plane={...DEFCFG};
     buildCustomPlane();
   }
   saveProfile(); renderPerm(); renderSettings();
@@ -1358,8 +1414,10 @@ function applyUpgrades(p){
   p.maxShield=(G.shieldLvl[p.team]||0)*45;
   if(p.shield>p.maxShield) p.shield=p.maxShield;
   p.maxFlares=(u.flare||0)*6+(pl?perk('chaff')*8:0);
-  p.topSpeed=(p.isBot?BOT_SPEED:270+(u.engine||0)*30+(pl?perk('thrust')*22/3.6:0))*(p.drone?1.35:1)*(fr?fr.speed:1);
-  p.agility=(1+(u.agility||0)*.15)*(p.isBot?BOT_AGILITY:(1+(pl?perk('wings')*.10:0))*(fr?fr.agility:1));
+  const pm=pl?partMods():null;
+  p.topSpeed=(p.isBot?BOT_SPEED:270+(u.engine||0)*30+(pl?perk('thrust')*22/3.6:0))*(p.drone?1.35:1)
+             *(fr?fr.speed:1)*(pm?pm.spd:1);
+  p.agility=(1+(u.agility||0)*.15)*(p.isBot?BOT_AGILITY:(1+(pl?perk('wings')*.10:0))*(fr?fr.agility:1)*(pm?pm.turn:1));
   p.have={mg:true, cannon:(u.cannon||0)>0, rocket:(u.rocket||0)>0, missile:(u.missile||0)>0,
           laser:(u.laser||0)>0, inferno:pl&&perk('inferno')>0};
   let gp=pl?1+perk('guns')*.12:1;
@@ -1499,12 +1557,13 @@ addEventListener('keyup',e=>{
   if(e.code==='Tab')$('board').classList.remove('on');
 });
 canvas.addEventListener('mousedown',e=>{
+  if(customOpen&&!G.started){ previewDrag=e.clientX; return; }
   if(!G.started) return;
   if(!mouseLocked){canvas.requestPointerLock();return}
   if(e.button===0)mouse.fire=true;
   if(e.button===2)mouse.fire2=true;
 });
-addEventListener('mouseup',e=>{if(e.button===0)mouse.fire=false;if(e.button===2)mouse.fire2=false});
+addEventListener('mouseup',e=>{previewDrag=null;if(e.button===0)mouse.fire=false;if(e.button===2)mouse.fire2=false});
 addEventListener('contextmenu',e=>{if(G.started)e.preventDefault()});
 const mouse={fire:false,fire2:false};
 // throttle lives on the wheel now that W/S climb and descend
@@ -1515,6 +1574,7 @@ addEventListener('wheel',e=>{
 },{passive:false});
 document.addEventListener('pointerlockchange',()=>{mouseLocked=document.pointerLockElement===canvas});
 addEventListener('mousemove',e=>{
+  if(previewDrag!==null){ previewSpin+=(e.clientX-previewDrag)*.012; previewDrag=e.clientX; return; }
   if(!mouseLocked) return;
   const k=.0032*(PROFILE.sens||1);
   stick.x=clamp(stick.x+e.movementX*k,-1,1);
@@ -2233,7 +2293,7 @@ function render(){
 
   // --- customisation preview: your aircraft, parked and turning ---
   if(customOpen&&!G.started&&MESH.custom){
-    const q=qAxis([0,0,0,1],0,1,0,G.t*.4+Math.PI/2);
+    const q=qAxis([0,0,0,1],0,1,0,previewSpin+Math.PI/2);
     M4.fromRTS(model,q,[0,BASE_Y+620,0],1.05);
     draw(MESH.custom,model,{});
   }
@@ -3087,20 +3147,69 @@ const PAINTS=[
   {name:'Royal Purple',  cost:4, col:[.45,.24,.72]},
   {name:'Inferno Orange',cost:5, col:[.96,.42,.09]}
 ];
+/* Individually swappable features. Each carries a small handling effect so the
+   choices matter in the air, not only on the ramp. */
+const PARTS={
+  nose:{label:'NOSE', opts:[
+    {id:'cone',  name:'Tapered Cone', cost:0, spd:0,    turn:0,    desc:'The standard radome.'},
+    {id:'needle',name:'Needle',       cost:2, spd:.05,  turn:-.02, desc:'A long supersonic spike.'},
+    {id:'radome',name:'Heavy Radome', cost:2, spd:-.03, turn:.04,  desc:'Blunt and packed with sensors.'},
+    {id:'chisel',name:'Chisel',       cost:3, spd:.03,  turn:.03,  desc:'A flattened wedge profile.'}]},
+  wing:{label:'WINGS', opts:[
+    {id:'swept',   name:'Swept',         cost:0, spd:0,    turn:0,   desc:'Balanced planform.'},
+    {id:'delta',   name:'Delta',         cost:3, spd:-.04, turn:.13, desc:'Huge lifting surface, turns hard.'},
+    {id:'straight',name:'Straight',      cost:2, spd:-.06, turn:.09, desc:'Long span, slow but stable.'},
+    {id:'forward', name:'Forward Swept', cost:4, spd:.03,  turn:.11, desc:'Unstable and wildly agile.'}]},
+  tail:{label:'TAIL', opts:[
+    {id:'single',name:'Single Fin', cost:0, spd:0,    turn:0,   desc:'One vertical stabiliser.'},
+    {id:'twin',  name:'Twin Fin',   cost:2, spd:-.01, turn:.06, desc:'Canted pair, better authority.'},
+    {id:'vtail', name:'V-Tail',     cost:3, spd:.04,  turn:.02, desc:'Clean, low drag ruddervators.'},
+    {id:'canard',name:'Canards',    cost:4, spd:-.02, turn:.09, desc:'Foreplanes for a vicious pitch rate.'}]},
+  engine:{label:'ENGINES', opts:[
+    {id:'single',name:'Single',      cost:0, spd:0,   turn:0,   desc:'One large nozzle.'},
+    {id:'twin',  name:'Twin',        cost:3, spd:.09, turn:0,   desc:'Two nozzles, more thrust.'},
+    {id:'quad',  name:'Quad Cluster',cost:5, spd:.15, turn:-.05,desc:'Four nozzles. Fast and heavy.'}]},
+  canopy:{label:'CANOPY', opts:[
+    {id:'bubble',name:'Bubble',      cost:0, desc:'Clear one-piece canopy.'},
+    {id:'framed',name:'Framed',      cost:1, desc:'Reinforced spine and rails in your trim colour.'},
+    {id:'gold',  name:'Gold Coated', cost:3, desc:'Radar-defeating gold film.'}]}
+};
+const TRIMS=[
+  {name:'Match Paint',  cost:0, col:null},
+  {name:'Bone White',   cost:1, col:[.92,.92,.90]},
+  {name:'Signal Red',   cost:2, col:[.90,.18,.14]},
+  {name:'Hazard Yellow',cost:2, col:[.98,.80,.16]},
+  {name:'Carbon',       cost:2, col:[.12,.13,.16]},
+  {name:'Cyan',         cost:3, col:[.24,.86,.94]}
+];
+const DEFCFG={frame:0,paint:0,nose:0,wing:0,tail:0,engine:0,canopy:0,trim:0,
+              frames:[0],paints:[0],nose_o:[0],wing_o:[0],tail_o:[0],engine_o:[0],canopy_o:[0],trim_o:[0]};
 function planeCfg(){
-  if(!PROFILE.plane) PROFILE.plane={frame:0,paint:0,frames:[0],paints:[0]};
+  if(!PROFILE.plane) PROFILE.plane={...DEFCFG};
   const p=PROFILE.plane;
-  if(!p.frames) p.frames=[0]; if(!p.paints) p.paints=[0];
+  for(const k in DEFCFG) if(p[k]===undefined) p[k]=Array.isArray(DEFCFG[k])?[...DEFCFG[k]]:DEFCFG[k];
   return p;
 }
 function curFrame(){ return FRAMES[clamp(planeCfg().frame,0,FRAMES.length-1)] }
 function curPaint(){ return PAINTS[clamp(planeCfg().paint,0,PAINTS.length-1)] }
+function curPart(k){ const o=PARTS[k].opts; return o[clamp(planeCfg()[k],0,o.length-1)] }
+function curTrim(){ return TRIMS[clamp(planeCfg().trim,0,TRIMS.length-1)] }
+/** combined handling effect of every fitted part */
+function partMods(){
+  let spd=0,turn=0;
+  for(const k in PARTS){ const o=curPart(k); spd+=o.spd||0; turn+=o.turn||0; }
+  return {spd:1+spd,turn:1+turn};
+}
 /** rebuild the player's airframe mesh from the saved configuration */
 function buildCustomPlane(){
   if(MESH.custom) freeMesh(MESH.custom);
-  MESH.custom=buildPlaneMesh(curPaint().col,curFrame());
+  MESH.custom=buildPlaneMesh(curPaint().col,{
+    frame:curFrame(), nose:curPart('nose').id, wing:curPart('wing').id,
+    tail:curPart('tail').id, engine:curPart('engine').id, canopy:curPart('canopy').id,
+    trim:curTrim().col||curPaint().col
+  });
 }
-let customOpen=false;
+let customOpen=false, previewSpin=0, previewDrag=null;
 function openCustom(){
   customOpen=true; renderCustom();
   // the menu's own backdrop is nearly opaque and sits underneath, which would
@@ -3109,46 +3218,71 @@ function openCustom(){
   $('custom').classList.add('on');
 }
 $('btnCloseCustom').onclick=()=>{
-  customOpen=false;
+  customOpen=false; previewDrag=null;
   $('custom').classList.remove('on');
   if(!G.started) $('menu').classList.add('on');
 };
-function renderCustom(){
+/** shuffle through the parts you already own — costs nothing */
+$('btnRandomise').onclick=()=>{
   const cfg=planeCfg();
+  const pick=a=>a[rndi(0,a.length-1)];
+  cfg.frame=pick(cfg.frames); cfg.paint=pick(cfg.paints); cfg.trim=pick(cfg.trim_o);
+  for(const k in PARTS) cfg[k]=pick(cfg[k+'_o']);
+  saveProfile(); buildCustomPlane(); renderCustom(); sfx('buy',.5);
+  if(G.me) applyUpgrades(G.me);
+};
+function renderCustom(){
+  const cfg=planeCfg(), m=partMods(), f=curFrame();
   $('cusTokens').textContent=PROFILE.tokens+' ⬢';
-  $('cusFrameNote').textContent=curFrame().name+' selected';
-  $('cusGrid').innerHTML=FRAMES.map((f,i)=>{
-    const owned=cfg.frames.includes(i), sel=cfg.frame===i;
-    const stat=v=>v===1?'—':(v>1?'+':'')+Math.round((v-1)*100)+'%';
-    return `<div class="cus ${sel?'on':''} ${owned?'':'locked'}" data-frame="${i}">
-      <h5>${f.name}<span class="price">${owned?(sel?'EQUIPPED':'OWNED'):f.cost+' ⬢'}</span></h5>
-      <p>${f.desc}<br/><span style="color:#7fe6c0">hull ${stat(f.hull)} · speed ${stat(f.speed)} · turn ${stat(f.agility)}</span></p>
-    </div>`;
-  }).join('');
-  $('cusPaints').innerHTML=PAINTS.map((p,i)=>{
-    const owned=cfg.paints.includes(i), sel=cfg.paint===i;
-    const c=p.col.map(v=>Math.round(v*255)).join(',');
-    return `<div class="cus ${sel?'on':''} ${owned?'':'locked'}" data-paint="${i}">
-      <h5>${p.name}<span class="price">${owned?(sel?'ON':'✓'):p.cost+' ⬢'}</span></h5>
-      <div class="swatch" style="background:rgb(${c})"></div>
-    </div>`;
-  }).join('');
-  [...document.querySelectorAll('[data-frame]')].forEach(b=>b.onclick=()=>{
-    const i=+b.dataset.frame, f=FRAMES[i];
-    if(!cfg.frames.includes(i)){
-      if(PROFILE.tokens<f.cost) return toast('NOT ENOUGH TOKENS','red',1.5);
-      PROFILE.tokens-=f.cost; cfg.frames.push(i);
+  const pct=v=>v===1?'—':(v>1?'+':'')+Math.round((v-1)*100)+'%';
+  $('cusSummary').innerHTML=
+    `<b>${f.name}</b> · ${curPart('wing').name} wings · ${curPart('tail').name} · `+
+    `${curPart('engine').name} engine<br/>`+
+    `<span style="color:#7fe6c0">hull ${pct(f.hull)} · speed ${pct(f.speed*m.spd)} · turn ${pct(f.agility*m.turn)}</span>`;
+
+  // one generic section per category, so adding parts later needs no new UI
+  const sect=(title,note,items)=>
+    `<div class="cushead"><b>${title}</b><span>${note}</span></div>
+     <div class="cusrow">${items}</div>`;
+  const card=(sel,owned,name,price,body,attr)=>
+    `<div class="cus ${sel?'on':''} ${owned?'':'locked'}" ${attr}>
+       <h5>${name}<span class="price">${owned?(sel?'FITTED':'OWNED'):price+' ⬢'}</span></h5>${body}</div>`;
+
+  let html=sect('AIRFRAME','The chassis. Sets the broad handling.',
+    FRAMES.map((fr,i)=>card(cfg.frame===i,cfg.frames.includes(i),fr.name,fr.cost,
+      `<p>${fr.desc}<br/><span style="color:#7fe6c0">hull ${pct(fr.hull)} · speed ${pct(fr.speed)} · turn ${pct(fr.agility)}</span></p>`,
+      `data-cat="frame" data-i="${i}"`)).join(''));
+
+  for(const k in PARTS){
+    html+=sect(PARTS[k].label,'',PARTS[k].opts.map((o,i)=>card(cfg[k]===i,cfg[k+'_o'].includes(i),o.name,o.cost,
+      `<p>${o.desc}${(o.spd||o.turn)?`<br/><span style="color:#7fe6c0">speed ${pct(1+(o.spd||0))} · turn ${pct(1+(o.turn||0))}</span>`:''}</p>`,
+      `data-cat="${k}" data-i="${i}"`)).join(''));
+  }
+
+  html+=sect('PAINT','Applies to your aircraft in every mode',
+    PAINTS.map((p,i)=>card(cfg.paint===i,cfg.paints.includes(i),p.name,p.cost,
+      `<div class="swatch" style="background:rgb(${p.col.map(v=>Math.round(v*255)).join(',')})"></div>`,
+      `data-cat="paint" data-i="${i}"`)).join(''));
+
+  html+=sect('TRIM','Wingtips, fins and canopy frame',
+    TRIMS.map((tr,i)=>card(cfg.trim===i,cfg.trim_o.includes(i),tr.name,tr.cost,
+      `<div class="swatch" style="background:${tr.col?`rgb(${tr.col.map(v=>Math.round(v*255)).join(',')})`
+        :`rgb(${curPaint().col.map(v=>Math.round(v*255)).join(',')})`}"></div>`,
+      `data-cat="trim" data-i="${i}"`)).join(''));
+
+  $('cusBody').innerHTML=html;
+  [...document.querySelectorAll('#cusBody [data-cat]')].forEach(btn=>btn.onclick=()=>{
+    const cat=btn.dataset.cat, i=+btn.dataset.i;
+    const list = cat==='frame'?FRAMES : cat==='paint'?PAINTS : cat==='trim'?TRIMS : PARTS[cat].opts;
+    const ownKey = cat==='frame'?'frames' : cat==='paint'?'paints' : cat==='trim'?'trim_o' : cat+'_o';
+    const cost=list[i].cost||0;
+    if(!cfg[ownKey].includes(i)){
+      if(PROFILE.tokens<cost) return toast('NOT ENOUGH TOKENS','red',1.6);
+      PROFILE.tokens-=cost; cfg[ownKey].push(i);
     }
-    cfg.frame=i; saveProfile(); buildCustomPlane(); renderCustom(); renderPerm(); sfx('buy',.6);
+    cfg[cat]=i;
+    saveProfile(); buildCustomPlane(); renderCustom(); renderPerm(); sfx('buy',.55);
     if(G.me) applyUpgrades(G.me);
-  });
-  [...document.querySelectorAll('[data-paint]')].forEach(b=>b.onclick=()=>{
-    const i=+b.dataset.paint, p=PAINTS[i];
-    if(!cfg.paints.includes(i)){
-      if(PROFILE.tokens<p.cost) return toast('NOT ENOUGH TOKENS','red',1.5);
-      PROFILE.tokens-=p.cost; cfg.paints.push(i);
-    }
-    cfg.paint=i; saveProfile(); buildCustomPlane(); renderCustom(); renderPerm(); sfx('buy',.5);
   });
 }
 
@@ -3502,7 +3636,8 @@ function frame(now){
     if(shopOpen&&Math.floor(G.t*4)%2===0) $('shopCred').textContent=Math.floor(G.credits);
   }else if(!G.started){
     if(customOpen){            // close orbit of your aircraft, parked over the map
-      const a=G.t*.4, R=46, c=[0,BASE_Y+620,0];
+      if(previewDrag===null) previewSpin+=dt*.4;
+      const a=previewSpin, R=46, c=[0,BASE_Y+620,0];
       G.camPos=[c[0]+Math.cos(a)*R,c[1]+9,c[2]+Math.sin(a)*R];
       // shift the aim point along the camera's right axis so the aircraft
       // renders in the clear part of the screen, not behind the panel
