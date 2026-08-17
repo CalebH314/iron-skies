@@ -173,10 +173,15 @@ input[type=range]{width:100%;accent-color:#7fe6c0}
 #sensVal{color:#7fe6c0;font-variant-numeric:tabular-nums}
 
 /* --- plane customisation --- */
-#custom{z-index:30}
-#custom .box{width:min(880px,95vw);max-height:94vh;overflow-y:auto;padding:26px 30px}
+#custom{z-index:30;justify-content:flex-start;padding-left:3vw;
+  background:linear-gradient(100deg,rgba(2,5,10,.97) 0%,rgba(2,5,10,.94) 46%,
+    rgba(2,5,10,.55) 62%,rgba(2,5,10,.06) 78%,rgba(2,5,10,0) 100%)}
+#custom .box{width:min(660px,62vw);max-height:94vh;overflow-y:auto;padding:24px 26px}
+@media (max-width:900px){#custom{justify-content:center;padding-left:0;
+  background:radial-gradient(ellipse at 50% 40%,rgba(10,24,44,.9),rgba(2,5,10,.97))}
+  #custom .box{width:min(660px,94vw)}}
 #custom h1{font-size:24px;letter-spacing:5px}
-#cusGrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:9px;margin-bottom:6px}
+#cusGrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(185px,1fr));gap:9px;margin-bottom:6px}
 .cus{border:1px solid rgba(110,180,255,.2);background:rgba(255,255,255,.03);border-radius:9px;
   padding:11px 13px;cursor:pointer;transition:.15s}
 .cus:hover{border-color:rgba(127,230,192,.55)}
@@ -2228,8 +2233,8 @@ function render(){
 
   // --- customisation preview: your aircraft, parked and turning ---
   if(customOpen&&!G.started&&MESH.custom){
-    const q=qAxis([0,0,0,1],0,1,0,G.t*.45+Math.PI/2);
-    M4.fromRTS(model,q,[0,BASE_Y+620,0],1.5);
+    const q=qAxis([0,0,0,1],0,1,0,G.t*.4+Math.PI/2);
+    M4.fromRTS(model,q,[0,BASE_Y+620,0],1.05);
     draw(MESH.custom,model,{});
   }
 
@@ -3096,8 +3101,18 @@ function buildCustomPlane(){
   MESH.custom=buildPlaneMesh(curPaint().col,curFrame());
 }
 let customOpen=false;
-function openCustom(){ customOpen=true; renderCustom(); $('custom').classList.add('on'); }
-$('btnCloseCustom').onclick=()=>{ customOpen=false; $('custom').classList.remove('on'); };
+function openCustom(){
+  customOpen=true; renderCustom();
+  // the menu's own backdrop is nearly opaque and sits underneath, which would
+  // black out the live preview showing through the clear side of this panel
+  $('menu').classList.remove('on');
+  $('custom').classList.add('on');
+}
+$('btnCloseCustom').onclick=()=>{
+  customOpen=false;
+  $('custom').classList.remove('on');
+  if(!G.started) $('menu').classList.add('on');
+};
 function renderCustom(){
   const cfg=planeCfg();
   $('cusTokens').textContent=PROFILE.tokens+' ⬢';
@@ -3487,9 +3502,13 @@ function frame(now){
     if(shopOpen&&Math.floor(G.t*4)%2===0) $('shopCred').textContent=Math.floor(G.credits);
   }else if(!G.started){
     if(customOpen){            // close orbit of your aircraft, parked over the map
-      const a=G.t*.45;
-      G.camPos=[Math.cos(a)*30,BASE_Y+620+7,Math.sin(a)*30];
-      G.camLook=[0,BASE_Y+620,0];
+      const a=G.t*.4, R=46, c=[0,BASE_Y+620,0];
+      G.camPos=[c[0]+Math.cos(a)*R,c[1]+9,c[2]+Math.sin(a)*R];
+      // shift the aim point along the camera's right axis so the aircraft
+      // renders in the clear part of the screen, not behind the panel
+      const fx=c[0]-G.camPos[0],fz=c[2]-G.camPos[2],fl=Math.hypot(fx,fz)||1;
+      const SHIFT=-13;
+      G.camLook=[c[0]+(-fz/fl)*SHIFT,c[1],c[2]+(fx/fl)*SHIFT];
     }else{                     // slow orbit of the map behind the menu
       const a=G.t*.06;
       G.camPos=[Math.cos(a)*1500,760,Math.sin(a)*1500+400];
