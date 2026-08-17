@@ -37,6 +37,11 @@ gets harder to cross. Open levels grow ridgelines you have to find gaps in. One 
 ceiling and a single trench — three kilometres long with a bend every few hundred
 metres — is the only way through.
 
+Tokens also buy the **Inferno Beam** — a sustained plasma torrent in weapon
+slot 6 that keeps gaining ranks with no ceiling — and your own aircraft under
+**Your Aircraft**: four airframes that genuinely fly differently, and eight paint
+schemes, previewed in 3D as you pick them.
+
 **Settings** covers difficulty (Recruit through Ace), mouse sensitivity, sound,
 and resetting your campaign level or erasing progress entirely.
 

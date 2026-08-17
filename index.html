@@ -172,6 +172,26 @@ kbd{background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.16);bord
 input[type=range]{width:100%;accent-color:#7fe6c0}
 #sensVal{color:#7fe6c0;font-variant-numeric:tabular-nums}
 
+/* --- plane customisation --- */
+#custom{z-index:30}
+#custom .box{width:min(880px,95vw);max-height:94vh;overflow-y:auto;padding:26px 30px}
+#custom h1{font-size:24px;letter-spacing:5px}
+#cusGrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:9px;margin-bottom:6px}
+.cus{border:1px solid rgba(110,180,255,.2);background:rgba(255,255,255,.03);border-radius:9px;
+  padding:11px 13px;cursor:pointer;transition:.15s}
+.cus:hover{border-color:rgba(127,230,192,.55)}
+.cus.on{border-color:#7fe6c0;background:rgba(127,230,192,.10)}
+.cus.locked{opacity:.72}
+.cus h5{font-size:12px;color:#e6f2ff;display:flex;justify-content:space-between;align-items:center;gap:8px}
+.cus p{font-size:10px;color:#8fa8c4;line-height:1.55;margin-top:5px}
+.cus .price{color:#ffd451;font-size:11px;white-space:nowrap}
+.swatch{width:100%;height:16px;border-radius:4px;margin-top:7px;border:1px solid rgba(255,255,255,.18)}
+.cushead{display:flex;justify-content:space-between;align-items:baseline;margin:16px 0 8px}
+.cushead b{font-size:11px;letter-spacing:3px;color:#c9a3ff}
+.cushead span{font-size:10px;color:#7d93ad}
+.pitem.hot{border-color:rgba(255,140,60,.5);background:rgba(255,120,40,.07)}
+.pitem.hot h5{color:#ffb37a}
+
 /* --- token shop on the menu --- */
 #perm{margin-top:16px;border-top:1px solid rgba(110,180,255,.16);padding-top:14px;display:none}
 #perm.on{display:block}
@@ -289,6 +309,28 @@ td{padding:6px 8px;border-bottom:1px solid rgba(255,255,255,.045)}
 
 <div id="dead"><div><h2 id="deadTitle">SHOT DOWN</h2><p id="deadTxt">RESPAWN IN 5</p></div></div>
 
+<div id="custom" class="ovl">
+  <div class="box panel">
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:16px">
+      <div>
+        <h1>YOUR AIRCRAFT</h1>
+        <div class="sub" style="margin:2px 0 0">AIRFRAME · PAINT · SPENT IN TOKENS</div>
+      </div>
+      <div style="text-align:right">
+        <div class="tk" id="cusTokens" style="font-size:17px;color:#ffd451;font-weight:700">0 ⬢</div>
+        <div class="sub" style="margin:0">TOKENS</div>
+      </div>
+    </div>
+    <div class="cushead"><b>AIRFRAME</b><span id="cusFrameNote"></span></div>
+    <div id="cusGrid"></div>
+    <div class="cushead"><b>PAINT</b><span>Applies to your aircraft in every mode</span></div>
+    <div id="cusPaints" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:9px"></div>
+    <div class="btns" style="margin-top:20px;display:flex;gap:10px;justify-content:center">
+      <button class="primary" id="btnCloseCustom">DONE</button>
+    </div>
+  </div>
+</div>
+
 <div id="settings" class="ovl">
   <div class="box panel">
     <h1 style="font-size:24px;letter-spacing:5px">SETTINGS</h1>
@@ -369,6 +411,7 @@ td{padding:6px 8px;border-bottom:1px solid rgba(255,255,255,.045)}
       <input id="joinIn" placeholder="ROOM CODE" maxlength="5" style="width:150px;text-transform:uppercase" />
       <button id="btnJoin">JOIN GAME</button>
       <button class="sndbtn" id="btnSound">SOUND: ON</button>
+      <button id="btnCustom" style="border-color:rgba(201,163,255,.5);color:#e9dcff">YOUR AIRCRAFT</button>
       <button id="btnSettings">SETTINGS</button>
     </div>
     <div id="netmsg"></div>
@@ -879,22 +922,24 @@ function buildWorld(){
   };
 }
 
-function buildPlaneMesh(tc){
+function buildPlaneMesh(tc,fr){
+  fr=fr||{span:1,sweep:1,len:1};
+  const SP=fr.span,SW=fr.sweep,LN=fr.len;
   const b=new Builder();
   const body=[tc[0]*.72+.16,tc[1]*.72+.17,tc[2]*.72+.19];
   const dark=[.13,.15,.18], glass=[.16,.30,.40], metal=[.55,.58,.62];
   // fuselage
-  b.push(); b.box(2.0,1.9,11,body,[0,0,-.5]); b.pop();
+  b.push(); b.box(2.0,1.9,11*LN,body,[0,0,-.5]); b.pop();
   // nose cone — rx(-90) points the prism's +Y axis along -Z, i.e. forward
-  b.push(); b.tr(0,0,-6); b.rx(-Math.PI/2); b.prism(.95,.12,3.4,10,body); b.pop();
+  b.push(); b.tr(0,0,-6*LN); b.rx(-Math.PI/2); b.prism(.95,.12,3.4*LN,10,body); b.pop();
   // bubble canopy — wide and tall enough that the interior frame fits inside it
   b.push(); b.tr(0,1.16,-1.7); b.box(1.74,1.45,3.9,glass); b.pop();
   b.push(); b.tr(0,1.00,1.0); b.box(1.5,1.15,2.0,body); b.pop();
   // main wings (swept)
   for(const s of [1,-1]){
-    b.push(); b.tr(s*3.9,-.25,.7); b.ry(s*0.30); b.box(7.4,.34,3.1,body); b.pop();
-    b.push(); b.tr(s*6.9,.25,1.6); b.box(.36,1.0,1.5,tc); b.pop();          // wingtip fin
-    b.push(); b.tr(s*4.6,-.7,.9); b.rx(Math.PI/2); b.prism(.42,.42,2.0,8,dark); b.pop(); // pylon pod
+    b.push(); b.tr(s*3.9*SP,-.25,.7); b.ry(s*0.30*SW); b.box(7.4*SP,.34,3.1*(1+(SP-1)*.6),body); b.pop();
+    b.push(); b.tr(s*6.9*SP,.25,1.6); b.box(.36,1.0,1.5,tc); b.pop();       // wingtip fin
+    b.push(); b.tr(s*4.6*SP,-.7,.9); b.rx(Math.PI/2); b.prism(.42,.42,2.0,8,dark); b.pop();
   }
   // tailplanes
   for(const s of [1,-1]){ b.push(); b.tr(s*2.0,.15,4.4); b.ry(s*0.32); b.box(3.6,.24,1.6,body); b.pop(); }
@@ -1150,7 +1195,9 @@ const WEAPONS={
   cannon: {name:'Heavy Cannon', slot:2, rpm:130, dmg:38, speed:980,  spread:.004, ammo:180, col:[1,.60,.24], len:12.0, wid:2.6},
   rocket: {name:'Rocket Pods',  slot:3, rpm:260, dmg:30, speed:560,  spread:.030, ammo:60,  col:[1,.45,.25], len:10.0, wid:2.4, salvo:2, splash:34},
   missile:{name:'Homing Missile',slot:4,rpm:48,  dmg:78, speed:430,  spread:0,    ammo:6,   col:[1,.5,.3],  homing:true, splash:46},
-  laser:  {name:'Plasma Lance', slot:5, rpm:900, dmg:4.6,speed:1900, spread:.002, ammo:520, col:[.45,1,.92], len:18.0, wid:2.2}
+  laser:  {name:'Plasma Lance', slot:5, rpm:900, dmg:4.6,speed:1900, spread:.002, ammo:520, col:[.45,1,.92], len:18.0, wid:2.2},
+  // bought with tokens, never with credits — see PERKS
+  inferno:{name:'Inferno Beam', slot:6, rpm:1500,dmg:5.2,speed:2300, spread:.0015,ammo:-1, col:[1,.42,.10], len:30.0, wid:3.6}
 };
 
 const SHOP=[
@@ -1202,13 +1249,20 @@ const SHOP=[
 ];
 
 /* ------------------- persistent profile (tokens + perks) ----------------- */
+/* Permanent perks have no ceiling — they keep levelling, and the token price
+   climbs with each rank so late levels are a real investment. */
 const PERKS=[
-  {id:'hull',   name:'Reinforced Airframe', max:5, cost:l=>1+l, eff:l=>`+${l*30} starting hull`},
-  {id:'guns',   name:'Weapon Calibration',  max:5, cost:l=>1+l, eff:l=>`+${l*12}% damage, all weapons`},
-  {id:'thrust', name:'Uprated Engine',      max:4, cost:l=>2+l, eff:l=>`+${l*22} km/h top speed`},
-  {id:'wings',  name:'Composite Wings',     max:4, cost:l=>2+l, eff:l=>`+${l*10}% turn rate`},
-  {id:'chaff',  name:'Expanded Countermeasures', max:4, cost:l=>1+l, eff:l=>`+${l*8} flares carried`}
+  {id:'inferno',name:'Inferno Beam',        cost:l=>l===0?5:4+l*2, marquee:true,
+   eff:l=>l===0?'UNLOCK weapon slot 6 — a sustained plasma torrent'
+                :`beam damage ×${infernoMul(l).toFixed(2)} · ${(WEAPONS.inferno.rpm/60).toFixed(0)} shots/s`},
+  {id:'hull',   name:'Reinforced Airframe', cost:l=>1+l,          eff:l=>`+${l*30} starting hull`},
+  {id:'guns',   name:'Weapon Calibration',  cost:l=>1+l,          eff:l=>`+${l*12}% damage, all weapons`},
+  {id:'thrust', name:'Uprated Engine',      cost:l=>2+l,          eff:l=>`+${l*22} km/h top speed`},
+  {id:'wings',  name:'Composite Wings',     cost:l=>2+l,          eff:l=>`+${l*10}% turn rate`},
+  {id:'chaff',  name:'Expanded Countermeasures', cost:l=>1+l,     eff:l=>`+${l*8} flares carried`}
 ];
+/** the beam keeps growing: strong at rank 1, ferocious many ranks later */
+function infernoMul(l){ return l<=0?0:1+(l-1)*.35 }
 const DIFFS=[
   {name:'RECRUIT',k:.55,botHp:.7, botDmg:.65,note:'A gentle enemy. Good for learning the map.'},
   {name:'REGULAR',k:1,  botHp:1,  botDmg:1,  note:'The intended fight.'},
@@ -1216,7 +1270,8 @@ const DIFFS=[
   {name:'ACE',    k:2.1,botHp:1.7,botDmg:1.6,note:'Everything the enemy has, doubled. You will need the permanent upgrades.'}
 ];
 const PROFILE={tokens:0,perks:{},muted:false,level:1,wins:0,losses:0,
-               kills:0,deaths:0,missions:0,callsign:'',difficulty:1,sens:1};
+               kills:0,deaths:0,missions:0,callsign:'',difficulty:1,sens:1,
+               plane:{frame:0,paint:0,frames:[0],paints:[0]}};
 const DK=()=>DIFFS[clamp(PROFILE.difficulty|0,0,DIFFS.length-1)];
 function loadProfile(){
   try{
@@ -1227,7 +1282,8 @@ function loadProfile(){
       PROFILE.kills=d.kills|0; PROFILE.deaths=d.deaths|0; PROFILE.missions=d.missions|0;
       PROFILE.callsign=d.callsign||'';
       PROFILE.difficulty=d.difficulty===undefined?1:clamp(d.difficulty|0,0,DIFFS.length-1);
-      PROFILE.sens=d.sens||1; }
+      PROFILE.sens=d.sens||1;
+      if(d.plane) PROFILE.plane=d.plane; }
   }catch(e){}
 }
 function resetProfile(all){
@@ -1235,6 +1291,8 @@ function resetProfile(all){
   if(all){
     PROFILE.tokens=0; PROFILE.perks={}; PROFILE.wins=0; PROFILE.losses=0;
     PROFILE.kills=0; PROFILE.deaths=0; PROFILE.missions=0; PROFILE.callsign='';
+    PROFILE.plane={frame:0,paint:0,frames:[0],paints:[0]};
+    buildCustomPlane();
   }
   saveProfile(); renderPerm(); renderSettings();
 }
@@ -1286,26 +1344,31 @@ function applyUpgrades(p){
   // Bots are fixed-fragile, slow and lazy on the controls, so they read as
   // targets rather than as rivals. stepBot also holds them near one altitude.
   const pl=!p.isBot&&p.isLocal;   // permanent perks apply to you only
+  const fr=pl?curFrame():null;
   let hp=p.isBot?BOT_HP*DK().botHp:100+(u.armor||0)*40+(pl?perk('hull')*30:0);
+  if(fr) hp*=fr.hull;
   if(p.drone) hp*=.5;                          // drones are glass
   p.maxHp=Math.round(hp);
   // the shield covers the whole team, bought once by the player
   p.maxShield=(G.shieldLvl[p.team]||0)*45;
   if(p.shield>p.maxShield) p.shield=p.maxShield;
   p.maxFlares=(u.flare||0)*6+(pl?perk('chaff')*8:0);
-  p.topSpeed=(p.isBot?BOT_SPEED:270+(u.engine||0)*30+(pl?perk('thrust')*22/3.6:0))*(p.drone?1.35:1);
-  p.agility=(1+(u.agility||0)*.15)*(p.isBot?BOT_AGILITY:1+(pl?perk('wings')*.10:0));
-  p.have={mg:true, cannon:(u.cannon||0)>0, rocket:(u.rocket||0)>0, missile:(u.missile||0)>0, laser:(u.laser||0)>0};
+  p.topSpeed=(p.isBot?BOT_SPEED:270+(u.engine||0)*30+(pl?perk('thrust')*22/3.6:0))*(p.drone?1.35:1)*(fr?fr.speed:1);
+  p.agility=(1+(u.agility||0)*.15)*(p.isBot?BOT_AGILITY:(1+(pl?perk('wings')*.10:0))*(fr?fr.agility:1));
+  p.have={mg:true, cannon:(u.cannon||0)>0, rocket:(u.rocket||0)>0, missile:(u.missile||0)>0,
+          laser:(u.laser||0)>0, inferno:pl&&perk('inferno')>0};
   let gp=pl?1+perk('guns')*.12:1;
   if(p.drone) gp*=1.6;
   if(p.isBot&&campaign()&&p.team!==G.team) gp*=DK().botDmg;
   p.dmgMul={
     mg:(1+(u.mg||0)*.22)*gp, cannon:(1+Math.max(0,(u.cannon||0)-1)*.25)*gp,
     rocket:(1+Math.max(0,(u.rocket||0)-1)*.22)*gp, missile:(1+Math.max(0,(u.missile||0)-1)*.15)*gp,
-    laser:(1+Math.max(0,(u.laser||0)-1)*.40)*gp
+    laser:(1+Math.max(0,(u.laser||0)-1)*.40)*gp,
+    inferno:infernoMul(pl?perk('inferno'):0)*gp
   };
   p.rateMul={mg:1+(u.mg||0)*.15};
   p.ammoMax={
+    inferno:-1,
     cannon:WEAPONS.cannon.ammo+Math.max(0,(u.cannon||0)-1)*60,
     rocket:WEAPONS.rocket.ammo+Math.max(0,(u.rocket||0)-1)*20,
     missile:WEAPONS.missile.ammo+Math.max(0,(u.missile||0)-1)*2,
@@ -1419,7 +1482,7 @@ addEventListener('keydown',e=>{
   if(e.code==='KeyC'){G.camMode=(G.camMode+1)%3}
   if(e.code==='Escape'&&!G.over){ e.preventDefault(); togglePause(); }
   if(e.code==='KeyP'&&!G.over){ togglePause(); }
-  if(/^Digit[1-5]$/.test(e.code)&&G.me){
+  if(/^Digit[1-6]$/.test(e.code)&&G.me){
     const n=+e.code.slice(5), w=Object.keys(WEAPONS).find(k=>WEAPONS[k].slot===n);
     if(w&&G.me.have[w]){G.me.wep=w;updateWeps()}
   }
@@ -2163,6 +2226,13 @@ function render(){
   }
   gl.enable(gl.CULL_FACE); gl.depthMask(true); gl.disable(gl.BLEND);
 
+  // --- customisation preview: your aircraft, parked and turning ---
+  if(customOpen&&!G.started&&MESH.custom){
+    const q=qAxis([0,0,0,1],0,1,0,G.t*.45+Math.PI/2);
+    M4.fromRTS(model,q,[0,BASE_Y+620,0],1.5);
+    draw(MESH.custom,model,{});
+  }
+
   // --- planes ---
   for(const p of G.planes.values()){
     if(!p.alive) continue;
@@ -2171,7 +2241,7 @@ function render(){
     if(p.isLocal&&cockpit) continue;
     M4.fromRTS(model,p.quat,p.pos,p.drone?.72:1);
     const hurt=clamp(p.hp/p.maxHp,0,1);
-    draw(MESH['plane_'+p.team],model,{tint:[1,.55+hurt*.45,.5+hurt*.5]});
+    draw((p.isLocal&&MESH.custom)||MESH['plane_'+p.team],model,{tint:[1,.55+hurt*.45,.5+hurt*.5]});
     // afterburner flame
     if(p.ctrl.ab||p.thr>.92){
       const o=qrot([0,0,0],[0,0,7.4],p.quat);
@@ -2230,7 +2300,7 @@ function render(){
     gl.clear(gl.DEPTH_BUFFER_BIT);
     M4.fromRTS(model,p.quat,p.pos,1);
     const hurt=clamp(p.hp/p.maxHp,0,1), k=.72;
-    draw(MESH['plane_'+p.team],model,{tint:[k,k*(.55+hurt*.45),k*(.5+hurt*.5)]});
+    draw(MESH.custom||MESH['plane_'+p.team],model,{tint:[k,k*(.55+hurt*.45),k*(.5+hurt*.5)]});
 
     // second clear: the interior lives inside the fuselage shell, so it has to
     // win the depth test against the hull it is enclosed by
@@ -2991,6 +3061,82 @@ function endMission(won){
   sfx(won?'buy':'boom',.9);
 }
 
+/* -------------------------- aircraft customisation ------------------------ */
+const FRAMES=[
+  {id:'fighter',    name:'F-22 Raptor',  cost:0, hull:1,   speed:1,    agility:1,
+   span:1,   sweep:1,   len:1,   desc:'The standard airframe. Balanced in every respect.'},
+  {id:'interceptor',name:'Interceptor',  cost:4, hull:.80, speed:1.18, agility:1.05,
+   span:.85, sweep:1.5, len:1.15,desc:'Long, sharply swept and very fast. Thin skinned.'},
+  {id:'gunship',    name:'Gunship',      cost:5, hull:1.40, speed:.88, agility:.90,
+   span:1.15,sweep:.7,  len:1.1, desc:'Heavy, armoured, and slow to answer the stick.'},
+  {id:'delta',      name:'Delta Wing',   cost:6, hull:.95, speed:.94,  agility:1.22,
+   span:1.3, sweep:1.8, len:.92, desc:'A huge delta. Turns inside anything in the sky.'}
+];
+const PAINTS=[
+  {name:'Squadron Blue', cost:0, col:[.30,.55,.92]},
+  {name:'Desert Sand',   cost:2, col:[.80,.68,.42]},
+  {name:'Night Raven',   cost:3, col:[.15,.16,.21]},
+  {name:'Arctic',        cost:2, col:[.84,.89,.95]},
+  {name:'Blood Red',     cost:3, col:[.78,.16,.14]},
+  {name:'Emerald',       cost:3, col:[.13,.62,.38]},
+  {name:'Royal Purple',  cost:4, col:[.45,.24,.72]},
+  {name:'Inferno Orange',cost:5, col:[.96,.42,.09]}
+];
+function planeCfg(){
+  if(!PROFILE.plane) PROFILE.plane={frame:0,paint:0,frames:[0],paints:[0]};
+  const p=PROFILE.plane;
+  if(!p.frames) p.frames=[0]; if(!p.paints) p.paints=[0];
+  return p;
+}
+function curFrame(){ return FRAMES[clamp(planeCfg().frame,0,FRAMES.length-1)] }
+function curPaint(){ return PAINTS[clamp(planeCfg().paint,0,PAINTS.length-1)] }
+/** rebuild the player's airframe mesh from the saved configuration */
+function buildCustomPlane(){
+  if(MESH.custom) freeMesh(MESH.custom);
+  MESH.custom=buildPlaneMesh(curPaint().col,curFrame());
+}
+let customOpen=false;
+function openCustom(){ customOpen=true; renderCustom(); $('custom').classList.add('on'); }
+$('btnCloseCustom').onclick=()=>{ customOpen=false; $('custom').classList.remove('on'); };
+function renderCustom(){
+  const cfg=planeCfg();
+  $('cusTokens').textContent=PROFILE.tokens+' ⬢';
+  $('cusFrameNote').textContent=curFrame().name+' selected';
+  $('cusGrid').innerHTML=FRAMES.map((f,i)=>{
+    const owned=cfg.frames.includes(i), sel=cfg.frame===i;
+    const stat=v=>v===1?'—':(v>1?'+':'')+Math.round((v-1)*100)+'%';
+    return `<div class="cus ${sel?'on':''} ${owned?'':'locked'}" data-frame="${i}">
+      <h5>${f.name}<span class="price">${owned?(sel?'EQUIPPED':'OWNED'):f.cost+' ⬢'}</span></h5>
+      <p>${f.desc}<br/><span style="color:#7fe6c0">hull ${stat(f.hull)} · speed ${stat(f.speed)} · turn ${stat(f.agility)}</span></p>
+    </div>`;
+  }).join('');
+  $('cusPaints').innerHTML=PAINTS.map((p,i)=>{
+    const owned=cfg.paints.includes(i), sel=cfg.paint===i;
+    const c=p.col.map(v=>Math.round(v*255)).join(',');
+    return `<div class="cus ${sel?'on':''} ${owned?'':'locked'}" data-paint="${i}">
+      <h5>${p.name}<span class="price">${owned?(sel?'ON':'✓'):p.cost+' ⬢'}</span></h5>
+      <div class="swatch" style="background:rgb(${c})"></div>
+    </div>`;
+  }).join('');
+  [...document.querySelectorAll('[data-frame]')].forEach(b=>b.onclick=()=>{
+    const i=+b.dataset.frame, f=FRAMES[i];
+    if(!cfg.frames.includes(i)){
+      if(PROFILE.tokens<f.cost) return toast('NOT ENOUGH TOKENS','red',1.5);
+      PROFILE.tokens-=f.cost; cfg.frames.push(i);
+    }
+    cfg.frame=i; saveProfile(); buildCustomPlane(); renderCustom(); renderPerm(); sfx('buy',.6);
+    if(G.me) applyUpgrades(G.me);
+  });
+  [...document.querySelectorAll('[data-paint]')].forEach(b=>b.onclick=()=>{
+    const i=+b.dataset.paint, p=PAINTS[i];
+    if(!cfg.paints.includes(i)){
+      if(PROFILE.tokens<p.cost) return toast('NOT ENOUGH TOKENS','red',1.5);
+      PROFILE.tokens-=p.cost; cfg.paints.push(i);
+    }
+    cfg.paint=i; saveProfile(); buildCustomPlane(); renderCustom(); renderPerm(); sfx('buy',.5);
+  });
+}
+
 /* ------------------------------ settings --------------------------------- */
 let confirmArm={level:0,all:0};
 function renderSettings(){
@@ -3034,19 +3180,20 @@ function renderPerm(){
      </div>`;
   if($('nameIn')&&!$('nameIn').value&&PROFILE.callsign) $('nameIn').value=PROFILE.callsign;
   $('permList').innerHTML=PERKS.map(k=>{
-    const l=perk(k.id), maxed=l>=k.max, c=k.cost(l);
-    const can=!maxed&&PROFILE.tokens>=c;
-    return `<div class="pitem">
-      <h5>${k.name}<em style="font-style:normal;color:#c9a3ff">${l}/${k.max}</em></h5>
-      <span>${k.eff(Math.min(l+1,k.max))}</span>
-      <button data-perk="${k.id}" ${can?'':'disabled'}>${maxed?'MAXED':c+' ⬢ UNLOCK'}</button>
+    const l=perk(k.id), c=k.cost(l);
+    const can=PROFILE.tokens>=c;
+    return `<div class="pitem${k.marquee?' hot':''}">
+      <h5>${k.name}<em style="font-style:normal;color:#c9a3ff">RANK ${l}</em></h5>
+      <span>${k.eff(l+1)}</span>
+      <button data-perk="${k.id}" ${can?'':'disabled'}>${c} ⬢ ${l===0?'UNLOCK':'RANK '+(l+1)}</button>
     </div>`;
   }).join('');
   [...document.querySelectorAll('[data-perk]')].forEach(b=>b.onclick=()=>{
     const k=PERKS.find(x=>x.id===b.dataset.perk), l=perk(k.id);
-    if(l>=k.max||PROFILE.tokens<k.cost(l)) return;
+    if(PROFILE.tokens<k.cost(l)) return;
     PROFILE.tokens-=k.cost(l); PROFILE.perks[k.id]=l+1; saveProfile();
     sfx('buy',.6); renderPerm();
+    if(G.me){ applyUpgrades(G.me); updateWeps(); }
   });
 }
 
@@ -3249,6 +3396,7 @@ $('btnMission').onclick=()=>startMission();
 $('btnSound').onclick=()=>setMuted(!PROFILE.muted);
 $('btnSound3').onclick=()=>setMuted(!PROFILE.muted);
 $('btnSettings').onclick=()=>openSettings();
+$('btnCustom').onclick=()=>openCustom();
 $('btnSettings2').onclick=()=>openSettings();
 $('btnSound2').onclick=()=>setMuted(!PROFILE.muted);
 $('btnResume').onclick=()=>togglePause();
@@ -3338,10 +3486,15 @@ function frame(now){
     if($('board').classList.contains('on')) updateBoard();
     if(shopOpen&&Math.floor(G.t*4)%2===0) $('shopCred').textContent=Math.floor(G.credits);
   }else if(!G.started){
-    // slow orbit of the map behind the menu
-    const a=G.t*.06;
-    G.camPos=[Math.cos(a)*1500,760,Math.sin(a)*1500+400];
-    G.camLook=[0,180,0];
+    if(customOpen){            // close orbit of your aircraft, parked over the map
+      const a=G.t*.45;
+      G.camPos=[Math.cos(a)*30,BASE_Y+620+7,Math.sin(a)*30];
+      G.camLook=[0,BASE_Y+620,0];
+    }else{                     // slow orbit of the map behind the menu
+      const a=G.t*.06;
+      G.camPos=[Math.cos(a)*1500,760,Math.sin(a)*1500+400];
+      G.camLook=[0,180,0];
+    }
   }
   render();
   fpsN++; fpsT+=dt;
@@ -3350,6 +3503,7 @@ function frame(now){
 
 buildTurrets();
 buildWorld();
+buildCustomPlane();
 renderPerm();
 setMuted(PROFILE.muted);
 requestAnimationFrame(frame);
