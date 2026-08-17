@@ -45,7 +45,8 @@ independently, then pick a paint and trim — over half a million combinations, 
 built as real geometry and shown on a 3D model you can drag to rotate. Parts
 change how the aircraft handles, not just how it looks.
 
-**Settings** covers difficulty (Recruit through Ace), mouse sensitivity, sound,
+**Settings** covers difficulty (Recruit through Ace, plus **Jose**, which is not
+meant to be winnable), mouse sensitivity, sound,
 and resetting your campaign level or erasing progress entirely.
 
 The campaign gets harder as you win. Each victory raises your **campaign level**,

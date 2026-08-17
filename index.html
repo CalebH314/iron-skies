@@ -1353,6 +1353,9 @@ const PERKS=[
   {id:'inferno',name:'Inferno Beam',        cost:l=>l===0?5:4+l*2, marquee:true,
    eff:l=>l===0?'UNLOCK weapon slot 6 — a sustained plasma torrent'
                 :`beam damage ×${infernoMul(l).toFixed(2)} · ${(WEAPONS.inferno.rpm/60).toFixed(0)} shots/s`},
+  {id:'tracker',name:'Auto-Tracker',        cost:l=>l===0?4:3+l,  marquee:true,
+   eff:l=>l===0?'UNLOCK gun tracking — rounds curve onto the nearest target, on any weapon'
+                :`lock settles in ${trackLag(l).toFixed(2)}s · rounds correct at ${trackPull(l).toFixed(2)} rad/s`},
   {id:'hull',   name:'Reinforced Airframe', cost:l=>1+l,          eff:l=>`+${l*30} starting hull`},
   {id:'guns',   name:'Weapon Calibration',  cost:l=>1+l,          eff:l=>`+${l*12}% damage, all weapons`},
   {id:'thrust', name:'Uprated Engine',      cost:l=>2+l,          eff:l=>`+${l*22} km/h top speed`},
@@ -1361,11 +1364,19 @@ const PERKS=[
 ];
 /** the beam keeps growing: strong at rank 1, ferocious many ranks later */
 function infernoMul(l){ return l<=0?0:1+(l-1)*.35 }
+/* Auto-tracker. Rank 1 is deliberately sluggish — the aim point trails a
+   manoeuvring target by nearly a second and barely bends the rounds — and every
+   rank tightens both the settle time and the correction. */
+function trackRate(l){ return l<=0?0:1.1+(l-1)*1.15 }   // how fast the aim point catches up
+function trackLag(l){ return l<=0?0:1/trackRate(l) }    // ...expressed as a settle time
+function trackPull(l){ return l<=0?0:.70+(l-1)*1.60 }   // how hard rounds curve onto it
 const DIFFS=[
   {name:'RECRUIT',k:.55,botHp:.7, botDmg:.65,note:'A gentle enemy. Good for learning the map.'},
   {name:'REGULAR',k:1,  botHp:1,  botDmg:1,  note:'The intended fight.'},
   {name:'VETERAN',k:1.5,botHp:1.3,botDmg:1.3,note:'Tougher installations, sturdier aircraft, faster reinforcement.'},
-  {name:'ACE',    k:2.1,botHp:1.7,botDmg:1.6,note:'Everything the enemy has, doubled. You will need the permanent upgrades.'}
+  {name:'ACE',    k:2.1,botHp:1.7,botDmg:1.6,note:'Everything the enemy has, doubled. You will need the permanent upgrades.'},
+  {name:'JOSE',   k:6.0,botHp:3.0,botDmg:2.6,
+   note:'Not intended to be winnable. The HQ is effectively indestructible, the sky is full, and they rebuild faster than you can level it.'}
 ];
 const PROFILE={tokens:0,perks:{},muted:false,level:1,wins:0,losses:0,
                kills:0,deaths:0,missions:0,callsign:'',difficulty:1,sens:1,
@@ -1402,9 +1413,12 @@ const diff={
   struct(){ return (1+.07*(PROFILE.level-1))*DK().k },          // tougher defences, still soft
   hangarRate(){ return Math.pow(.90,PROFILE.level-1)/DK().k },  // faster launches
   hangars(){ return 1+Math.floor((PROFILE.level-1)/3) },        // more of them
-  cap(){ return Math.round((8+Math.floor((PROFILE.level-1)/2))*clamp(DK().k,.6,1.5)) },
-  extraDefences(){ return Math.round(Math.min(PROFILE.level-1,7)*DK().k) },
-  bots(){ return Math.round((4+Math.floor((PROFILE.level-1)/2))*clamp(DK().k,.6,1.4)) }
+  cap(){ return Math.round((8+Math.floor((PROFILE.level-1)/2))*clamp(DK().k,.6,2.5)) },
+  extraDefences(){ const k=DK().k;
+    return Math.round((Math.min(PROFILE.level-1,7)+(k>=3?6:0))*Math.min(k,2.2)) },
+  bots(){ return Math.round((4+Math.floor((PROFILE.level-1)/2))*clamp(DK().k,.6,2.5)) },
+  economy(){ return 1/Math.max(1,DK().k*.6) },     // how fast they rebuild
+  structCap(){ return Math.round(6*clamp(DK().k,1,2.5)) }
 };
 /** is the enemy scaled right now? not during training or a mission */
 function campaign(){ return G.started&&!G.tut&&!G.mission }
@@ -1779,7 +1793,8 @@ function fireWeapon(p,dt){
         spawnBullet({pos:org.slice(),vel:[dir[0]*w.speed+f[0]*p.speed*.3,dir[1]*w.speed+f[1]*p.speed*.3,dir[2]*w.speed+f[2]*p.speed*.3],
           dmg,team:p.team,owner:p.id,col:w.col,len:w.len,wid:w.wid||1,splash:w.splash||0,
           antiStruct:p.isBot?3.2:1, life:id==='laser'?1.4:id==='inferno'?.65:3.0,
-          fire:id==='inferno', kind:id});
+          fire:id==='inferno', kind:id,
+          seek:(p.isLocal&&p.trackPos&&perk('tracker')>0)?{pos:p.trackPos,k:trackPull(perk('tracker'))}:null});
       }
       if(id==='inferno'){          // embers streaming off the flame
         const f2=fwdOf(p,[0,0,0]);
@@ -1907,6 +1922,23 @@ function stepBullets(dt){
   const myPlanes=ownedPlanes(), myStructs=ownedStructs();
   for(let i=G.bullets.length-1;i>=0;i--){
     const b=G.bullets[i];
+    if(b.seek){                       // auto-tracker: bend gently onto the aim point
+      const v=b.vel, vl=Math.hypot(...v)||1;
+      const to=[b.seek.pos[0]-b.pos[0],b.seek.pos[1]-b.pos[1],b.seek.pos[2]-b.pos[2]];
+      const tl=Math.hypot(...to)||1;
+      // once it is past the target, stop chasing — otherwise rounds loop back
+      // and spiral around it instead of flying on
+      if((v[0]*to[0]+v[1]*to[1]+v[2]*to[2])/(vl*tl) < .15) b.seek=null;
+    }
+    if(b.seek){
+      const v=b.vel, vl=Math.hypot(...v)||1;
+      const to=[b.seek.pos[0]-b.pos[0],b.seek.pos[1]-b.pos[1],b.seek.pos[2]-b.pos[2]];
+      const tl=Math.hypot(...to)||1;
+      const kk=clamp(b.seek.k*dt,0,1);
+      v[0]=lerp(v[0]/vl,to[0]/tl,kk); v[1]=lerp(v[1]/vl,to[1]/tl,kk); v[2]=lerp(v[2]/vl,to[2]/tl,kk);
+      const nl=Math.hypot(...v)||1;
+      v[0]=v[0]/nl*vl; v[1]=v[1]/nl*vl; v[2]=v[2]/nl*vl;
+    }
     const px=b.pos[0],py=b.pos[1],pz=b.pos[2];
     b.pos[0]+=b.vel[0]*dt; b.pos[1]+=b.vel[1]*dt; b.pos[2]+=b.vel[2]*dt;
     b.vel[1]-=(b.kind==='rocket'?9:2.5)*dt;
@@ -2227,17 +2259,28 @@ function stepBot(p,dt){
   // avoidance, the cruise hold and the trench follower all rewrite it — so
   // testing range and alignment against `aim` had bots blazing away at empty
   // sky and canyon walls whenever a waypoint happened to sit ahead of them.
-  if(t){
-    const tp=t.speed!==undefined ? t.pos
-           : [t.pos[0],t.pos[1]+(STRUCTS[t.type]?STRUCTS[t.type].y||8:8),t.pos[2]];
+  // Gunnery is independent of navigation: shoot whatever hostile is closest,
+  // be it an aircraft, the player, an HQ or a defence emplacement.
+  let gt=null, gd=1e9, gAir=false;
+  for(const q of G.planes.values()){
+    if(q===p||!q.alive||q.team===p.team) continue;
+    const d=dist(q.pos,p.pos);
+    if(d<gd){ gd=d; gt=q; gAir=true; }
+  }
+  for(const st of G.structures){
+    if(!st.alive||st.team===p.team) continue;
+    const c2=[st.pos[0],st.pos[1]+(STRUCTS[st.type]?STRUCTS[st.type].y||8:8),st.pos[2]];
+    const d=dist(c2,p.pos);
+    if(d<gd){ gd=d; gt={pos:c2,air:false}; gAir=false; }
+  }
+  if(gt&&gd<(gAir?820:700)){
+    const tp=gt.pos;
     const tv=[tp[0]-p.pos[0],tp[1]-p.pos[1],tp[2]-p.pos[2]];
     const td=Math.hypot(...tv)||1;
     const tl=qrot([0,0,0],[tv[0]/td,tv[1]/td,tv[2]/td],inv);
-    const air=t.speed!==undefined;
-    const range=air?820:700;
-    if(td<range&&tl[2]<-0.986){          // within reach and inside ~10 degrees
+    if(tl[2]<-0.986){                    // inside about ten degrees
       c.fire=1;
-      if(p.have.missile&&air&&td>300&&td<1600&&Math.random()<dt*.7){ p.lock=t; c.fire2=1; }
+      if(p.have.missile&&gAir&&td>300&&td<1600&&Math.random()<dt*.7){ p.lock=gt; c.fire2=1; }
     }
   }
   if(p.hp<p.maxHp*.28&&Math.random()<dt*.4&&p.flares>0){
@@ -2247,6 +2290,35 @@ function stepBot(p,dt){
 }
 
 /* -------------------------- lock-on (missiles) --------------------------- */
+/* The tracker keeps a smoothed aim point that trails the nearest target in
+   front of you. The trailing is the whole point at low ranks. */
+function updateTracker(p,dt){
+  const lvl=perk('tracker');
+  if(lvl<=0){ p.trackTgt=null; return; }
+  const f=fwdOf(p,[0,0,0]);
+  let best=null,bd=2400;
+  const consider=(pos,ref)=>{
+    const to=[pos[0]-p.pos[0],pos[1]-p.pos[1],pos[2]-p.pos[2]];
+    const l=Math.hypot(...to); if(l<30||l>bd) return;
+    if((to[0]*f[0]+to[1]*f[1]+to[2]*f[2])/l < .55) return;   // roughly ahead only
+    bd=l; best=ref;
+  };
+  for(const q of G.planes.values()){
+    if(q===p||!q.alive||q.team===p.team) continue;
+    consider(q.pos,q);
+  }
+  for(const st of G.structures){
+    if(!st.alive||st.team===p.team) continue;
+    consider([st.pos[0],st.pos[1]+(STRUCTS[st.type]?STRUCTS[st.type].y||8:8),st.pos[2]],st);
+  }
+  p.trackTgt=best;
+  if(!best){ p.trackPos=null; return; }
+  const tp=best.speed!==undefined?best.pos
+    :[best.pos[0],best.pos[1]+(STRUCTS[best.type]?STRUCTS[best.type].y||8:8),best.pos[2]];
+  if(!p.trackPos) p.trackPos=tp.slice();
+  const k=clamp(trackRate(lvl)*dt,0,1);
+  for(let i=0;i<3;i++) p.trackPos[i]=lerp(p.trackPos[i],tp[i],k);
+}
 function updateLock(p,dt){
   if(!p.have.missile){p.lock=null;return}
   const f=fwdOf(p,[0,0,0]);
@@ -3610,7 +3682,7 @@ function startGame(team){
   audioInit();
   G.started=true; G.team=team||'blue'; G.mode=net.mode;
   applyTerrain();            // must precede any structure or spawn placement
-  G.economyT=rnd(110,160);   // don't let the enemy build on the very first frame
+  G.economyT=rnd(110,160)*(campaign()?diff.economy():1);   // not on the very first frame
   const nm=($('nameIn').value||'').trim().toUpperCase().slice(0,12)||PROFILE.callsign||'PILOT-'+rndi(10,99);
   PROFILE.callsign=nm; saveProfile();
   const me=newPlane({id:G.myId,name:nm,team:G.team,isLocal:true});
@@ -3692,7 +3764,7 @@ function frame(now){
         p.ctrl.roll=clamp(-u[0]*2,-1,1); p.ctrl.pitch=clamp(-f[1]*2.4,-1,1); p.ctrl.yaw=0;
       }
       simPlane(p,dt);
-      if(p.alive){ updateLock(p,dt); fireWeapon(p,dt); }
+      if(p.alive){ updateTracker(p,dt); updateLock(p,dt); fireWeapon(p,dt); }
       if(engineGain&&AC){
         engineGain.gain.value=p.alive?.05+p.thr*.10:0;
         engineOsc.frequency.value=52+p.speed*.34+(p.ctrl.ab?40:0);
@@ -3718,10 +3790,10 @@ function frame(now){
     if(authority()&&!(G.tut&&!G.tut.done)&&!G.mission){
       G.economyT-=dt;
       if(G.economyT<=0){
-        G.economyT=rnd(150,240);
+        G.economyT=rnd(150,240)*diff.economy();
         const enemy=G.team==='blue'?'red':'blue';
         const built=G.structures.filter(s=>s.team===enemy&&s.alive&&s.type!=='hq').length;
-        if(built<6){
+        if(built<diff.structCap()){
           const pick=['sniper','sam','flak','radar','repair'][rndi(0,4)];
           const s=addStruct(pick,enemy,null);
           net.send({t:'sbuilt',s:packStruct(s)});
