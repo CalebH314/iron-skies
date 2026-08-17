@@ -34,8 +34,9 @@ and altitude tapes, and hull/throttle/flare/ammo gauges.
 
 The landscape is rebuilt every campaign level, and the ground between the bases
 gets harder to cross. Open levels grow ridgelines you have to find gaps in. One level in four is a **canyon run**: the midfield is walled off above the flight
-ceiling and a single trench — three kilometres long with a bend every few hundred
-metres — is the only way through.
+ceiling and a single trench is the only way through: a slot with near-vertical walls
+1500 m deep, winding from one base to the other. Each HQ sits in a bowl sunk
+into the mesa at either end of it.
 
 Tokens also buy the **Inferno Beam** — a sustained plasma torrent in weapon
 slot 6 that keeps gaining ranks with no ceiling — and your own aircraft under
