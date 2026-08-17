@@ -2294,7 +2294,7 @@ function render(){
   // --- customisation preview: your aircraft, parked and turning ---
   if(customOpen&&!G.started&&MESH.custom){
     const q=qAxis([0,0,0,1],0,1,0,previewSpin+Math.PI/2);
-    M4.fromRTS(model,q,[0,BASE_Y+620,0],1.05);
+    M4.fromRTS(model,q,[0,BASE_Y+1150,0],1.35);
     draw(MESH.custom,model,{});
   }
 
@@ -3637,8 +3637,8 @@ function frame(now){
   }else if(!G.started){
     if(customOpen){            // close orbit of your aircraft, parked over the map
       if(previewDrag===null) previewSpin+=dt*.4;
-      const a=previewSpin, R=46, c=[0,BASE_Y+620,0];
-      G.camPos=[c[0]+Math.cos(a)*R,c[1]+9,c[2]+Math.sin(a)*R];
+      const a=previewSpin, R=40, c=[0,BASE_Y+1150,0];
+      G.camPos=[c[0]+Math.cos(a)*R,c[1]+5,c[2]+Math.sin(a)*R];
       // shift the aim point along the camera's right axis so the aircraft
       // renders in the clear part of the screen, not behind the panel
       const fx=c[0]-G.camPos[0],fz=c[2]-G.camPos[2],fl=Math.hypot(fx,fz)||1;
