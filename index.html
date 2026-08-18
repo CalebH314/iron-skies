@@ -1395,9 +1395,6 @@ const PERKS=[
   {id:'inferno',name:'Inferno Beam',        cost:l=>l===0?5:4+l*2, marquee:true,
    eff:l=>l===0?'UNLOCK weapon slot 6 — a sustained plasma torrent'
                 :`beam damage ×${infernoMul(l).toFixed(2)} · ${(WEAPONS.inferno.rpm/60).toFixed(0)} shots/s`},
-  {id:'tracker',name:'Auto-Tracker',        cost:l=>l===0?4:3+l,  marquee:true,
-   eff:l=>l===0?'UNLOCK gun tracking — rounds curve onto the nearest target, on any weapon'
-                :`lock settles in ${trackLag(l).toFixed(2)}s · rounds correct at ${trackPull(l).toFixed(2)} rad/s`},
   {id:'hull',   name:'Reinforced Airframe', cost:l=>1+l,          eff:l=>`+${l*30} starting hull`},
   {id:'guns',   name:'Weapon Calibration',  cost:l=>1+l,          eff:l=>`+${l*12}% damage, all weapons`},
   {id:'thrust', name:'Uprated Engine',      cost:l=>2+l,          eff:l=>`+${l*22} km/h top speed`},
@@ -1406,12 +1403,6 @@ const PERKS=[
 ];
 /** the beam keeps growing: strong at rank 1, ferocious many ranks later */
 function infernoMul(l){ return l<=0?0:1+(l-1)*.35 }
-/* Auto-tracker. Rank 1 is deliberately sluggish — the aim point trails a
-   manoeuvring target by nearly a second and barely bends the rounds — and every
-   rank tightens both the settle time and the correction. */
-function trackRate(l){ return l<=0?0:1.1+(l-1)*1.15 }   // how fast the aim point catches up
-function trackLag(l){ return l<=0?0:1/trackRate(l) }    // ...expressed as a settle time
-function trackPull(l){ return l<=0?0:.70+(l-1)*1.60 }   // how hard rounds curve onto it
 const DIFFS=[
   {name:'RECRUIT',k:.55,botHp:.7, botDmg:.65,note:'A gentle enemy. Good for learning the map.'},
   {name:'REGULAR',k:1,  botHp:1,  botDmg:1,  note:'The intended fight.'},
@@ -1437,6 +1428,16 @@ function loadProfile(){
       if(d.plane) PROFILE.plane=d.plane;
       PROFILE.gTol=d.gTol||7; }
   }catch(e){}
+  // Auto-Tracker was retired: give back what was spent on it rather than
+  // quietly pocketing the tokens.
+  const tr=PROFILE.perks&&PROFILE.perks.tracker|0;
+  if(tr>0){
+    let back=4;
+    for(let l=1;l<tr;l++) back+=3+l;
+    PROFILE.tokens+=back;
+    delete PROFILE.perks.tracker;
+    saveProfile();
+  }
 }
 function resetProfile(all){
   PROFILE.level=1;
@@ -1870,8 +1871,7 @@ function fireWeapon(p,dt){
           dmg,team:p.team,owner:p.id,col:w.col,len:w.len,wid:w.wid||1,splash:w.splash||0,
           rocket:id==='rocket',
           antiStruct:p.isBot?3.2:1, life:id==='laser'?1.4:id==='inferno'?.65:3.0,
-          fire:id==='inferno', grow:id==='inferno'?1:0, kind:id,
-          seek:(p.isLocal&&p.trackPos&&perk('tracker')>0)?{pos:p.trackPos,k:trackPull(perk('tracker'))}:null});
+          fire:id==='inferno', grow:id==='inferno'?1:0, kind:id});
       }
       if(id==='inferno'){          // embers streaming off the flame
         const f2=fwdOf(p,[0,0,0]);
@@ -2045,23 +2045,6 @@ function stepBullets(dt){
   const myPlanes=ownedPlanes(), myStructs=ownedStructs();
   for(let i=G.bullets.length-1;i>=0;i--){
     const b=G.bullets[i];
-    if(b.seek){                       // auto-tracker: bend gently onto the aim point
-      const v=b.vel, vl=Math.hypot(...v)||1;
-      const to=[b.seek.pos[0]-b.pos[0],b.seek.pos[1]-b.pos[1],b.seek.pos[2]-b.pos[2]];
-      const tl=Math.hypot(...to)||1;
-      // once it is past the target, stop chasing — otherwise rounds loop back
-      // and spiral around it instead of flying on
-      if((v[0]*to[0]+v[1]*to[1]+v[2]*to[2])/(vl*tl) < .15) b.seek=null;
-    }
-    if(b.seek){
-      const v=b.vel, vl=Math.hypot(...v)||1;
-      const to=[b.seek.pos[0]-b.pos[0],b.seek.pos[1]-b.pos[1],b.seek.pos[2]-b.pos[2]];
-      const tl=Math.hypot(...to)||1;
-      const kk=clamp(b.seek.k*dt,0,1);
-      v[0]=lerp(v[0]/vl,to[0]/tl,kk); v[1]=lerp(v[1]/vl,to[1]/tl,kk); v[2]=lerp(v[2]/vl,to[2]/tl,kk);
-      const nl=Math.hypot(...v)||1;
-      v[0]=v[0]/nl*vl; v[1]=v[1]/nl*vl; v[2]=v[2]/nl*vl;
-    }
     const px=b.pos[0],py=b.pos[1],pz=b.pos[2];
     b.pos[0]+=b.vel[0]*dt; b.pos[1]+=b.vel[1]*dt; b.pos[2]+=b.vel[2]*dt;
     if(b.grow) b.travel+=Math.hypot(b.vel[0],b.vel[1],b.vel[2])*dt;
@@ -2448,35 +2431,6 @@ function stepBot(p,dt){
 }
 
 /* -------------------------- lock-on (missiles) --------------------------- */
-/* The tracker keeps a smoothed aim point that trails the nearest target in
-   front of you. The trailing is the whole point at low ranks. */
-function updateTracker(p,dt){
-  const lvl=perk('tracker');
-  if(lvl<=0){ p.trackTgt=null; return; }
-  const f=fwdOf(p,[0,0,0]);
-  let best=null,bd=2400;
-  const consider=(pos,ref)=>{
-    const to=[pos[0]-p.pos[0],pos[1]-p.pos[1],pos[2]-p.pos[2]];
-    const l=Math.hypot(...to); if(l<30||l>bd) return;
-    if((to[0]*f[0]+to[1]*f[1]+to[2]*f[2])/l < .55) return;   // roughly ahead only
-    bd=l; best=ref;
-  };
-  for(const q of G.planes.values()){
-    if(q===p||!q.alive||q.team===p.team) continue;
-    consider(q.pos,q);
-  }
-  for(const st of G.structures){
-    if(!st.alive||st.team===p.team) continue;
-    consider([st.pos[0],st.pos[1]+(STRUCTS[st.type]?STRUCTS[st.type].y||8:8),st.pos[2]],st);
-  }
-  p.trackTgt=best;
-  if(!best){ p.trackPos=null; return; }
-  const tp=best.speed!==undefined?best.pos
-    :[best.pos[0],best.pos[1]+(STRUCTS[best.type]?STRUCTS[best.type].y||8:8),best.pos[2]];
-  if(!p.trackPos) p.trackPos=tp.slice();
-  const k=clamp(trackRate(lvl)*dt,0,1);
-  for(let i=0;i<3;i++) p.trackPos[i]=lerp(p.trackPos[i],tp[i],k);
-}
 function updateLock(p,dt){
   if(!p.have.missile){p.lock=null;return}
   const f=fwdOf(p,[0,0,0]);
@@ -3929,7 +3883,7 @@ function frame(now){
         p.ctrl.roll=clamp(-u[0]*2,-1,1); p.ctrl.pitch=clamp(-f[1]*2.4,-1,1); p.ctrl.yaw=0;
       }
       simPlane(p,dt);
-      if(p.alive){ updateG(p,dt); updateTracker(p,dt); updateLock(p,dt); fireWeapon(p,dt); }
+      if(p.alive){ updateG(p,dt); updateLock(p,dt); fireWeapon(p,dt); }
       if(engineGain&&AC){
         engineGain.gain.value=p.alive?.05+p.thr*.10:0;
         engineOsc.frequency.value=52+p.speed*.34+(p.ctrl.ab?40:0);
