@@ -1870,7 +1870,7 @@ function fireWeapon(p,dt){
         spawnBullet({pos:org.slice(),vel:[dir[0]*w.speed+f[0]*p.speed*.3,dir[1]*w.speed+f[1]*p.speed*.3,dir[2]*w.speed+f[2]*p.speed*.3],
           dmg,team:p.team,owner:p.id,col:w.col,len:w.len,wid:w.wid||1,splash:w.splash||0,
           rocket:id==='rocket',
-          antiStruct:p.isBot?3.2:1, life:id==='laser'?1.4:id==='inferno'?.65:3.0,
+          antiStruct:p.isBot?0.55:1, life:id==='laser'?1.4:id==='inferno'?.65:3.0,
           fire:id==='inferno', grow:id==='inferno'?1:0, kind:id});
       }
       if(id==='inferno'){          // embers streaming off the flame
@@ -2281,28 +2281,28 @@ function stepBot(p,dt){
   p.aiT-=dt;
   if(p.aiT<=0||!p.aiTarget||(p.aiTarget.alive===false)){
     p.aiT=rnd(2.5,5);
-    // Raiders are on a bombing run and all but ignore fighters, so the strike
-    // actually reaches your HQ instead of dissolving into a midfield furball.
-    // Interceptors are the ones that come for you.
-    if(!p.role) p.role='raider';
-    let best=null,bd=p.role==='raider'?300:980;
-    for(const q of G.planes.values()){
-      if(q===p||!q.alive||q.team===p.team) continue;
-      const d=dist(q.pos,p.pos); if(d<bd){bd=d;best=q}
-    }
-    let ground=null;
-    if(!best){
-      const hq=G.structures.find(s=>s.alive&&s.type==='hq'&&s.team!==p.team);
-      if(hq) ground=hq;
-      else{
-        let gd=1e9;
-        for(const s of G.structures){
-          if(!s.alive||s.team===p.team) continue;
-          const d=dist(s.pos,p.pos); if(d<gd){gd=d;ground=s}
-        }
+    // Every aircraft is on a strike: the enemy HQ is the standing objective and
+    // nothing pulls them off it. They still shoot whatever crosses their sights
+    // on the way — see the gunnery section below — but they never divert to
+    // chase it, which is what used to dissolve the raid into a midfield brawl.
+    let ground=G.structures.find(s=>s.alive&&s.type==='hq'&&s.team!==p.team);
+    if(!ground){
+      // HQ already levelled: only now is an emplacement worth the trip
+      let gd=1e9;
+      for(const s of G.structures){
+        if(!s.alive||s.team===p.team) continue;
+        const d=dist(s.pos,p.pos); if(d<gd){gd=d;ground=s}
       }
     }
-    p.aiTarget=best||ground||null;
+    let best=null;
+    if(!ground){                       // nothing left on the ground: hunt aircraft
+      let bd=1e9;
+      for(const q of G.planes.values()){
+        if(q===p||!q.alive||q.team===p.team) continue;
+        const d=dist(q.pos,p.pos); if(d<bd){bd=d;best=q}
+      }
+    }
+    p.aiTarget=ground||best||null;
     p.aiStruct=!best&&!!ground;
   }
   const t=p.aiTarget;
@@ -2313,7 +2313,7 @@ function stepBot(p,dt){
     aim = t.pos ? (t.speed!==undefined
       ? (()=>{const f=fwdOf(t,[0,0,0]);const d=dist(t.pos,p.pos);const lt=clamp(d/1100,0,.9);
              return [t.pos[0]+f[0]*t.speed*lt,t.pos[1]+f[1]*t.speed*lt,t.pos[2]+f[2]*t.speed*lt]})()
-      : [t.pos[0],t.pos[1]+(STRUCTS[t.type]?STRUCTS[t.type].y:0)+10,t.pos[2]]) : null;
+      : [t.pos[0],t.pos[1]+(STRUCTS[t.type]?STRUCTS[t.type].y:0)+26,t.pos[2]]) : null;
   }
   // terrain avoidance dominates
   const f=fwdOf(p,[0,0,0]);
@@ -2351,7 +2351,12 @@ function stepBot(p,dt){
   }
   else{
     p.canyonBoost=1;
-    if(ahead[1]<gh+180||lowNow){
+    // On a run at a ground target the 620m lookahead always reports "ground
+    // ahead" the instant the nose drops, so avoidance cancels every attack and
+    // they orbit instead. Inside the run-in, only the hard floor applies.
+    const attackRun=p.aiStruct&&aim&&
+      Math.hypot(aim[0]-p.pos[0],aim[2]-p.pos[2])<750&&p.pos[1]>ghNow+70;
+    if(!attackRun&&(ahead[1]<gh+180||lowNow)){
       // Inside a bowl there is no climbing out — the rim tops the ceiling — so
       // the answer to terrain ahead is to turn back into the bowl, not to pull up.
       if(myBowl){ const bc=BASES[myBowl]; aim=[bc[0],BASE_Y+320,bc[2]]; }
@@ -2402,17 +2407,32 @@ function stepBot(p,dt){
   // sky and canyon walls whenever a waypoint happened to sit ahead of them.
   // Gunnery is independent of navigation: shoot whatever hostile is closest,
   // be it an aircraft, the player, an HQ or a defence emplacement.
+  // Priority: the HQ whenever it is in reach — that is the whole point of the
+  // sortie — then any aircraft crossing their sights, and an emplacement only
+  // when there is nothing else to shoot at.
   let gt=null, gd=1e9, gAir=false;
-  for(const q of G.planes.values()){
-    if(q===p||!q.alive||q.team===p.team) continue;
-    const d=dist(q.pos,p.pos);
-    if(d<gd){ gd=d; gt=q; gAir=true; }
-  }
   for(const st of G.structures){
-    if(!st.alive||st.team===p.team) continue;
-    const c2=[st.pos[0],st.pos[1]+(STRUCTS[st.type]?STRUCTS[st.type].y||8:8),st.pos[2]];
+    if(!st.alive||st.team===p.team||st.type!=='hq') continue;
+    const c2=[st.pos[0],st.pos[1]+(STRUCTS.hq.y||8),st.pos[2]];
     const d=dist(c2,p.pos);
-    if(d<gd){ gd=d; gt={pos:c2,air:false}; gAir=false; }
+    if(d<gd){ gd=d; gt={pos:c2}; }
+  }
+  if(!gt||gd>700){                       // nothing to bomb yet: fight en route
+    let bd=1e9, air=null;
+    for(const q of G.planes.values()){
+      if(q===p||!q.alive||q.team===p.team) continue;
+      const d=dist(q.pos,p.pos);
+      if(d<bd){ bd=d; air=q; }
+    }
+    if(air&&bd<820){ gt=air; gd=bd; gAir=true; }
+  }
+  if(!gt){
+    for(const st of G.structures){
+      if(!st.alive||st.team===p.team||st.type==='hq') continue;
+      const c2=[st.pos[0],st.pos[1]+(STRUCTS[st.type]?STRUCTS[st.type].y||8:8),st.pos[2]];
+      const d=dist(c2,p.pos);
+      if(d<gd){ gd=d; gt={pos:c2}; }
+    }
   }
   if(gt&&gd<(gAir?820:700)){
     const tp=gt.pos;
