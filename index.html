@@ -757,6 +757,7 @@ function vnoise(x,z){
    ceiling, leaving one winding trench as the only way through.
    ------------------------------------------------------------------------- */
 const CEILING=1500;
+const DOME_R=340;        // shield dome radius; STRUCTS reads this at load
 const BOWL_IN=950, BOWL_R=1500;  // flat arena radius, and where the rim tops out.
 // The floor has to be wider than an aircraft's turn radius, or anything that
 // overshoots the HQ on a strafing run flies straight into the rising rim.
@@ -943,6 +944,17 @@ function buildWorld(){
   ms.push();ms.tr(0,0,1.5);ms.box(1.5,.1,.7,[.85,.3,.25]);ms.box(.1,1.5,.7,[.85,.3,.25]);ms.pop();
   MESH.missile=ms.build();
   const pc=new Builder(); pc.box(1,1,1,[1,1,1]); MESH.cube=pc.build();
+
+  // shield dome: a unit hemisphere, scaled to DOME_R when drawn
+  const dm=new Builder(), DR=1, drings=9, dseg=26;
+  for(let i=0;i<dseg;i++)for(let j=0;j<drings;j++){
+    const a0=i/dseg*Math.PI*2,a1=(i+1)/dseg*Math.PI*2;
+    const q0=j/drings*Math.PI/2,q1=(j+1)/drings*Math.PI/2;
+    const P=(a,q)=>[Math.cos(q)*Math.cos(a)*DR,Math.sin(q)*DR,Math.cos(q)*Math.sin(a)*DR];
+    const band=(j%2===0)?[.42,.86,1]:[.24,.62,.92];      // faint banding so it reads as a shell
+    dm.quad(P(a0,q0),P(a1,q0),P(a1,q1),P(a0,q1),band);
+  }
+  MESH.dome=dm.build();
 
   // an actual rocket: body, nose cone and tail fins, nose along -Z
   const rk=new Builder();
@@ -1320,6 +1332,8 @@ const STRUCTS={
            short:'RADAR', desc:'Paints every enemy inside 2.8&nbsp;km on your minimap and sharpens SAM lock-on.'},
   repair: {name:'Repair Pad',       hp:260,  cost:850,  range:340,  r:24, y:2,  turret:null, heal:16,
            short:'REPAIR PAD', desc:'Friendly aircraft flying low over the pad repair and rearm rapidly.'},
+  dome:   {name:'Force Dome',       short:'DOME', hp:2200, cost:0, range:0, r:DOME_R, y:0, turret:null,
+           desc:'A shield dome over your Command HQ. Enemy aircraft that touch it are destroyed, and every round aimed at your base is absorbed — until it is beaten down.'},
   spawner:{name:'Aircraft Hangar',  hp:520,  cost:1900, range:0,    r:28, y:10, turret:null, cd:9, cap:8,
            short:'HANGAR', desc:'Sits beside the HQ and launches a fighter every 9&nbsp;seconds, up to eight airborne. Buy <b>Hangar Crews</b> to go faster still. It is lightly built — destroy the enemy hangar and their reinforcements stop dead.'}
 };
@@ -1395,6 +1409,11 @@ const PERKS=[
   {id:'inferno',name:'Inferno Beam',        cost:l=>l===0?5:4+l*2, marquee:true,
    eff:l=>l===0?'UNLOCK weapon slot 6 — a sustained plasma torrent'
                 :`beam damage ×${infernoMul(l).toFixed(2)} · ${(WEAPONS.inferno.rpm/60).toFixed(0)} shots/s`},
+  {id:'dome',   name:'Force Dome',           cost:l=>l===0?18:14+l*7, marquee:true,
+   eff:l=>l===0?'UNLOCK a shield dome over your HQ — enemy aircraft that touch it are destroyed'
+                :`${domeHp(l)} dome integrity · absorbs every round aimed at your base`},
+  {id:'hqhull', name:'HQ Fortification',     cost:l=>3+l*2,
+   eff:l=>`+${l*900} Command HQ hull (${5200+l*900} total)`},
   {id:'hull',   name:'Reinforced Airframe', cost:l=>1+l,          eff:l=>`+${l*30} starting hull`},
   {id:'guns',   name:'Weapon Calibration',  cost:l=>1+l,          eff:l=>`+${l*12}% damage, all weapons`},
   {id:'thrust', name:'Uprated Engine',      cost:l=>2+l,          eff:l=>`+${l*22} km/h top speed`},
@@ -1403,6 +1422,8 @@ const PERKS=[
 ];
 /** the beam keeps growing: strong at rank 1, ferocious many ranks later */
 function infernoMul(l){ return l<=0?0:1+(l-1)*.35 }
+/** the dome is meant to be a late, expensive wall — not a small buff */
+function domeHp(l){ return l<=0?0:2200+1600*(l-1) }
 const DIFFS=[
   {name:'RECRUIT',k:.55,botHp:.7, botDmg:.65,note:'A gentle enemy. Good for learning the map.'},
   {name:'REGULAR',k:1,  botHp:1,  botDmg:1,  note:'The intended fight.'},
@@ -1564,10 +1585,12 @@ function hangarPos(team){
 }
 function addStruct(type,team,ownerId,idx){
   const cfg=STRUCTS[type];
-  const pos = type==='hq' ? [BASES[team][0],terrainH(BASES[team][0],BASES[team][2]),BASES[team][2]]
+  const pos = (type==='hq'||type==='dome') ? [BASES[team][0],terrainH(BASES[team][0],BASES[team][2]),BASES[team][2]]
             : type==='spawner' ? hangarPos(team)
                           : structPos(team,idx===undefined?structSlot[team]++:idx);
   let hp=cfg.hp;
+  if(type==='dome') hp=domeHp(perk('dome'));
+  else if(type==='hq'&&team===G.team&&!G.tut) hp+=perk('hqhull')*900;   // your fortification
   if(campaign()&&team!==G.team) hp=Math.round(hp*(type==='hq'?diff.hq():diff.struct()));
   const s={id:uid(),type,team,owner:ownerId||null,pos,hp,maxHp:hp,cd:0,yaw:team==='blue'?Math.PI:0,pitch:0,spin:0,alive:true};
   G.structures.push(s);
@@ -2028,6 +2051,17 @@ function stepCollisions(dt){
       for(let i=0;i<3;i++) a.pos[i]+=away[i]/l*9;
       explode([(a.pos[0]+b.pos[0])/2,(a.pos[1]+b.pos[1])/2,(a.pos[2]+b.pos[2])/2],14,.9);
     }
+    // the dome vaporises anything hostile that touches it
+    for(const d of G.structures){
+      if(!d.alive||d.type!=='dome'||d.team===a.team) continue;
+      if(dist(a.pos,d.pos)>DOME_R) continue;
+      hitDome(d,140+MASS(a)*impactDamage(a.speed)*.5,a.id);
+      explode(a.pos,34,1.5); sfxAt('boom',a.pos,1);
+      if(a.isLocal) toast('FLEW INTO THE FORCE DOME','red',2.2);
+      killPlane(a,null,true);
+      break;
+    }
+    if(!a.alive) continue;
     // aircraft against buildings
     for(const s of G.structures){
       if(!s.alive) continue;
@@ -2054,7 +2088,19 @@ function stepBullets(dt){
     b.life-=dt;
     let hit=false, hitPos=b.pos;
 
-    for(const p of myPlanes){
+    // the dome soaks anything shot at the base it covers
+    if(authority()){
+      for(const d of G.structures){
+        if(!d.alive||d.type!=='dome'||d.team===b.team) continue;
+        if(segSphere(px,py,pz,b.pos,d.pos,DOME_R)){
+          hitDome(d,b.dmg*(b.antiStruct||1),b.owner);
+          hit=true; hitPos=b.pos.slice();
+          for(let e=0;e<2;e++) addPart(b.pos,[rnd(-12,12),rnd(2,16),rnd(-12,12)],[.45,.85,1],rnd(.6,1.6),rnd(.2,.5));
+          break;
+        }
+      }
+    }
+    if(!hit) for(const p of myPlanes){
       if(p.team===b.team||p.id===b.owner) continue;
       if(segSphere(px,py,pz,b.pos,p.pos,8.5+beamR(b))){ damagePlane(p,b.dmg,b.owner); hit=true; hitPos=p.pos.slice(); break; }
     }
@@ -2143,6 +2189,9 @@ function stepMissiles(dt){
 
 /* ------------------------------ particles -------------------------------- */
 /** how much wider the beam has become this far downrange */
+/** the live dome shielding a team, if any */
+function domeOf(team){ return G.structures.find(s=>s.alive&&s.type==='dome'&&s.team===team) }
+function hitDome(s,amt,by){ s.cool=6; damageStruct(s,amt,by); }
 function beamR(b){ return b.grow?clamp(b.travel/70,0,13):0 }
 /* Fire pools. The beam sets the ground and the air alight where it lands, and
    they keep burning — and keep dealing damage — after you stop shooting. */
@@ -2210,6 +2259,11 @@ function stepStructs(dt){
         const up=[...G.planes.values()].filter(q=>q.isBot&&q.team===s.team&&q.alive&&!q.passive).length;
         if(up<cap) spawnBotFrom(s);
       }
+      continue;
+    }
+    if(s.type==='dome'){
+      s.cool=Math.max(0,(s.cool||0)-dt);
+      if(s.cool<=0&&s.hp<s.maxHp) s.hp=Math.min(s.maxHp,s.hp+s.maxHp*.018*dt);
       continue;
     }
     if(s.type==='repair'||s.type==='hq') continue;
@@ -2285,7 +2339,9 @@ function stepBot(p,dt){
     // nothing pulls them off it. They still shoot whatever crosses their sights
     // on the way — see the gunnery section below — but they never divert to
     // chase it, which is what used to dissolve the raid into a midfield brawl.
-    let ground=G.structures.find(s=>s.alive&&s.type==='hq'&&s.team!==p.team);
+    // a dome makes the HQ untouchable, so it becomes the objective instead
+    const foeTeam=p.team==='blue'?'red':'blue';
+    let ground=domeOf(foeTeam)||G.structures.find(s=>s.alive&&s.type==='hq'&&s.team!==p.team);
     if(!ground){
       // HQ already levelled: only now is an emplacement worth the trip
       let gd=1e9;
@@ -2412,8 +2468,11 @@ function stepBot(p,dt){
   // when there is nothing else to shoot at.
   let gt=null, gd=1e9, gAir=false;
   for(const st of G.structures){
-    if(!st.alive||st.team===p.team||st.type!=='hq') continue;
-    const c2=[st.pos[0],st.pos[1]+(STRUCTS.hq.y||8),st.pos[2]];
+    if(!st.alive||st.team===p.team) continue;
+    if(st.type!=='hq'&&st.type!=='dome') continue;
+    const c2=st.type==='dome'
+      ? [st.pos[0],st.pos[1]+DOME_R*.55,st.pos[2]]      // shoot the shell, not the ground
+      : [st.pos[0],st.pos[1]+(STRUCTS.hq.y||8),st.pos[2]];
     const d=dist(c2,p.pos);
     if(d<gd){ gd=d; gt={pos:c2}; }
   }
@@ -2635,6 +2694,19 @@ function render(){
     M4.fromRTS(model,q,m.pos,1);
     draw(MESH.missile,model,{});
   }
+  // --- shield domes ---
+  gl.enable(gl.BLEND); gl.depthMask(false); gl.disable(gl.CULL_FACE);
+  for(const d of G.structures){
+    if(!d.alive||d.type!=='dome') continue;
+    const f=clamp(d.hp/d.maxHp,0,1);
+    const hot=clamp((d.cool||0)/6,0,1);                  // flares white when struck
+    M4.trans(model,d.pos[0],d.pos[1],d.pos[2]);
+    M4.mul(model,model,M4.scl(tmpM,DOME_R,DOME_R*.82,DOME_R));
+    draw(MESH.dome,model,{unlit:true,alpha:.10+.16*f+.22*hot,
+      tint:[.5+hot*.5,.85+hot*.15,1]});
+  }
+  gl.enable(gl.CULL_FACE); gl.depthMask(true); gl.disable(gl.BLEND);
+
   // --- fire pools ---
   gl.enable(gl.BLEND); gl.depthMask(false);
   for(const f of G.fires){
@@ -3064,6 +3136,7 @@ function resetRound(){
   G.structures.length=0; structSlot={blue:0,red:0}; hangarSlot={blue:0,red:0};
   G.bullets.length=0; G.missiles.length=0; G.parts.length=0; G.fires.length=0;
   addStruct('hq','blue'); addStruct('hq','red');
+  if(perk('dome')>0) addStruct('dome',G.team);
   addStruct('spawner','blue'); addStruct('spawner','red');
   addStruct('flak','red'); addStruct('sniper','red');
   addStruct('flak','blue');
@@ -3832,6 +3905,7 @@ function startGame(team){
     addStruct('hq','blue'); addStruct('hq','red');
     if(!G.tut&&!G.mission){   // training and missions build their own worlds
       const foe=G.team==='blue'?'red':'blue';
+      if(perk('dome')>0) addStruct('dome',G.team);
       addStruct('spawner',G.team); addStruct('spawner',foe);
       // the enemy grows a bigger air force and more defences each campaign level
       for(let i=1;i<diff.hangars();i++) addStruct('spawner',foe);
