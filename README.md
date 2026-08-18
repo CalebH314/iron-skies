@@ -54,9 +54,10 @@ and the enemy answers with a tougher HQ, more hangars launching aircraft faster,
 and more defences. Level, tokens, perks and career record are saved in your
 browser.
 
-**Missions** are short solo contracts — precision strikes, fighter sweeps, a
-low-level gate course, and base defence. Completing one pays **tokens**, which
-buy permanent upgrades on the menu that carry into every mode.
+**Missions** are canyon runs: a long winding trench generated fresh each time,
+strung with gates to fly. Completing one pays **tokens** and permanently raises
+your **G tolerance**, which matters because pulling hard greys out your vision
+and makes the controls go heavy.
 
 ## The game
 

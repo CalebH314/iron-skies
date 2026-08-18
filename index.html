@@ -18,6 +18,11 @@ html,body{width:100%;height:100%;overflow:hidden;background:#05080f;color:#dbe7f
 .panel{background:linear-gradient(180deg,rgba(8,16,28,.92),rgba(6,11,20,.95));
   border:1px solid rgba(110,180,255,.22);border-radius:10px;backdrop-filter:blur(6px)}
 #hud{position:absolute;inset:0;pointer-events:none;z-index:4;opacity:0;transition:opacity .3s}
+#hurt{position:absolute;inset:0;pointer-events:none;z-index:6;opacity:0;
+  background:radial-gradient(ellipse at center,rgba(255,0,0,0) 42%,rgba(255,20,10,.55) 82%,rgba(140,0,0,.9) 100%)}
+#gvig{position:absolute;inset:0;pointer-events:none;z-index:7;opacity:0;
+  background:radial-gradient(ellipse at center,rgba(0,0,0,0) 12%,rgba(0,0,0,.85) 62%,#000 100%)}
+#gvig.red{background:radial-gradient(ellipse at center,rgba(120,0,0,0) 12%,rgba(150,0,0,.8) 62%,#900 100%)}
 #hud.on{opacity:1}
 
 /* --- crosshair --- */
@@ -265,6 +270,9 @@ td{padding:6px 8px;border-bottom:1px solid rgba(255,255,255,.045)}
 <canvas id="gl"></canvas>
 <canvas id="mini" width="190" height="190"></canvas>
 
+<div id="hurt"></div>
+<div id="gvig"></div>
+
 <div id="hud">
   <div id="cross"><div class="h1"></div><div class="h2"></div><div class="v1"></div><div class="v2"></div><div class="dot"></div></div>
   <div id="hitmark"><div class="a"></div><div class="b"></div><div class="c"></div><div class="d"></div></div>
@@ -285,6 +293,7 @@ td{padding:6px 8px;border-bottom:1px solid rgba(255,255,255,.045)}
   <div id="instr" class="panel">
     <div class="gauge"><b id="spd">0</b><span>KM/H</span></div>
     <div class="gauge"><b id="alt">0</b><span>ALT M</span></div>
+    <div class="gauge"><b id="gLoad">1.0</b><span>G</span></div>
     <div id="thr"><i style="height:60%"></i></div>
   </div>
 
@@ -878,7 +887,7 @@ function buildTerrainMesh(){
 /** Pick and build the landscape for whatever we are about to play. */
 function applyTerrain(){
   if(G.tut) setTerrain(1,false);                 // training stays open and forgiving
-  else if(G.mission) setTerrain(1+rndi(0,6),false);
+  else if(G.mission) setTerrain(rndi(4,16),true);   // every mission is a canyon
   else setTerrain(PROFILE.level,isTrenchLevel(PROFILE.level));
   buildTerrainMesh();
 }
@@ -923,7 +932,8 @@ function buildWorld(){
   MESH.clouds=c.build();
 
   /* --- planes (per team) --- */
-  for(const team in TEAMCOL) MESH['plane_'+team]=buildPlaneMesh(TEAMCOL[team]);
+  for(const team in TEAMCOL){ MESH['plane_'+team]=buildPlaneMesh(TEAMCOL[team]);
+                              MESH['drone_'+team]=buildDroneMesh(TEAMCOL[team]); }
   MESH.cockpit=buildCockpit(); MESH.cockpitGlow=buildCockpitGlow(); MESH.stick=buildStick();
 
   /* --- projectiles / fx --- */
@@ -933,6 +943,17 @@ function buildWorld(){
   ms.push();ms.tr(0,0,1.5);ms.box(1.5,.1,.7,[.85,.3,.25]);ms.box(.1,1.5,.7,[.85,.3,.25]);ms.pop();
   MESH.missile=ms.build();
   const pc=new Builder(); pc.box(1,1,1,[1,1,1]); MESH.cube=pc.build();
+
+  // an actual rocket: body, nose cone and tail fins, nose along -Z
+  const rk=new Builder();
+  rk.push(); rk.rx(-Math.PI/2); rk.prism(.30,.30,2.6,8,[.86,.88,.90]); rk.pop();
+  rk.push(); rk.tr(0,0,-2.6); rk.rx(-Math.PI/2); rk.prism(.30,.02,1.0,8,[.90,.28,.20]); rk.pop();
+  rk.push(); rk.tr(0,0,-1.1); rk.rx(-Math.PI/2); rk.prism(.31,.31,.28,8,[.55,.16,.12]); rk.pop();
+  for(const a of [0,Math.PI/2]){
+    rk.push(); rk.rz(a); rk.tr(0,0,.55); rk.box(1.25,.07,.9,[.80,.82,.85]); rk.pop();
+  }
+  rk.push(); rk.tr(0,0,.9); rk.rx(Math.PI/2); rk.prism(.22,.14,.5,8,[1,.55,.2]); rk.pop();
+  MESH.rocket=rk.build();
 
   // mission gate: a ring of segments you fly through
   const rg=new Builder(), RR=52;
@@ -947,6 +968,27 @@ function buildWorld(){
   for(const t in STRUCTS) MESH.struct[t]={
     blue:buildStructMesh(t,TEAMCOL.blue), red:buildStructMesh(t,TEAMCOL.red)
   };
+}
+
+/* Unmanned: no canopy, a blended body, twin tail booms and a sensor turret. */
+function buildDroneMesh(tc){
+  const b=new Builder();
+  const body=[tc[0]*.55+.22,tc[1]*.55+.23,tc[2]*.55+.25];
+  const dark=[.13,.14,.17], metal=[.52,.55,.60];
+  b.push(); b.tr(0,0,-.6); b.box(1.7,1.0,7.2,body); b.pop();          // flat fuselage
+  b.push(); b.tr(0,.42,-3.1); b.box(1.15,.75,2.6,body); b.pop();      // humped avionics spine
+  b.push(); b.tr(0,-.05,-4.6); b.rx(-Math.PI/2); b.prism(.72,.30,1.9,10,body); b.pop();
+  b.push(); b.tr(0,-.62,-3.5); b.prism(.52,.42,.5,10,dark); b.pop();  // sensor ball
+  for(const sg of [1,-1]){
+    b.push(); b.tr(sg*4.3,.05,.4); b.ry(sg*.06); b.box(8.0,.26,1.9,body); b.pop();   // long thin wing
+    b.push(); b.tr(sg*8.1,.30,.4); b.rz(-sg*.35); b.box(.22,1.3,1.2,tc); b.pop();     // winglet
+    b.push(); b.tr(sg*1.75,-.02,2.2); b.box(.5,.5,4.6,body); b.pop();                 // tail boom
+    b.push(); b.tr(sg*1.75,1.05,4.3); b.box(.22,1.9,1.3,tc); b.pop();                 // boom fin
+  }
+  b.push(); b.tr(0,.85,4.6); b.box(3.9,.22,1.2,body); b.pop();        // tailplane between booms
+  b.push(); b.tr(0,.30,2.6); b.rx(Math.PI/2); b.prism(.44,.50,1.5,10,metal); b.pop(); // pusher duct
+  b.push(); b.tr(0,.30,3.9); b.rx(Math.PI/2); b.prism(.40,.26,.6,10,[.9,.5,.2]); b.pop();
+  return b.build();
 }
 
 /* The aircraft is assembled from interchangeable parts. `cfg` names one option
@@ -1380,7 +1422,7 @@ const DIFFS=[
 ];
 const PROFILE={tokens:0,perks:{},muted:false,level:1,wins:0,losses:0,
                kills:0,deaths:0,missions:0,callsign:'',difficulty:1,sens:1,
-               plane:{frame:0,paint:0,frames:[0],paints:[0]}};
+               plane:{frame:0,paint:0,frames:[0],paints:[0]},gTol:7};
 const DK=()=>DIFFS[clamp(PROFILE.difficulty|0,0,DIFFS.length-1)];
 function loadProfile(){
   try{
@@ -1393,7 +1435,7 @@ function loadProfile(){
       PROFILE.difficulty=d.difficulty===undefined?1:clamp(d.difficulty|0,0,DIFFS.length-1);
       PROFILE.sens=d.sens||1;
       if(d.plane) PROFILE.plane=d.plane;
-      }
+      PROFILE.gTol=d.gTol||7; }
   }catch(e){}
 }
 function resetProfile(all){
@@ -1401,7 +1443,7 @@ function resetProfile(all){
   if(all){
     PROFILE.tokens=0; PROFILE.perks={}; PROFILE.wins=0; PROFILE.losses=0;
     PROFILE.kills=0; PROFILE.deaths=0; PROFILE.missions=0; PROFILE.callsign='';
-    PROFILE.plane={...DEFCFG};
+    PROFILE.plane={...DEFCFG}; PROFILE.gTol=7;
     buildCustomPlane();
   }
   saveProfile(); renderPerm(); renderSettings();
@@ -1436,7 +1478,7 @@ const G={
   me:null, myId:uid(), team:'blue',
   credits:600, kills:0, deaths:0, score:0,
   camMode:0, camPos:[0,120,300], camLook:[0,60,0],
-  round:null, botFill:5, economyT:0,
+  round:null, botFill:5, economyT:0, fires:[],
   paused:false, over:false, mission:null,
   hangarLvl:{blue:0,red:0}, shieldLvl:{blue:0,red:0}, droneLvl:{blue:0,red:0}, rings:[]
 };
@@ -1669,6 +1711,26 @@ function tryResupply(p){
 
 /* -------------------------- flight simulation --------------------------- */
 const LIFT_SPEED=90, STRAFE_SPEED=85;   // m/s of direct movement
+/* G is taken from how fast the velocity vector is being bent: a * v / g.
+   Past your tolerance vision greys out from the edges and the controls go
+   heavy; push negative and it reddens instead. Tolerance grows with training. */
+const G_SCALE=.26;   // arcade turn rates -> believable g readings
+function gTolerance(){ return PROFILE.gTol||7 }
+function updateG(p,dt){
+  const f=fwdOf(p,[0,0,0]);
+  if(!p.pf){ p.pf=f.slice(); p.g=1; p.gStress=0; return; }
+  const dot=clamp(f[0]*p.pf[0]+f[1]*p.pf[1]+f[2]*p.pf[2],-1,1);
+  const rate=Math.acos(dot)/Math.max(dt,1e-4);          // rad/s of turn
+  p.pf=f.slice();
+  const raw=1+rate*p.speed/9.81*G_SCALE;
+  // pushing the nose down unloads and then pulls negative
+  const signed=p.ctrl.pitch<-.25?-(raw-1)*.7:raw;
+  p.g=lerp(p.g===undefined?1:p.g,signed,clamp(dt*6,0,1));
+  const tol=gTolerance();
+  const over=Math.abs(p.g)>tol?(Math.abs(p.g)-tol)/tol:0;
+  p.gStress=clamp((p.gStress||0)+(over>0?over*dt*1.7:-dt*.75),0,1.4);
+  p.gNeg=p.g<-1.5;
+}
 const _f=[0,0,0],_u=[0,0,0],_r=[0,0,0],_dq=[0,0,0,1],_tmp=[0,0,0];
 function fwdOf(p,out){return qrot(out||_f,[0,0,-1],p.quat)}
 function upOf(p,out){return qrot(out||_u,[0,1,0],p.quat)}
@@ -1683,7 +1745,8 @@ function simPlane(p,dt){
     }
     return;
   }
-  const c=p.ctrl, ag=(p.agility||1)*(p.canyonBoost||1);
+  const c=p.ctrl, gDrag=p.isLocal?clamp(1-(p.gStress||0)*.55,.35,1):1;
+  const ag=(p.agility||1)*(p.canyonBoost||1)*gDrag;
   const stall=clamp((p.speed-40)/70,.25,1);
   const rP=1.35*ag*stall, rY=0.55*ag*stall, rR=2.5*ag*stall;
   qAxis(_dq,1,0,0, c.pitch*rP*dt); qmul(p.quat,p.quat,_dq);
@@ -1730,7 +1793,19 @@ function simPlane(p,dt){
 
   // terrain / sea collision
   const gh=Math.max(terrainH(p.pos[0],p.pos[2]),SEA);
-  if(p.pos[1]<gh+4){ p.pos[1]=gh+4; killPlane(p,p.lastHitBy||null,true); }
+  if(p.pos[1]<gh+4){
+    // a graze at low speed is survivable; a dive at full throttle is not
+    p.pos[1]=gh+4;
+    const bite=Math.max(0,-f[1])*.7+.3;                 // nose-down hurts more
+    const dmg=impactDamage(p.speed*bite)*2.2;
+    if(dmg>=p.hp){ killPlane(p,p.lastHitBy||null,true); }
+    else{
+      damagePlane(p,dmg,null);
+      p.speed*=.45;
+      explode(p.pos,10,.7);
+      if(p.isLocal) toast('SCRAPED THE GROUND  −'+Math.round(dmg)+' HULL','red',1.6);
+    }
+  }
 
   // shields rebuild once nothing has hit you for a few seconds
   if(p.maxShield>0){
@@ -1759,7 +1834,8 @@ function doRespawn(p){
 
 /* ---------------------------- weapons ----------------------------------- */
 function spawnBullet(o){
-  G.bullets.push(Object.assign({life:3.2,dmg:10,team:'blue',owner:null,col:[1,1,1],len:3,wid:1,splash:0,homing:false,target:null},o));
+  G.bullets.push(Object.assign({life:3.2,dmg:10,team:'blue',owner:null,col:[1,1,1],len:3,wid:1,
+    splash:0,homing:false,target:null,travel:0,grow:0},o));
 }
 function fireWeapon(p,dt){
   const c=p.ctrl;
@@ -1792,8 +1868,9 @@ function fireWeapon(p,dt){
         const dmg=w.dmg*(p.dmgMul&&p.dmgMul[id]?p.dmgMul[id]:1);
         spawnBullet({pos:org.slice(),vel:[dir[0]*w.speed+f[0]*p.speed*.3,dir[1]*w.speed+f[1]*p.speed*.3,dir[2]*w.speed+f[2]*p.speed*.3],
           dmg,team:p.team,owner:p.id,col:w.col,len:w.len,wid:w.wid||1,splash:w.splash||0,
+          rocket:id==='rocket',
           antiStruct:p.isBot?3.2:1, life:id==='laser'?1.4:id==='inferno'?.65:3.0,
-          fire:id==='inferno', kind:id,
+          fire:id==='inferno', grow:id==='inferno'?1:0, kind:id,
           seek:(p.isLocal&&p.trackPos&&perk('tracker')>0)?{pos:p.trackPos,k:trackPull(perk('tracker'))}:null});
       }
       if(id==='inferno'){          // embers streaming off the flame
@@ -1847,6 +1924,19 @@ function dropFlares(){
 /* --------------------------- damage model -------------------------------- */
 /** A projectile only ever damages entities this client owns:
     the local player always, plus bots/structures when we are the host. */
+/* Collisions are resolved from kinetic energy, not scripted. Damage scales with
+   the square of closing speed and with the mass ratio, so a light drone clipping
+   a gunship hurts the drone far more than the gunship. */
+const MASS=p=>(p.maxHp||100)/100*(p.drone?.45:1);
+function impactDamage(vRel){ return (vRel/26)*(vRel/26) }
+function crashInto(p,vRel,otherMass,label){
+  const m=MASS(p);
+  const share=otherMass/(m+otherMass);        // the lighter body takes the worse of it
+  const dmg=impactDamage(vRel)*2*share;
+  damagePlane(p,dmg,null);
+  if(p.isLocal) toast(label+'  −'+Math.round(dmg)+' HULL','red',1.6);
+  return dmg;
+}
 /** true when this client simulates the bots and the ground war */
 function authority(){ return net.isHost||net.mode==='solo'; }
 function ownedPlanes(){
@@ -1866,11 +1956,11 @@ function damagePlane(p,amt,byId){
   if(p.shield>0){                               // shield soaks first, then the hull
     const soak=Math.min(p.shield,amt);
     p.shield-=soak; amt-=soak;
-    if(p.isLocal&&amt<=0) flashHurt();
+    if(p.isLocal&&amt<=0) flashHurt(soak);
     if(amt<=0) return;
   }
   p.hp-=amt; p.lastHitBy=byId;
-  if(p.isLocal){ flashHurt(); net.send({t:'hp',id:p.id,hp:Math.round(p.hp)}); }
+  if(p.isLocal){ flashHurt(amt); net.send({t:'hp',id:p.id,hp:Math.round(p.hp)}); }
   if(byId===G.myId){ hitmark(); G.credits+=Math.round(amt*.7); }
   if(p.hp<=0) killPlane(p,byId,false);
 }
@@ -1917,6 +2007,39 @@ function damageStruct(s,amt,byId){
   }
 }
 
+/* --------------------------- collisions ---------------------------------- */
+function stepCollisions(dt){
+  const mine=ownedPlanes();
+  for(const a of mine){
+    if(!a.alive) continue;
+    // aircraft against aircraft
+    for(const b of G.planes.values()){
+      if(b===a||!b.alive) continue;
+      if(dist(a.pos,b.pos)>15) continue;
+      const fa=fwdOf(a,[0,0,0]), fb=fwdOf(b,[0,0,0]);
+      const rel=Math.hypot(fa[0]*a.speed-fb[0]*b.speed,
+                           fa[1]*a.speed-fb[1]*b.speed,
+                           fa[2]*a.speed-fb[2]*b.speed);
+      crashInto(a,rel,MASS(b),'MID-AIR COLLISION');
+      if(b.isLocal||(b.isBot&&authority())) crashInto(b,rel,MASS(a),'MID-AIR COLLISION');
+      // shove them apart so they do not grind together for several frames
+      const away=[a.pos[0]-b.pos[0],a.pos[1]-b.pos[1],a.pos[2]-b.pos[2]];
+      const l=Math.hypot(...away)||1;
+      for(let i=0;i<3;i++) a.pos[i]+=away[i]/l*9;
+      explode([(a.pos[0]+b.pos[0])/2,(a.pos[1]+b.pos[1])/2,(a.pos[2]+b.pos[2])/2],14,.9);
+    }
+    // aircraft against buildings
+    for(const s of G.structures){
+      if(!s.alive) continue;
+      const cfg=STRUCTS[s.type], cy=s.pos[1]+(cfg.y||8);
+      if(dist(a.pos,[s.pos[0],cy,s.pos[2]])>cfg.r+9) continue;
+      const dmg=crashInto(a,a.speed,MASS(a)*3,'STRUCK '+cfg.short);
+      if(authority()) damageStruct(s,impactDamage(a.speed)*MASS(a)*1.6,a.id);
+      explode(a.pos,20,1.2);
+    }
+  }
+}
+
 /* ------------------------- projectile stepping --------------------------- */
 function stepBullets(dt){
   const myPlanes=ownedPlanes(), myStructs=ownedStructs();
@@ -1941,18 +2064,21 @@ function stepBullets(dt){
     }
     const px=b.pos[0],py=b.pos[1],pz=b.pos[2];
     b.pos[0]+=b.vel[0]*dt; b.pos[1]+=b.vel[1]*dt; b.pos[2]+=b.vel[2]*dt;
+    if(b.grow) b.travel+=Math.hypot(b.vel[0],b.vel[1],b.vel[2])*dt;
+    if(b.rocket&&Math.random()<dt*40)
+      addPart(b.pos,[rnd(-3,3),rnd(1,6),rnd(-3,3)],[.72,.72,.75],rnd(.8,2.0),rnd(.4,.9));
     b.vel[1]-=(b.kind==='rocket'?9:2.5)*dt;
     b.life-=dt;
     let hit=false, hitPos=b.pos;
 
     for(const p of myPlanes){
       if(p.team===b.team||p.id===b.owner) continue;
-      if(segSphere(px,py,pz,b.pos,p.pos,8.5)){ damagePlane(p,b.dmg,b.owner); hit=true; hitPos=p.pos.slice(); break; }
+      if(segSphere(px,py,pz,b.pos,p.pos,8.5+beamR(b))){ damagePlane(p,b.dmg,b.owner); hit=true; hitPos=p.pos.slice(); break; }
     }
     if(!hit) for(const s of myStructs){
       if(s.team===b.team) continue;
       const R=STRUCTS[s.type].r+4, cy=s.pos[1]+(STRUCTS[s.type].y||8);
-      if(segSphere(px,py,pz,b.pos,[s.pos[0],cy,s.pos[2]],R)){ damageStruct(s,b.dmg*(b.antiStruct||1),b.owner); hit=true; hitPos=[s.pos[0],cy,s.pos[2]]; break; }
+      if(segSphere(px,py,pz,b.pos,[s.pos[0],cy,s.pos[2]],R+beamR(b))){ damageStruct(s,b.dmg*(b.antiStruct||1),b.owner); hit=true; hitPos=[s.pos[0],cy,s.pos[2]]; break; }
     }
     if(!hit && b.pos[1]<Math.max(terrainH(b.pos[0],b.pos[2]),SEA)){ hit=true; }
     if(hit){
@@ -1962,6 +2088,8 @@ function stepBullets(dt){
       }else if(b.fire){
         for(let e=0;e<4;e++) addPart(hitPos,[rnd(-26,26),rnd(4,34),rnd(-26,26)],
           Math.random()<.5?[1,.48,.08]:[1,.88,.36],rnd(1.1,2.6),rnd(.4,.9));
+        if(Math.random()<.16)   // only some rounds start a lasting fire
+          addFire(hitPos,b.team,b.owner,24+beamR(b)*.7,rnd(4,6.5),b.dmg*1.3);
       }else addPart(hitPos,[rnd(-8,8),rnd(2,14),rnd(-8,8)],b.col,.3,rnd(.6,1.3));
       G.bullets.splice(i,1); continue;
     }
@@ -2031,6 +2159,36 @@ function stepMissiles(dt){
 }
 
 /* ------------------------------ particles -------------------------------- */
+/** how much wider the beam has become this far downrange */
+function beamR(b){ return b.grow?clamp(b.travel/16,0,46):0 }
+/* Fire pools. The beam sets the ground and the air alight where it lands, and
+   they keep burning — and keep dealing damage — after you stop shooting. */
+function addFire(pos,team,owner,r,life,dps){
+  if(G.fires.length>40) G.fires.shift();
+  G.fires.push({pos:pos.slice(),team,owner,r,life,max:life,dps,t:0});
+}
+function stepFires(dt){
+  const myPlanes=ownedPlanes(), myStructs=ownedStructs();
+  for(let i=G.fires.length-1;i>=0;i--){
+    const f=G.fires[i];
+    f.life-=dt; f.t+=dt;
+    if(f.life<=0){ G.fires.splice(i,1); continue; }
+    const fade=clamp(f.life/f.max,0,1);
+    for(const p of myPlanes){
+      if(p.team===f.team) continue;
+      if(dist(p.pos,f.pos)<f.r+7) damagePlane(p,f.dps*fade*dt,f.owner);
+    }
+    for(const s of myStructs){
+      if(s.team===f.team) continue;
+      const c=[s.pos[0],s.pos[1]+(STRUCTS[s.type].y||8),s.pos[2]];
+      if(dist(c,f.pos)<f.r+STRUCTS[s.type].r) damageStruct(s,f.dps*fade*dt*2.5,f.owner);
+    }
+    if(Math.random()<dt*14)
+      addPart([f.pos[0]+rnd(-f.r,f.r),f.pos[1]+rnd(-4,10),f.pos[2]+rnd(-f.r,f.r)],
+        [rnd(-6,6),rnd(10,30),rnd(-6,6)],
+        Math.random()<.5?[1,.5,.08]:[1,.85,.3], rnd(1.4,3.4), rnd(.5,1.2));
+  }
+}
 function addPart(pos,vel,col,size,life){
   if(G.parts.length>520) G.parts.shift();
   G.parts.push({pos:pos.slice(),vel:vel.slice(),col,size,life,max:life});
@@ -2451,7 +2609,8 @@ function render(){
     if(p.isLocal&&cockpit) continue;
     M4.fromRTS(model,p.quat,p.pos,p.drone?.72:1);
     const hurt=clamp(p.hp/p.maxHp,0,1);
-    draw((p.isLocal&&MESH.custom)||MESH['plane_'+p.team],model,{tint:[1,.55+hurt*.45,.5+hurt*.5]});
+    draw(p.drone?MESH['drone_'+p.team]:((p.isLocal&&MESH.custom)||MESH['plane_'+p.team]),
+         model,{tint:[1,.55+hurt*.45,.5+hurt*.5]});
     // afterburner flame
     if(p.ctrl.ab||p.thr>.92){
       const o=qrot([0,0,0],[0,0,7.4],p.quat);
@@ -2474,16 +2633,20 @@ function render(){
       // three nested, flickering sleeves read as a torrent of flame rather
       // than a tracer: dull red outside, orange body, white-hot core
       gl.enable(gl.BLEND); gl.depthMask(false);
-      const fl=.78+Math.random()*.42;
-      M4.mul(model,model,M4.scl(tmpM,gw*2.5*fl,gw*2.5*fl,b.len/3.4));
+      const fl=.78+Math.random()*.42, sw=1+beamR(b)*.28;
+      M4.mul(model,model,M4.scl(tmpM,gw*2.5*fl*sw,gw*2.5*fl*sw,b.len/3.4));
       draw(MESH.tracer,model,{unlit:true,tint:[.85,.12,.03],alpha:.32});
       M4.fromRTS(model,q,b.pos,1);
-      M4.mul(model,model,M4.scl(tmpM,gw*1.6*fl,gw*1.6*fl,b.len/3.4*.96));
+      M4.mul(model,model,M4.scl(tmpM,gw*1.6*fl*sw,gw*1.6*fl*sw,b.len/3.4*.96));
       draw(MESH.tracer,model,{unlit:true,tint:[1,.42,.06],alpha:.62});
       gl.depthMask(true); gl.disable(gl.BLEND);
       M4.fromRTS(model,q,b.pos,1);
-      M4.mul(model,model,M4.scl(tmpM,gw*.62,gw*.62,b.len/3.4*.9));
+      M4.mul(model,model,M4.scl(tmpM,gw*.62*(1+beamR(b)*.16),gw*.62*(1+beamR(b)*.16),b.len/3.4*.9));
       draw(MESH.tracer,model,{unlit:true,tint:[1,.95,.62]});
+    }else if(b.rocket){
+      const rs=clamp(bd/300,1,3.4);
+      M4.mul(model,model,M4.scl(tmpM,rs,rs,rs));
+      draw(MESH.rocket,model,{});
     }else{
       M4.mul(model,model,M4.scl(tmpM,gw,gw,b.len/3.4));
       draw(MESH.tracer,model,{unlit:true,tint:b.col});
@@ -2496,6 +2659,20 @@ function render(){
     M4.fromRTS(model,q,m.pos,1);
     draw(MESH.missile,model,{});
   }
+  // --- fire pools ---
+  gl.enable(gl.BLEND); gl.depthMask(false);
+  for(const f of G.fires){
+    const fade=clamp(f.life/f.max,0,1);
+    for(let k=0;k<3;k++){
+      const w=f.r*(.5+k*.32)*(.85+Math.sin(f.t*9+k*2.1)*.15);
+      M4.trans(model,f.pos[0],f.pos[1]+k*7+4,f.pos[2]);
+      M4.mul(model,model,M4.scl(tmpM,w,10+k*6,w));
+      draw(MESH.cube,model,{unlit:true,alpha:.30*fade,
+        tint:k===0?[1,.88,.35]:k===1?[1,.48,.08]:[.75,.14,.03]});
+    }
+  }
+  gl.depthMask(true); gl.disable(gl.BLEND);
+
   // --- particles ---
   gl.enable(gl.BLEND); gl.depthMask(false);
   for(const p of G.parts){
@@ -2556,7 +2733,7 @@ let feeds=[];
 function feed(html){ feeds.push({html,t:6}); if(feeds.length>7)feeds.shift(); }
 let hitT=0, hurtT=0;
 function hitmark(){hitT=.22; sfx('hit',.35)}
-function flashHurt(){hurtT=.25}
+function flashHurt(amt){ hurtT=Math.max(hurtT,clamp(.22+(amt||0)*.012,.22,.9)); }
 
 function updateHUD(dt){
   const p=G.me; if(!p) return;
@@ -2574,13 +2751,21 @@ function updateHUD(dt){
   $('flTxt').textContent=Math.floor(p.flares)+' / '+p.maxFlares;
   $('flBar').style.width=(p.maxFlares?clamp(p.flares/p.maxFlares,0,1)*100:0)+'%';
   $('credits').innerHTML=Math.floor(G.credits)+' <small>CREDITS · press B for HANGAR</small>';
+  const gEl=$('gLoad');
+  if(gEl){
+    gEl.textContent=(p.g===undefined?1:p.g).toFixed(1);
+    gEl.style.color=(p.gStress||0)>.05?'#ff7a6b':Math.abs(p.g||1)>gTolerance()*.75?'#ffd451':'#7fe6c0';
+  }
+  const gv=$('gvig');
+  gv.style.opacity=clamp((p.gStress||0)*1.15,0,1);
+  gv.classList.toggle('red',!!p.gNeg);
   $('spd').textContent=Math.round(p.speed*3.6);
   $('alt').textContent=Math.round(Math.max(0,p.pos[1]-Math.max(terrainH(p.pos[0],p.pos[2]),SEA)));
   $('thr').firstElementChild.style.height=(p.thr*100)+'%';
 
   hitT=Math.max(0,hitT-dt); $('hitmark').style.opacity=hitT>0?1:0;
   hurtT=Math.max(0,hurtT-dt);
-  document.body.style.boxShadow=hurtT>0?'inset 0 0 220px rgba(200,20,20,'+(hurtT*2.6)+')':'none';
+  $('hurt').style.opacity=clamp(hurtT*3.2,0,1);
 
   // lock box
   const lb=$('lockbox');
@@ -2901,7 +3086,7 @@ function resetRound(){
   G.round=null; G.over=false;
   $('over').classList.remove('on');
   G.structures.length=0; structSlot={blue:0,red:0}; hangarSlot={blue:0,red:0};
-  G.bullets.length=0; G.missiles.length=0; G.parts.length=0;
+  G.bullets.length=0; G.missiles.length=0; G.parts.length=0; G.fires.length=0;
   addStruct('hq','blue'); addStruct('hq','red');
   addStruct('spawner','blue'); addStruct('spawner','red');
   addStruct('flak','red'); addStruct('sniper','red');
@@ -2917,7 +3102,7 @@ function quitToMenu(){
   net.mode='solo'; net.isHost=false; net.ready=false; net.conns=[]; net.peer=null;
   G.started=false; G.paused=false; G.over=false; G.round=null; G.tut=null; G.mission=null;
   G.planes.clear(); G.structures.length=0; G.bullets.length=0; G.missiles.length=0;
-  G.parts.length=0; G.rings.length=0;
+  G.parts.length=0; G.rings.length=0; G.fires.length=0;
   structSlot={blue:0,red:0}; hangarSlot={blue:0,red:0};
   G.hangarLvl={blue:0,red:0}; G.shieldLvl={blue:0,red:0}; G.droneLvl={blue:0,red:0};
   G.me=null; G.credits=600; G.kills=0; G.deaths=0; G.score=0; G.camMode=0;
@@ -3178,63 +3363,36 @@ function netTick(dt){
 /* ------------------------------ missions --------------------------------- */
 /* Short solo contracts. Winning pays tokens, which buy permanent perks on the
    menu that carry across every mode. */
+/* Missions are canyon runs: a long, winding, randomly generated trench with
+   gates strung down it. Every completed run permanently raises your G tolerance. */
 const MISSIONS=[
-  {id:'strike', name:'Precision Strike', tokens:2, time:210,
-   desc:()=>'Destroy the marked enemy installation. It is defended.',
+  {id:'canyon', name:'Canyon Run', tokens:3, time:0,
+   desc(){ return `Fly all ${G.mission.goal} gates down the canyon without leaving it.` },
    setup(){
-     const kinds=['sniper','sam','flak','radar','spawner'];
-     const s=addStruct(kinds[rndi(0,kinds.length-1)],'red',null);
-     addStruct('flak','red'); addStruct('sniper','red');
-     addBots(2);
-     G.mission.target=s;
-     G.mission.goal=1;
-   },
-   progress(){ return G.mission.target.alive?0:1 },
-   label(){ return G.mission.target.alive?'Target standing':'Target destroyed' }},
-
-  {id:'sweep', name:'Fighter Sweep', tokens:2, time:240,
-   desc(){ return `Shoot down ${G.mission.goal} enemy aircraft.` },
-   setup(){
-     G.mission.goal=rndi(5,8); G.mission.start=G.kills;
-     addStruct('spawner','red'); addBots(4);
-   },
-   progress(){ return clamp((G.kills-G.mission.start)/G.mission.goal,0,1) },
-   label(){ return (G.kills-G.mission.start)+' / '+G.mission.goal+' shot down' }},
-
-  {id:'gates', name:'Low-Level Course', tokens:3, time:150,
-   desc(){ return `Fly through all ${G.mission.goal} gates in order.` },
-   setup(){
-     const n=rndi(6,9); G.mission.goal=n;
-     let x=rnd(-500,500), z=rnd(600,1100), head=rnd(0,Math.PI*2);
-     for(let i=0;i<n;i++){
-       head+=rnd(-.5,.5);
-       x+=Math.sin(head)*rnd(420,620); z-=Math.cos(head)*rnd(420,620);
-       x=clamp(x,-3400,3400); z=clamp(z,-3400,3400);
-       const y=Math.max(terrainH(x,z),SEA)+rnd(180,420);
-       const q=qLookDir([0,0,0,1],[Math.sin(head),0,-Math.cos(head)],[0,1,0]);
-       G.rings.push({pos:[x,y,z],quat:q,done:false,next:i===0,i});
+     const gates=rndi(14,22);
+     G.mission.goal=gates;
+     // gates strung along the trench centreline from one bowl to the other
+     const z0=BASES.red[2]+BOWL_R*.5, z1=BASES.blue[2]-BOWL_R*.5;
+     for(let i=0;i<gates;i++){
+       const z=lerp(z0,z1,i/(gates-1));
+       const x=trenchX(z);
+       const y=TERRAIN.floor+rnd(110,240);
+       const zA=z+40, dx=trenchX(zA)-x, l=Math.hypot(dx,40);
+       G.rings.push({pos:[x,y,z],quat:qLookDir([0,0,0,1],[dx/l,0,40/l],[0,1,0]),
+                     done:false,next:i===0,i});
      }
+     G.mission.time=60+gates*11;
+     // start the player at the mouth, pointing down the trench
+     const me=G.me, z=z0-260, x=trenchX(z);
+     me.pos=[x,TERRAIN.floor+170,z];
+     const zA=z+400, dx=trenchX(zA)-x, l=Math.hypot(dx,400);
+     qLookDir(me.quat,[dx/l,0,400/l],[0,1,0]);
+     me.speed=230; me.thr=.85;
      G.mission.ring=0;
    },
    progress(){ return clamp(G.mission.ring/G.mission.goal,0,1) },
-   label(){ return G.mission.ring+' / '+G.mission.goal+' gates' }},
-
-  {id:'defend', name:'Hold the Line', tokens:3, time:180,
-   desc(){ return 'Keep your Command HQ above 60% until the clock runs out.' },
-   setup(){
-     addStruct('spawner','red'); addStruct('spawner','red'); addBots(5);
-     G.mission.floor=.6;
-   },
-   progress(){ return clamp(G.mission.t/G.mission.time,0,1) },
-   label(){
-     const h=G.structures.find(s=>s.type==='hq'&&s.team===G.team);
-     return h?'HQ at '+Math.round(h.hp/h.maxHp*100)+'% (hold 60%)':'—' },
-   fail(){
-     const h=G.structures.find(s=>s.type==='hq'&&s.team===G.team);
-     return !h||!h.alive||h.hp<h.maxHp*G.mission.floor },
-   winOnTimeout:true}
+   label(){ return G.mission.ring+' / '+G.mission.goal+' gates' }}
 ];
-
 function startMission(){
   const def=MISSIONS[rndi(0,MISSIONS.length-1)];
   net.mode='solo';
@@ -3259,7 +3417,7 @@ function stepMission(dt){
   const M=G.mission; if(!M||M.done) return;
   M.t+=dt;
   // gates are checked by proximity to the ring plane
-  if(M.def.id==='gates'&&G.me&&G.me.alive){
+  if(G.rings.length&&G.me&&G.me.alive){
     const r=G.rings[M.ring];
     if(r&&!r.done&&dist(G.me.pos,r.pos)<64){
       r.done=true; M.ring++;
@@ -3268,6 +3426,7 @@ function stepMission(dt){
     }
   }
   if(M.def.fail&&M.def.fail()) return endMission(false);
+  if(!G.me.alive) return endMission(false);
   if(M.def.progress()>=1&&!M.def.winOnTimeout) return endMission(true);
   if(M.t>=M.time) return endMission(!!M.def.winOnTimeout);
 }
@@ -3275,13 +3434,17 @@ function endMission(won){
   const M=G.mission; if(!M||M.done) return;
   M.done=true; G.over=true; G.paused=false;
   if(mouseLocked) document.exitPointerLock();
-  let tok=0;
-  if(won){ tok=M.def.tokens; PROFILE.tokens+=tok; PROFILE.missions++; }
+  let tok=0, gGain=0;
+  if(won){
+    tok=M.def.tokens; PROFILE.tokens+=tok; PROFILE.missions++;
+    gGain=.4; PROFILE.gTol=Math.round((gTolerance()+gGain)*10)/10;
+  }
   PROFILE.kills+=G.kills; PROFILE.deaths+=G.deaths; saveProfile();
   $('overTitle').textContent=won?'MISSION COMPLETE':'MISSION FAILED';
   $('overTitle').style.color=won?'#7fe6c0':'#ff7a6b';
   $('overText').innerHTML=M.def.name+'<br/>'+M.def.label();
-  $('tokline').textContent=tok?`+${tok} ⬢ TOKENS EARNED`:'No tokens awarded';
+  $('tokline').innerHTML=(tok?`+${tok} ⬢ TOKENS EARNED`:'No tokens awarded')+
+    (gGain?`<br/><span style="color:#7fe6c0">G TOLERANCE NOW ${gTolerance().toFixed(1)} G</span>`:'');
   $('over').classList.add('on');
   $('btnAgain').textContent='NEW MISSION';
   sfx(won?'buy':'boom',.9);
@@ -3497,7 +3660,7 @@ function renderPerm(){
     `<div style="font-size:11px;color:#8fa8c4;letter-spacing:1.5px;margin-bottom:12px">
       CAMPAIGN LEVEL <b style="color:#c9a3ff">${PROFILE.level}</b> ·
       ${PROFILE.wins}W / ${PROFILE.losses}L ·
-      ${PROFILE.kills} kills · ${PROFILE.missions} missions flown
+      ${PROFILE.kills} kills · ${PROFILE.missions} canyon runs · ${gTolerance().toFixed(1)}G tolerance
       ${PROFILE.level>1?'<span style="color:#ff9a3c"> · enemy HQ +'+Math.round((diff.hq()-1)*100)+'% hull</span>':''}
      </div>`;
   if($('nameIn')&&!$('nameIn').value&&PROFILE.callsign) $('nameIn').value=PROFILE.callsign;
@@ -3764,7 +3927,7 @@ function frame(now){
         p.ctrl.roll=clamp(-u[0]*2,-1,1); p.ctrl.pitch=clamp(-f[1]*2.4,-1,1); p.ctrl.yaw=0;
       }
       simPlane(p,dt);
-      if(p.alive){ updateTracker(p,dt); updateLock(p,dt); fireWeapon(p,dt); }
+      if(p.alive){ updateG(p,dt); updateTracker(p,dt); updateLock(p,dt); fireWeapon(p,dt); }
       if(engineGain&&AC){
         engineGain.gain.value=p.alive?.05+p.thr*.10:0;
         engineOsc.frequency.value=52+p.speed*.34+(p.ctrl.ab?40:0);
@@ -3782,7 +3945,7 @@ function frame(now){
         for(let i=0;i<3;i++) q.tpos[i]+=f[i]*q.speed*dt;    // dead reckoning between packets
       }
     }
-    stepStructs(dt); stepBullets(dt); stepMissiles(dt); stepParts(dt);
+    stepStructs(dt); stepBullets(dt); stepMissiles(dt); stepFires(dt); stepCollisions(dt); stepParts(dt);
 
     // passive income + enemy AI economy
     G.credits+=9*dt;
