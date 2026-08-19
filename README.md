@@ -1,4 +1,4 @@
-# IRON SKIES — 3D Plane Battle
+# AVIATORS — 3D Plane Battle
 
 A self-contained 3D combat flight game in a single HTML file. No build step, no
 dependencies: the renderer is hand-written WebGL, the flight model, AI, shop and

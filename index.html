@@ -419,7 +419,7 @@ td{padding:6px 8px;border-bottom:1px solid rgba(255,255,255,.045)}
 <!-- ================= MENU ================= -->
 <div id="menu" class="ovl on">
   <div class="box panel">
-    <h1>IRON SKIES</h1>
+    <h1>AVIATORS</h1>
     <div class="sub">3D COMBAT FLIGHT · ONLINE DOGFIGHT · BASE DEFENSE</div>
 
     <div class="row">
@@ -484,7 +484,9 @@ td{padding:6px 8px;border-bottom:1px solid rgba(255,255,255,.045)}
 <script>
 'use strict';
 /* ============================================================================
-   IRON SKIES — self-contained 3D plane battle game.
+   AVIATORS — self-contained 3D plane battle game.
+   (The saved-profile and multiplayer-room keys still read 'ironskies';
+    renaming them would wipe every player's progress and break rooms.)
    Custom WebGL renderer (no libraries), arcade flight model, base-defense
    structures and peer-to-peer multiplayer over WebRTC.
    ========================================================================== */
@@ -2214,11 +2216,16 @@ function stepMissiles(dt){
 /** the live dome shielding a team, if any */
 function domeOf(team){ return G.structures.find(s=>s.alive&&s.type==='dome'&&s.team===team) }
 function hitDome(s,amt,by){ s.cool=6; damageStruct(s,amt,by); }
-/* A flamethrower, not a laser. It leaves the nozzle as a thin jet you can see
-   past, then flares violently — near its full width inside 500m — and keeps
-   gaining bite the further it travels. Lethal from the muzzle outward. */
-function beamR(b){ return b.grow?clamp(b.travel/26,0,30):0 }
-function beamWidth(b){ return b.wid*(.35+clamp(b.travel/30,0,16)) }
+/* A flamethrower, not a laser: a thin jet at the nozzle that flares violently
+   and keeps gaining bite downrange. Lethal from the muzzle outward.
+
+   The width grows faster than linearly on purpose. Width rising in step with
+   distance subtends a *constant* angle from the cockpit, so a perfectly correct
+   linear cone looks like a parallel-sided tube — it has to outpace the range
+   to read as spreading at all. */
+function beamSpan(b){ return b.grow?clamp(.25+.0101*Math.pow(b.travel,1.36),.25,92):0 }
+function beamR(b){ return b.grow?clamp(beamSpan(b)*.45,0,42):0 }
+function beamWidth(b){ return beamSpan(b)/.62 }
 function beamPower(b){ return b.grow?1+clamp(b.travel/220,0,3):1 }
 /* Fire pools. The beam sets the ground and the air alight where it lands, and
    they keep burning — and keep dealing damage — after you stop shooting. */
@@ -2696,14 +2703,14 @@ function render(){
       // Physical growth only — the distance compensation used for tracers would
       // multiply with it and turn the beam into a screen-filling box.
       const fl=.86+Math.random()*.28, sw=beamWidth(b);
-      M4.mul(model,model,M4.scl(tmpM,sw*1.25*fl,sw*1.25*fl,b.len/3.4));
-      draw(MESH.tracer,model,{unlit:true,tint:[.85,.12,.03],alpha:.07});
+      M4.mul(model,model,M4.scl(tmpM,sw*1.15*fl,sw*1.15*fl,b.len/3.4));
+      draw(MESH.tracer,model,{unlit:true,tint:[.85,.12,.03],alpha:.09});
       M4.fromRTS(model,q,b.pos,1);
-      M4.mul(model,model,M4.scl(tmpM,sw*fl,sw*fl,b.len/3.4*.96));
-      draw(MESH.tracer,model,{unlit:true,tint:[1,.42,.06],alpha:.20});
+      M4.mul(model,model,M4.scl(tmpM,sw*.72*fl,sw*.72*fl,b.len/3.4*.96));
+      draw(MESH.tracer,model,{unlit:true,tint:[1,.42,.06],alpha:.26});
       gl.depthMask(true); gl.disable(gl.BLEND);
       M4.fromRTS(model,q,b.pos,1);
-      M4.mul(model,model,M4.scl(tmpM,sw*.16,sw*.16,b.len/3.4*.9));
+      M4.mul(model,model,M4.scl(tmpM,sw*.30,sw*.30,b.len/3.4*.9));
       draw(MESH.tracer,model,{unlit:true,tint:[1,.95,.62]});
     }else if(b.rocket){
       const rs=clamp(bd/300,1,3.4);
