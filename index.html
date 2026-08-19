@@ -1914,7 +1914,7 @@ function fireWeapon(p,dt){
         spawnBullet({pos:org.slice(),vel:[dir[0]*w.speed+f[0]*p.speed*.3,dir[1]*w.speed+f[1]*p.speed*.3,dir[2]*w.speed+f[2]*p.speed*.3],
           dmg,team:p.team,owner:p.id,col:w.col,len:w.len,wid:w.wid||1,splash:w.splash||0,
           rocket:id==='rocket',
-          antiStruct:p.isBot?0.55:1, life:id==='laser'?1.4:id==='inferno'?.65:3.0,
+          antiStruct:p.isBot?0.55:1, life:id==='laser'?1.4:id==='inferno'?.42:3.0,
           fire:id==='inferno', grow:id==='inferno'?1:0, kind:id});
       }
       if(id==='inferno'){          // embers streaming off the flame
@@ -2216,8 +2216,8 @@ function domeOf(team){ return G.structures.find(s=>s.alive&&s.type==='dome'&&s.t
 function hitDome(s,amt,by){ s.cool=6; damageStruct(s,amt,by); }
 /* A flamethrower, not a laser: it leaves the nozzle as a spark you can see past
    and blooms into a firestorm, gaining reach and bite the further it travels. */
-function beamR(b){ return b.grow?clamp(b.travel/45,0,26):0 }
-function beamWidth(b){ return b.wid*(.3+clamp(b.travel/140,0,9)) }
+function beamR(b){ return b.grow?clamp(b.travel/55,0,19):0 }
+function beamWidth(b){ return b.wid*(.28+clamp(b.travel/190,0,5.2)) }
 function beamPower(b){ return b.grow?.30+clamp(b.travel/300,0,2.7):1 }
 /* Fire pools. The beam sets the ground and the air alight where it lands, and
    they keep burning — and keep dealing damage — after you stop shooting. */
@@ -2695,11 +2695,11 @@ function render(){
       // Physical growth only — the distance compensation used for tracers would
       // multiply with it and turn the beam into a screen-filling box.
       const fl=.86+Math.random()*.28, sw=beamWidth(b);
-      M4.mul(model,model,M4.scl(tmpM,sw*1.5*fl,sw*1.5*fl,b.len/3.4));
-      draw(MESH.tracer,model,{unlit:true,tint:[.85,.12,.03],alpha:.30});
+      M4.mul(model,model,M4.scl(tmpM,sw*1.25*fl,sw*1.25*fl,b.len/3.4));
+      draw(MESH.tracer,model,{unlit:true,tint:[.85,.12,.03],alpha:.12});
       M4.fromRTS(model,q,b.pos,1);
       M4.mul(model,model,M4.scl(tmpM,sw*fl,sw*fl,b.len/3.4*.96));
-      draw(MESH.tracer,model,{unlit:true,tint:[1,.42,.06],alpha:.62});
+      draw(MESH.tracer,model,{unlit:true,tint:[1,.42,.06],alpha:.34});
       gl.depthMask(true); gl.disable(gl.BLEND);
       M4.fromRTS(model,q,b.pos,1);
       M4.mul(model,model,M4.scl(tmpM,sw*.34,sw*.34,b.len/3.4*.9));
