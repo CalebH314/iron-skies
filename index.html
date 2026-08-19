@@ -985,21 +985,42 @@ function buildWorld(){
 /* Unmanned: no canopy, a blended body, twin tail booms and a sensor turret. */
 function buildDroneMesh(tc){
   const b=new Builder();
-  const body=[tc[0]*.55+.22,tc[1]*.55+.23,tc[2]*.55+.25];
-  const dark=[.13,.14,.17], metal=[.52,.55,.60];
-  b.push(); b.tr(0,0,-.6); b.box(1.7,1.0,7.2,body); b.pop();          // flat fuselage
-  b.push(); b.tr(0,.42,-3.1); b.box(1.15,.75,2.6,body); b.pop();      // humped avionics spine
-  b.push(); b.tr(0,-.05,-4.6); b.rx(-Math.PI/2); b.prism(.72,.30,1.9,10,body); b.pop();
-  b.push(); b.tr(0,-.62,-3.5); b.prism(.52,.42,.5,10,dark); b.pop();  // sensor ball
-  for(const sg of [1,-1]){
-    b.push(); b.tr(sg*4.3,.05,.4); b.ry(sg*.06); b.box(8.0,.26,1.9,body); b.pop();   // long thin wing
-    b.push(); b.tr(sg*8.1,.30,.4); b.rz(-sg*.35); b.box(.22,1.3,1.2,tc); b.pop();     // winglet
-    b.push(); b.tr(sg*1.75,-.02,2.2); b.box(.5,.5,4.6,body); b.pop();                 // tail boom
-    b.push(); b.tr(sg*1.75,1.05,4.3); b.box(.22,1.9,1.3,tc); b.pop();                 // boom fin
+  const shell=[tc[0]*.45+.30,tc[1]*.45+.31,tc[2]*.45+.33];
+  const dark=[.12,.13,.16], plastic=[.20,.21,.24], lens=[.06,.07,.09];
+  // the whole airframe leans nose-down, the way a quadcopter flies fast
+  b.push(); b.rx(-.22);
+
+  // moulded body: a rounded shell with a raised battery hump
+  b.push(); b.tr(0,0,0); b.box(2.6,1.05,3.4,shell); b.pop();
+  b.push(); b.tr(0,.62,.25); b.box(2.0,.55,2.3,shell); b.pop();
+  b.push(); b.tr(0,.10,-1.95); b.box(1.7,.75,.9,shell); b.pop();     // nose fairing
+  b.push(); b.tr(0,.98,.35); b.box(1.4,.28,1.5,dark); b.pop();       // battery pack
+
+  // four arms, motors and rotor discs
+  for(const sx of [1,-1])for(const sz of [1,-1]){
+    b.push(); b.tr(sx*1.55,.16,sz*1.9); b.ry(sx*sz*.72);
+      b.box(3.1,.30,.42,plastic);                                    // arm
+    b.pop();
+    const mx=sx*2.55, mz=sz*3.05;
+    b.push(); b.tr(mx,.30,mz); b.prism(.30,.30,.55,10,dark); b.pop();        // motor can
+    b.push(); b.tr(mx,.86,mz); b.prism(.13,.10,.22,8,plastic); b.pop();      // hub
+    b.push(); b.tr(mx,.94,mz); b.prism(1.45,1.45,.06,20,[.62,.66,.72]); b.pop(); // rotor disc
+    b.push(); b.tr(mx,.30,mz); b.box(.30,.90,.30,plastic); b.pop();          // motor post
+    b.push(); b.tr(mx,-.62,mz); b.box(.20,1.25,.20,dark); b.pop();           // landing leg
+    b.push(); b.tr(mx,-1.28,mz); b.box(.34,.18,.90,dark); b.pop();           // foot
   }
-  b.push(); b.tr(0,.85,4.6); b.box(3.9,.22,1.2,body); b.pop();        // tailplane between booms
-  b.push(); b.tr(0,.30,2.6); b.rx(Math.PI/2); b.prism(.44,.50,1.5,10,metal); b.pop(); // pusher duct
-  b.push(); b.tr(0,.30,3.9); b.rx(Math.PI/2); b.prism(.40,.26,.6,10,[.9,.5,.2]); b.pop();
+
+  // gimballed camera slung under the nose
+  b.push(); b.tr(0,-.62,-1.35); b.box(.70,.55,.70,plastic); b.pop();
+  b.push(); b.tr(0,-.92,-1.35); b.prism(.36,.30,.40,12,dark); b.pop();
+  b.push(); b.tr(0,-.92,-1.70); b.rx(-Math.PI/2); b.prism(.24,.20,.30,12,lens); b.pop();
+  // status lights front and back
+  b.push(); b.tr(0,.30,-2.35); b.box(.34,.16,.16,[1,.25,.18]); b.pop();
+  b.push(); b.tr(0,.30,1.85); b.box(.34,.16,.16,[.25,1,.45]); b.pop();
+  // antenna stub
+  b.push(); b.tr(0,1.28,.8); b.box(.10,.62,.10,dark); b.pop();
+
+  b.pop();
   return b.build();
 }
 
@@ -2035,9 +2056,9 @@ function stepCollisions(dt){
   const mine=ownedPlanes();
   for(const a of mine){
     if(!a.alive) continue;
-    // aircraft against aircraft
+    // aircraft against aircraft — friendlies pass through each other
     for(const b of G.planes.values()){
-      if(b===a||!b.alive) continue;
+      if(b===a||!b.alive||b.team===a.team) continue;
       if(dist(a.pos,b.pos)>15) continue;
       const fa=fwdOf(a,[0,0,0]), fb=fwdOf(b,[0,0,0]);
       const rel=Math.hypot(fa[0]*a.speed-fb[0]*b.speed,
@@ -2062,9 +2083,9 @@ function stepCollisions(dt){
       break;
     }
     if(!a.alive) continue;
-    // aircraft against buildings
+    // aircraft against buildings — never your own side's
     for(const s of G.structures){
-      if(!s.alive) continue;
+      if(!s.alive||s.team===a.team) continue;
       const cfg=STRUCTS[s.type], cy=s.pos[1]+(cfg.y||8);
       if(dist(a.pos,[s.pos[0],cy,s.pos[2]])>cfg.r+9) continue;
       const dmg=crashInto(a,a.speed,MASS(a)*3,'STRUCK '+cfg.short);
@@ -2087,13 +2108,14 @@ function stepBullets(dt){
     b.vel[1]-=(b.kind==='rocket'?9:2.5)*dt;
     b.life-=dt;
     let hit=false, hitPos=b.pos;
+    const dmg=b.dmg*(b.fire?beamPower(b):1);
 
     // the dome soaks anything shot at the base it covers
     if(authority()){
       for(const d of G.structures){
         if(!d.alive||d.type!=='dome'||d.team===b.team) continue;
         if(segSphere(px,py,pz,b.pos,d.pos,DOME_R)){
-          hitDome(d,b.dmg*(b.antiStruct||1),b.owner);
+          hitDome(d,dmg*(b.antiStruct||1),b.owner);
           hit=true; hitPos=b.pos.slice();
           for(let e=0;e<2;e++) addPart(b.pos,[rnd(-12,12),rnd(2,16),rnd(-12,12)],[.45,.85,1],rnd(.6,1.6),rnd(.2,.5));
           break;
@@ -2102,12 +2124,12 @@ function stepBullets(dt){
     }
     if(!hit) for(const p of myPlanes){
       if(p.team===b.team||p.id===b.owner) continue;
-      if(segSphere(px,py,pz,b.pos,p.pos,8.5+beamR(b))){ damagePlane(p,b.dmg,b.owner); hit=true; hitPos=p.pos.slice(); break; }
+      if(segSphere(px,py,pz,b.pos,p.pos,8.5+beamR(b))){ damagePlane(p,dmg,b.owner); hit=true; hitPos=p.pos.slice(); break; }
     }
     if(!hit) for(const s of myStructs){
       if(s.team===b.team) continue;
       const R=STRUCTS[s.type].r+4, cy=s.pos[1]+(STRUCTS[s.type].y||8);
-      if(segSphere(px,py,pz,b.pos,[s.pos[0],cy,s.pos[2]],R+beamR(b))){ damageStruct(s,b.dmg*(b.antiStruct||1),b.owner); hit=true; hitPos=[s.pos[0],cy,s.pos[2]]; break; }
+      if(segSphere(px,py,pz,b.pos,[s.pos[0],cy,s.pos[2]],R+beamR(b))){ damageStruct(s,dmg*(b.antiStruct||1),b.owner); hit=true; hitPos=[s.pos[0],cy,s.pos[2]]; break; }
     }
     if(!hit && b.pos[1]<Math.max(terrainH(b.pos[0],b.pos[2]),SEA)){ hit=true; }
     if(hit){
@@ -2118,7 +2140,7 @@ function stepBullets(dt){
         for(let e=0;e<4;e++) addPart(hitPos,[rnd(-26,26),rnd(4,34),rnd(-26,26)],
           Math.random()<.5?[1,.48,.08]:[1,.88,.36],rnd(1.1,2.6),rnd(.4,.9));
         if(Math.random()<.16)   // only some rounds start a lasting fire
-          addFire(hitPos,b.team,b.owner,24+beamR(b)*.7,rnd(4,6.5),b.dmg*1.3);
+          addFire(hitPos,b.team,b.owner,24+beamR(b)*.7,rnd(4,6.5),dmg*1.3);
       }else addPart(hitPos,[rnd(-8,8),rnd(2,14),rnd(-8,8)],b.col,.3,rnd(.6,1.3));
       G.bullets.splice(i,1); continue;
     }
@@ -2192,7 +2214,11 @@ function stepMissiles(dt){
 /** the live dome shielding a team, if any */
 function domeOf(team){ return G.structures.find(s=>s.alive&&s.type==='dome'&&s.team===team) }
 function hitDome(s,amt,by){ s.cool=6; damageStruct(s,amt,by); }
-function beamR(b){ return b.grow?clamp(b.travel/70,0,13):0 }
+/* A flamethrower, not a laser: it leaves the nozzle as a spark you can see past
+   and blooms into a firestorm, gaining reach and bite the further it travels. */
+function beamR(b){ return b.grow?clamp(b.travel/45,0,26):0 }
+function beamWidth(b){ return b.wid*(.3+clamp(b.travel/140,0,9)) }
+function beamPower(b){ return b.grow?.30+clamp(b.travel/300,0,2.7):1 }
 /* Fire pools. The beam sets the ground and the air alight where it lands, and
    they keep burning — and keep dealing damage — after you stop shooting. */
 function addFire(pos,team,owner,r,life,dps){
@@ -2668,7 +2694,7 @@ function render(){
       gl.enable(gl.BLEND); gl.depthMask(false);
       // Physical growth only — the distance compensation used for tracers would
       // multiply with it and turn the beam into a screen-filling box.
-      const fl=.86+Math.random()*.28, sw=b.wid*(1+clamp(b.travel/230,0,4.6));
+      const fl=.86+Math.random()*.28, sw=beamWidth(b);
       M4.mul(model,model,M4.scl(tmpM,sw*1.5*fl,sw*1.5*fl,b.len/3.4));
       draw(MESH.tracer,model,{unlit:true,tint:[.85,.12,.03],alpha:.30});
       M4.fromRTS(model,q,b.pos,1);
