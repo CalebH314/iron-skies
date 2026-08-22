@@ -75,7 +75,7 @@ html,body{width:100%;height:100%;overflow:hidden;background:#05080f;color:#dbe7f
   letter-spacing:1.5px;text-shadow:0 2px 8px #000}
 #toast div{margin-bottom:4px}
 .blue{color:#5fb2ff}.red{color:#ff7a6b}.gold{color:#ffd451}.grn{color:#7fe6c0}
-.green{color:#54d97a}.amber{color:#f5b73c}.violet{color:#b98cf5}.cyan{color:#4fd8e6}
+.neutral{color:#aab3bd}.green{color:#54d97a}.amber{color:#f5b73c}.violet{color:#b98cf5}.cyan{color:#4fd8e6}
 
 /* --- overlays --- */
 .ovl{position:absolute;inset:0;z-index:20;display:none;align-items:center;justify-content:center;
@@ -357,7 +357,7 @@ td{padding:6px 8px;border-bottom:1px solid rgba(255,255,255,.045)}
 <div id="settings" class="ovl">
   <div class="box panel">
     <h1 style="font-size:24px;letter-spacing:5px">SETTINGS</h1>
-    <div class="sub" style="margin:2px 0 16px">DIFFICULTY · CONTROLS · ACCOUNT</div>
+    <div class="sub" style="margin:2px 0 16px">DIFFICULTY · MAP · CONTROLS · ACCOUNT</div>
 
     <div class="srow">
       <h4>DIFFICULTY</h4>
@@ -370,6 +370,12 @@ td{padding:6px 8px;border-bottom:1px solid rgba(255,255,255,.045)}
       <p id="crewDesc">Take an aircraft, or man an emplacement at your own base and hold the line
       from the ground. Gun crews cannot move, but they see everything and hit hard.</p>
       <div class="seg" id="crewSeg"></div>
+    </div>
+
+    <div class="srow">
+      <h4>MAP</h4>
+      <p id="mapDesc">Which ground you fight over. Applies to solo, and to any room you host.</p>
+      <div class="seg" id="mapSeg"></div>
     </div>
 
     <div class="srow">
@@ -771,6 +777,7 @@ function teamIdx(t){ const i=TEAM_DEFS.findIndex(d=>d.id===t); return i<0?0:i }
 const _hexCache={};
 /** a side's colour as CSS, for the minimap and the health bars */
 function teamHex(t){
+  if(t==='neutral') return '#aab3bd';
   if(_hexCache[t]) return _hexCache[t];
   const c=TEAMCOL[t]||(TEAM_DEFS.find(d=>d.id===t)||TEAM_DEFS[1]).col;
   return _hexCache[t]='#'+c.map(v=>Math.round(Math.max(0,Math.min(1,v))*255)
@@ -840,18 +847,30 @@ function trenchX(z){
 /** canyon levels are the rare set piece — one level in four */
 function isTrenchLevel(lv){ return lv>=4 && lv%4===0 }
 
-function setTerrain(lv,trench){
-  TERRAIN.level=lv;
+/* Map kinds you can pick in Settings. 'auto' follows the campaign. */
+const MAPS=[
+  {id:'auto',  name:'AUTO',       note:'Follows the campaign — open ground most levels, a canyon run every fourth.'},
+  {id:'plains',name:'PLAINS',     note:'Flat and fast, with nothing to hide behind and nothing to hit.'},
+  {id:'hills', name:'HILLS',      note:'Rolling ground with ridgelines across the middle; you have to find the gaps.'},
+  {id:'canyon',name:'CANYON RUN', note:'A winding trench between the bases. You can climb over the mesa, but the rim is lined with SAMs that fire on everybody.'}
+];
+function setTerrain(lv,kind){
+  if(kind===true) kind='canyon';
+  else if(kind===false||kind===undefined||!MAPS.some(m=>m.id===kind)) kind='hills';
+  TERRAIN.level=lv; TERRAIN.kind=kind;
   TERRAIN.ox=lv*911.3; TERRAIN.oz=lv*677.1;   // ~0.7 of the longest wavelength per level
   TERRAIN.ph=lv*1.7; TERRAIN.ph2=lv*.83; TERRAIN.ph3=lv*2.31;
-  TERRAIN.trench=!!trench;
-  // walls stand above the ceiling, so the trench really is the only way
-  TERRAIN.wallTop=CEILING+60;
+  TERRAIN.trench=kind==='canyon';
+  TERRAIN.amp=kind==='plains'?.22:1;           // how much of the rolling ground survives
+  // The mesa used to top the flight ceiling, which made the trench the only
+  // way through at all. It now tops out well below it: climbing over is a real
+  // option, paid for by crossing the rim SAM belt in the open.
+  TERRAIN.wallTop=TERRAIN.trench?980:CEILING+60;
   TERRAIN.wallZ=4600;                          // mesa covers nearly the whole map
   TERRAIN.half=Math.max(170,290-9*lv);         // tighter slot each level
   TERRAIN.floor=80;
   TERRAIN.ridges=[];
-  if(!trench){
+  if(kind==='hills'){
     // open levels instead get ridgelines with gaps you have to find
     const n=Math.min(1+Math.floor(lv/2),4);
     for(let i=0;i<n;i++){
@@ -870,6 +889,9 @@ function terrainH(x,z){
   let h = 190*vnoise((x+ox)/1300+11,(z+oz)/1300+7)
         + 78*vnoise((x+ox)/460,(z+oz)/460)
         + 26*vnoise((x+ox)/165,(z+oz)/165) - 96;
+  // Plains keep the shape but flatten it toward a gentle floor, rather than
+  // scaling it down into the sea.
+  if(TERRAIN.amp!==undefined&&TERRAIN.amp<1) h=lerp(52,h,TERRAIN.amp);
   if(TERRAIN.trench){
     // raise the whole midfield into a plateau, then cut the trench back out
     // A mesa with a slot cut through it, not a pair of hills. The plateau
@@ -957,8 +979,13 @@ function applyTerrain(){
   if(G.tut) setTerrain(1,false);                 // training stays open and forgiving
   else if(G.mission) setTerrain(rndi(4,16),true);   // every mission is a canyon
   // a canyon has two mouths, so it can only serve two sides
-  else { const lv=(G.netLevel!=null)?G.netLevel:PROFILE.level;   // clients follow the host's map
-         setTerrain(lv,teamList().length<=2&&isTrenchLevel(lv)); }
+  else {
+    const lv=(G.netLevel!=null)?G.netLevel:PROFILE.level;   // clients follow the host's map
+    let kind=(G.netMap!=null)?G.netMap:(PROFILE.map||'auto');
+    if(kind==='auto') kind=isTrenchLevel(lv)?'canyon':'hills';
+    if(kind==='canyon'&&teamList().length>2) kind='hills';  // a canyon has two mouths
+    setTerrain(lv,kind);
+  }
   buildTerrainMesh();
 }
 function buildWorld(){
@@ -1058,6 +1085,8 @@ function buildTeamMeshes(){
     MESH.struct[t]=MESH.struct[t]||{};
     for(const team in TEAMCOL)
       if(!MESH.struct[t][team]) MESH.struct[t][team]=buildStructMesh(t,TEAMCOL[team]);
+    // the rim belt answers to nobody, so it wears nobody's colours
+    if(!MESH.struct[t].neutral) MESH.struct[t].neutral=buildStructMesh(t,[.56,.58,.62]);
   }
 }
 
@@ -1537,7 +1566,7 @@ const DIFFS=[
 ];
 const PROFILE={tokens:0,perks:{},muted:false,level:1,wins:0,losses:0,
                kills:0,deaths:0,missions:0,callsign:'',difficulty:1,sens:1,
-               plane:{frame:0,paint:0,frames:[0],paints:[0]},gTol:7,playAs:'plane'};
+               plane:{frame:0,paint:0,frames:[0],paints:[0]},gTol:7,playAs:'plane',map:'auto'};
 const DK=()=>DIFFS[clamp(PROFILE.difficulty|0,0,DIFFS.length-1)];
 function loadProfile(){
   try{
@@ -1550,7 +1579,8 @@ function loadProfile(){
       PROFILE.difficulty=d.difficulty===undefined?1:clamp(d.difficulty|0,0,DIFFS.length-1);
       PROFILE.sens=d.sens||1;
       if(d.plane) PROFILE.plane=d.plane;
-      PROFILE.gTol=d.gTol||7; PROFILE.playAs=d.playAs||'plane'; }
+      PROFILE.gTol=d.gTol||7; PROFILE.playAs=d.playAs||'plane';
+      PROFILE.map=MAPS.some(m=>m.id===d.map)?d.map:'auto'; }
   }catch(e){}
   // Auto-Tracker was retired: give back what was spent on it rather than
   // quietly pocketing the tokens.
@@ -1602,7 +1632,7 @@ try{ localStorage.removeItem('ironskies.board'); }catch(e){}   // retired featur
 const G={
   mode:'menu', started:false, t:0, dt:0,
   planes:new Map(), bullets:[], missiles:[], parts:[], structures:[],
-  me:null, myId:uid(), team:'blue', eliminated:{}, netLevel:null,
+  me:null, myId:uid(), team:'blue', eliminated:{}, netLevel:null, netMap:null,
   credits:600, kills:0, deaths:0, score:0,
   camMode:0, camPos:[0,120,300], camLook:[0,60,0],
   round:null, botFill:5, economyT:0, fires:[], roster:[],
@@ -1693,6 +1723,27 @@ function hangarPos(team){
   const b=BASES[team], i=hangarSlot[team]++;
   const x=b[0]+(i%2?150:-150), z=b[2]+(i<2?95:-95);
   return [x,terrainH(x,z),z];
+}
+/* A canyon rim belt. These sit on top of the mesa, belong to nobody, and fire
+   on every aircraft regardless of side — they are what makes climbing over the
+   wall a decision rather than a free pass. */
+const NEUTRAL='neutral';
+function addRimSams(){
+  if(!TERRAIN.trench) return;
+  const cfg=STRUCTS.sam, n=10;
+  // stop short of the base bowls at either end, which are cut back down to
+  // ground level — a SAM placed there would sit in the enemy's front garden
+  const bz=Math.abs(BASES[teamList()[0]][2]);
+  const span=Math.min(TERRAIN.wallZ*.82, bz-BOWL_R-250);
+  for(let i=0;i<n;i++){
+    const z=-span+2*span*(i/(n-1));
+    const side=(i%2)?1:-1;
+    const x=trenchX(z)+side*(TERRAIN.half+520);
+    const hp=Math.round(cfg.hp*1.4);
+    G.structures.push({id:uid(),type:'sam',team:NEUTRAL,owner:null,
+      pos:[x,terrainH(x,z),z],hp,maxHp:hp,cd:rnd(0,3),
+      yaw:side>0?Math.PI:0,pitch:0,spin:0,alive:true,rim:true});
+  }
 }
 function addStruct(type,team,ownerId,idx){
   const cfg=STRUCTS[type];
@@ -3127,7 +3178,7 @@ function updateBaseBars(){
     // a full defence ring overlaps badly at range, so names fade out first
     // with six compounds in play, name the side rather than just 'enemy'
     nm.textContent=hq?((mine?'YOUR':(teamList().length>2?s.team.toUpperCase():'ENEMY'))+' COMMAND HQ')
-                     :(d<1800?(cfg.short||cfg.name):'');
+                     :(d<1800?(s.rim?'RIM SAM':(cfg.short||cfg.name)):'');
     nm.style.color=mine?'#7fe6c0':(teamList().length>2?teamHex(s.team):'#ff8a7a');
     nm.style.fontSize=(hq?clamp(w/19,10,15):clamp(w/15,8,10))+'px';
     const fl=el.children[1].firstElementChild;
@@ -3376,7 +3427,7 @@ function quitToMenu(){
   G.planes.clear(); G.structures.length=0; G.bullets.length=0; G.missiles.length=0;
   G.parts.length=0; G.rings.length=0; G.fires.length=0;
   setupTeams(2);
-  G.me=null; G.crew=null; G.roster=[]; G.netLevel=null; G.credits=600; G.kills=0; G.deaths=0; G.score=0; G.camMode=0;
+  G.me=null; G.crew=null; G.roster=[]; G.netLevel=null; G.netMap=null; G.credits=600; G.kills=0; G.deaths=0; G.score=0; G.camMode=0;
   baseBarEls.forEach(el=>el.classList.remove('on'));
   for(const id of ['pause','over','shop','dead','tut','mission']) $(id).classList.remove('on');
   $('hud').classList.remove('on');
@@ -3517,7 +3568,7 @@ function netmsg(s){$('netmsg').innerHTML=s}
 function sendWelcome(c){
   const p=c._pid?G.planes.get(c._pid):null;
   try{ c.send(JSON.stringify({t:'welcome',
-    teams:teamList().length, you:p?p.team:teamList()[0], level:PROFILE.level,
+    teams:teamList().length, you:p?p.team:teamList()[0], level:PROFILE.level, map:TERRAIN.kind,
     world:G.structures.map(packStruct),
     players:[...G.planes.values()].map(packPlayer)})); }catch(e){}
 }
@@ -3565,7 +3616,7 @@ function onNet(raw,conn){
       break;
     }
     case 'welcome': {
-      if(!G.started){ G.netLevel=m.level; startGame(m.you,m.teams||2); }
+      if(!G.started){ G.netLevel=m.level; G.netMap=m.map||null; startGame(m.you,m.teams||2); }
       G.structures.length=0;
       for(const s of m.world){ const st={...s,cd:0,yaw:0,pitch:0,spin:0,maxHp:STRUCTS[s.type].hp}; G.structures.push(st); }
       for(const p of m.players) if(p.id!==G.myId) unpackPlayer(p);
@@ -3987,6 +4038,14 @@ function renderSettings(){
   const cur=CREWS.find(c=>c.id===(PROFILE.playAs||'plane'))||CREWS[0];
   $('crewDesc').textContent=cur.note+(cur.id==='plane'?'':
     '  You will man this emplacement at your base; destroyed, it rebuilds and you take it again.');
+  $('mapSeg').innerHTML=MAPS.map(m=>
+    `<button data-map="${m.id}" class="${m.id===(PROFILE.map||'auto')?'on':''}">${m.name}</button>`).join('');
+  [...document.querySelectorAll('[data-map]')].forEach(b=>b.onclick=()=>{
+    PROFILE.map=b.dataset.map; saveProfile(); renderSettings(); sfx('buy',.4);
+  });
+  const mp=MAPS.find(m=>m.id===(PROFILE.map||'auto'))||MAPS[0];
+  $('mapDesc').textContent=mp.note+
+    (mp.id==='auto'?'':'  Takes effect on the next round you start.');
   $('diffSeg').innerHTML=DIFFS.map((d,i)=>
     `<button data-diff="${i}" class="${i===PROFILE.difficulty?'on':''}">${d.name}</button>`).join('');
   [...document.querySelectorAll('[data-diff]')].forEach(b=>b.onclick=()=>{
@@ -4277,6 +4336,7 @@ function spawnBotFrom(s){
    = an identical compound for every pilot, plus whatever permanent upgrades
    that particular pilot brought with them. */
 function buildCompounds(){
+  addRimSams();          // canyon maps only; no-op everywhere else
   TEAMPERK={};
   for(const pl of G.planes.values()){
     if(pl.isBot) continue;
@@ -4332,7 +4392,8 @@ function startGame(team,nteams){
   if(crewMode()){ G.me.alive=false; G.me.respawn=1e9; takeEmplacement(); }
   toast('CLICK TO CAPTURE MOUSE · <kbd>B</kbd> OPENS THE HANGAR','grn',5);
   if(TERRAIN.trench)
-    toast('CANYON RUN — the walls top the flight ceiling. The trench is the only way through.','gold',8);
+    toast('CANYON RUN — the trench is the fast way through. You can climb over the mesa, '+
+          'but the rim is lined with SAMs that fire on everybody.','gold',9);
   else if(TERRAIN.ridges.length)
     toast('RIDGELINES AHEAD — find the gaps','gold',5);
   canvas.requestPointerLock();
