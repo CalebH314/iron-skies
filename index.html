@@ -437,11 +437,13 @@ td{padding:6px 8px;border-bottom:1px solid rgba(255,255,255,.045)}
       <button id="btnSettings">SETTINGS</button>
     </div>
     <div id="netmsg"></div>
-    <div class="row" id="codeRow" style="display:none">
+    <div class="row" id="codeRow" style="display:none;align-items:center;gap:18px">
       <div>
         <div class="hint" style="margin-bottom:4px">SHARE THIS ROOM CODE — other computers pick JOIN GAME</div>
         <div id="code"></div>
+        <div class="hint" id="lobbyCount" style="margin-top:4px"></div>
       </div>
+      <button class="primary" id="btnEnterRoom" style="font-size:15px;padding:14px 26px">ENTER ROOM</button>
     </div>
 
     <div id="perm">
@@ -1417,6 +1419,9 @@ const SHOP=[
   {id:'s_radar', cat:'Defenses', struct:'radar'},
   {id:'s_repair',cat:'Defenses', struct:'repair'},
   {id:'s_spawner',cat:'Defenses',struct:'spawner'},
+  {id:'wingman',cat:'Defenses', name:'Squadron Refit', max:5, cost:l=>Math.round(950*Math.pow(1.55,l)),
+   desc:'Upgrades every friendly aircraft — the ones already up and every one that launches after. Tougher, quicker and harder hitting.',
+   eff:l=>`+${l*25}% hull · +${l*15}% gun damage · +${l*8}% speed on your side`},
   {id:'drone',  cat:'Defenses', name:'Strike Drones', max:3, cost:l=>Math.round(1300*Math.pow(1.6,l)),
    desc:'Your hangars start turning out unmanned strike drones: quicker and harder hitting than a fighter, but they come apart under almost any fire.',
    eff:l=>`${l*33}% of launches are drones · +60% damage, +35% speed, half the hull`},
@@ -1525,7 +1530,8 @@ const G={
   camMode:0, camPos:[0,120,300], camLook:[0,60,0],
   round:null, botFill:5, economyT:0, fires:[],
   paused:false, over:false, mission:null,
-  hangarLvl:{blue:0,red:0}, shieldLvl:{blue:0,red:0}, droneLvl:{blue:0,red:0}, rings:[]
+  hangarLvl:{blue:0,red:0}, shieldLvl:{blue:0,red:0}, droneLvl:{blue:0,red:0},
+  botLvl:{blue:0,red:0}, rings:[]
 };
 
 function newPlane(o){
@@ -1546,7 +1552,9 @@ function applyUpgrades(p){
   // targets rather than as rivals. stepBot also holds them near one altitude.
   const pl=!p.isBot&&p.isLocal;   // permanent perks apply to you only
   const fr=pl?curFrame():null, pm=pl?partMods():null;
-  let hp=p.isBot?BOT_HP*DK().botHp:100+(u.armor||0)*40+(pl?perk('hull')*30:0);
+  const foeBot=p.isBot&&campaign()&&p.team!==G.team;
+  const sq=p.isBot?1+(G.botLvl[p.team]||0)*.25:1;     // Squadron Refit
+  let hp=p.isBot?BOT_HP*(foeBot?DK().botHp:1)*sq:100+(u.armor||0)*40+(pl?perk('hull')*30:0);
   if(fr) hp*=fr.hull;
   if(p.drone) hp*=.5;                          // drones are glass
   p.maxHp=Math.round(hp);
@@ -1554,14 +1562,16 @@ function applyUpgrades(p){
   p.maxShield=(G.shieldLvl[p.team]||0)*45;
   if(p.shield>p.maxShield) p.shield=p.maxShield;
   p.maxFlares=(u.flare||0)*6+(pl?perk('chaff')*8:0);
-  p.topSpeed=(p.isBot?BOT_SPEED:270+(u.engine||0)*30+(pl?perk('thrust')*22/3.6:0))*(p.drone?1.35:1)
+  p.topSpeed=(p.isBot?BOT_SPEED*(1+(G.botLvl[p.team]||0)*.08)
+                     :270+(u.engine||0)*30+(pl?perk('thrust')*22/3.6:0))*(p.drone?1.35:1)
              *(fr?fr.speed:1)*(pm?pm.spd:1);
   p.agility=(1+(u.agility||0)*.15)*(p.isBot?BOT_AGILITY:(1+(pl?perk('wings')*.10:0))*(fr?fr.agility:1)*(pm?pm.turn:1));
   p.have={mg:true, cannon:(u.cannon||0)>0, rocket:(u.rocket||0)>0, missile:(u.missile||0)>0,
           laser:(u.laser||0)>0, inferno:pl&&perk('inferno')>0};
   let gp=pl?1+perk('guns')*.12:1;
   if(p.drone) gp*=1.6;
-  if(p.isBot&&campaign()&&p.team!==G.team) gp*=DK().botDmg;
+  if(foeBot) gp*=DK().botDmg;
+  if(p.isBot) gp*=1+(G.botLvl[p.team]||0)*.15;
   p.dmgMul={
     mg:(1+(u.mg||0)*.22)*gp*(pm?pm.dmg:1), cannon:(1+Math.max(0,(u.cannon||0)-1)*.25)*gp,
     rocket:(1+Math.max(0,(u.rocket||0)-1)*.22)*gp, missile:(1+Math.max(0,(u.missile||0)-1)*.15)*gp,
@@ -1885,6 +1895,7 @@ function spawnBullet(o){
     splash:0,homing:false,target:null,travel:0,grow:0},o));
 }
 function fireWeapon(p,dt){
+  if(!p.alive) return;          // a wreck held whatever trigger it died with
   const c=p.ctrl;
   p.cool.t=(p.cool.t||0);
   for(const k in p.cool) if(k!=='t') p.cool[k]=Math.max(0,p.cool[k]-dt);
@@ -2029,6 +2040,7 @@ function killPlane(p,byId,crash){
   }else{
     feed(`<span class="${p.team}">${esc(p.name)}</span> was destroyed`);
   }
+  p.ctrl.fire=0; p.ctrl.fire2=0;      // release the trigger on death
   if(p.isLocal){
     G.deaths++;
     G.crashed=!!crash;
@@ -2356,7 +2368,7 @@ function fireStruct(s,target){
 
 /* -------------------------------- bots ----------------------------------- */
 function stepBot(p,dt){
-  if(!p.alive) return;
+  if(!p.alive){ p.ctrl.fire=0; p.ctrl.fire2=0; return; }
   if(p.passive){                       // training drone: unarmed, holds a lazy orbit
     const c=p.ctrl, u=upOf(p,[0,0,0]), f=fwdOf(p,[0,0,0]);
     c.fire=0; c.fire2=0; c.ab=0;
@@ -3110,6 +3122,7 @@ function buy(id,cost){
   }
   if(id==='hangar') G.hangarLvl[G.team]=p.upg.hangar||0;
   if(id==='shield'){ G.shieldLvl[G.team]=p.upg.shield||0; refreshShields(G.team); }
+  if(id==='wingman'){ G.botLvl[G.team]=p.upg.wingman||0; refreshShields(G.team); }
   if(id==='drone')  G.droneLvl[G.team]=p.upg.drone||0;
   if(G.tut) G.tut.buys++;
   sfx('buy',.6); renderShop(); updateWeps();
@@ -3182,12 +3195,13 @@ function resetRound(){
 /** Tear everything down and go back to the menu. */
 function quitToMenu(){
   if(net.peer){ try{ net.peer.destroy() }catch(e){} }
-  net.mode='solo'; net.isHost=false; net.ready=false; net.conns=[]; net.peer=null;
+  net.mode='solo'; net.isHost=false; net.ready=false; net.conns=[]; net.pending=[]; net.peer=null;
   G.started=false; G.paused=false; G.over=false; G.round=null; G.tut=null; G.mission=null;
   G.planes.clear(); G.structures.length=0; G.bullets.length=0; G.missiles.length=0;
   G.parts.length=0; G.rings.length=0; G.fires.length=0;
   structSlot={blue:0,red:0}; hangarSlot={blue:0,red:0};
   G.hangarLvl={blue:0,red:0}; G.shieldLvl={blue:0,red:0}; G.droneLvl={blue:0,red:0};
+  G.botLvl={blue:0,red:0};
   G.me=null; G.credits=600; G.kills=0; G.deaths=0; G.score=0; G.camMode=0;
   baseBarEls.forEach(el=>el.classList.remove('on'));
   for(const id of ['pause','over','shop','dead','tut','mission']) $(id).classList.remove('on');
@@ -3206,7 +3220,7 @@ function quitToMenu(){
    A projectile only damages entities its own client owns, so damage never
    double-applies across the wire. */
 const net={
-  mode:'solo', isHost:false, peer:null, conns:[], room:'', ready:false, lib:false,
+  mode:'solo', isHost:false, peer:null, conns:[], pending:[], room:'', ready:false, lib:false,
   send(msg){
     if(this.mode==='solo'||!this.ready) return;
     const s=JSON.stringify(msg);
@@ -3235,8 +3249,8 @@ async function hostGame(){
   net.peer.on('open',()=>{
     net.ready=true;
     $('codeRow').style.display='flex'; $('code').textContent=net.room;
-    netmsg('Lobby open. Waiting for pilots — start flying any time.');
-    startGame('blue');
+    netmsg('Lobby open. Share the code, then enter the room when you are ready.');
+    lobbyCount();
   });
   net.peer.on('error',e=>{
     if(!net.ready){ netmsg('Could not open lobby ('+e.type+'). Try again or play solo.'); unlockButtons(); }
@@ -3244,11 +3258,13 @@ async function hostGame(){
   net.peer.on('connection',c=>{
     net.conns.push(c);
     c.on('open',()=>{
-      c.send(JSON.stringify({t:'welcome',world:G.structures.map(packStruct),
-        players:[...G.planes.values()].map(packPlayer)}));
+      // Someone can join before the host has entered, in which case there is no
+      // world to describe yet — hold them until it exists.
+      if(G.started) sendWelcome(c); else net.pending.push(c);
+      lobbyCount();
     });
     c.on('data',d=>onNet(d,c));
-    c.on('close',()=>{ dropConn(c) });
+    c.on('close',()=>{ dropConn(c); net.pending=net.pending.filter(x=>x!==c); lobbyCount(); });
   });
 }
 async function joinGame(code){
@@ -3273,6 +3289,16 @@ function dropConn(c){
   if(c._pid){ const p=G.planes.get(c._pid); if(p){ feed(`<span class="${p.team}">${esc(p.name)}</span> left`); G.planes.delete(c._pid); } }
 }
 function netmsg(s){$('netmsg').innerHTML=s}
+function sendWelcome(c){
+  try{ c.send(JSON.stringify({t:'welcome',world:G.structures.map(packStruct),
+    players:[...G.planes.values()].map(packPlayer)})); }catch(e){}
+}
+function lobbyCount(){
+  const el=$('lobbyCount'); if(!el) return;
+  const n=net.conns.length;
+  el.textContent=n?(n+' pilot'+(n===1?'':'s')+' connected'):
+    'Waiting for pilots — you can enter now and they will join you.';
+}
 function packPlayer(p){
   return {id:p.id,name:p.name,team:p.team,pos:p.pos.map(v=>+v.toFixed(1)),q:p.quat.map(v=>+v.toFixed(3)),
     hp:Math.round(p.hp),maxHp:p.maxHp,speed:Math.round(p.speed),alive:p.alive,bot:!!p.isBot,upg:p.upg,k:p.kills,d:p.deaths};
@@ -3962,6 +3988,12 @@ function startGame(team){
 
 $('btnSolo').onclick=()=>{ net.mode='solo'; startGame('blue') };
 $('btnMission').onclick=()=>startMission();
+$('btnEnterRoom').onclick=()=>{
+  if(G.started) return;
+  startGame('blue');
+  for(const c of net.pending) sendWelcome(c);   // release anyone who joined early
+  net.pending=[];
+};
 $('btnSound').onclick=()=>setMuted(!PROFILE.muted);
 $('btnSound3').onclick=()=>setMuted(!PROFILE.muted);
 $('btnSettings').onclick=()=>openSettings();
