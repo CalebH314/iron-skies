@@ -232,6 +232,15 @@ input[type=range]{width:100%;accent-color:#7fe6c0}
 .bbar .fl{height:100%;transition:width .25s linear}
 .bbar .pc{font-size:10px;color:#dbe7f5;margin-top:2px;letter-spacing:1px;
   font-variant-numeric:tabular-nums;text-shadow:0 1px 5px #000}
+/* pilot name tags — the same idea as a base bar, sized for a moving aircraft */
+.ntag{position:absolute;transform:translate(-50%,-100%);display:none;text-align:center;
+  pointer-events:none;will-change:transform}
+.ntag.on{display:block}
+.ntag b{display:block;font-size:11px;letter-spacing:1.5px;white-space:nowrap;
+  text-shadow:0 2px 6px #000,0 0 10px #000}
+.ntag .tr{height:5px;border-radius:3px;margin:2px auto 0;overflow:hidden;
+  background:rgba(2,6,12,.7);border:1px solid rgba(255,255,255,.3)}
+.ntag .fl{height:100%}
 .bbar.small .tr{height:6px;border-radius:3px;margin-top:2px;border-color:rgba(255,255,255,.24)}
 .bbar.small .nm{letter-spacing:1.2px;font-weight:600}
 .bbar.small .pc{margin-top:1px;letter-spacing:.5px;color:#b9cbdd}
@@ -299,6 +308,7 @@ td{padding:6px 8px;border-bottom:1px solid rgba(255,255,255,.045)}
   </div>
 
   <div id="basebars"></div>
+  <div id="nametags"></div>
   <div id="warn"></div>
 
   <div id="mission" class="panel">
@@ -386,7 +396,7 @@ td{padding:6px 8px;border-bottom:1px solid rgba(255,255,255,.045)}
 
     <div class="srow">
       <h4>SOUND</h4>
-      <p>Engine note, guns and explosions.</p>
+      <p>Engine note, guns, explosions and the action score. The music follows the fight — it lifts when enemies close on you.</p>
       <div class="seg"><button id="btnSound3">SOUND: ON</button></div>
     </div>
 
@@ -844,15 +854,15 @@ function trenchX(z){
        + Math.sin(z/200+TERRAIN.ph2)*70
        + Math.sin(z/100+TERRAIN.ph3)*70;
 }
-/** canyon levels are the rare set piece — one level in four */
-function isTrenchLevel(lv){ return lv>=4 && lv%4===0 }
+/** canyon is the usual ground: open levels are the break, one in four */
+function isTrenchLevel(lv){ return lv>=2 && lv%4!==0 }
 
 /* Map kinds you can pick in Settings. 'auto' follows the campaign. */
 const MAPS=[
   {id:'auto',  name:'AUTO',       note:'Follows the campaign — open ground most levels, a canyon run every fourth.'},
   {id:'plains',name:'PLAINS',     note:'Flat and fast, with nothing to hide behind and nothing to hit.'},
   {id:'hills', name:'HILLS',      note:'Rolling ground with ridgelines across the middle; you have to find the gaps.'},
-  {id:'canyon',name:'CANYON RUN', note:'A winding trench between the bases. You can climb over the mesa, but the rim is lined with SAMs that fire on everybody.'}
+  {id:'canyon',name:'CANYON RUN', note:'A winding trench between the bases. Fast and covered, but you can climb over the mesa if you would rather take the long way.'}
 ];
 function setTerrain(lv,kind){
   if(kind===true) kind='canyon';
@@ -1258,6 +1268,16 @@ function buildStructMesh(type,tc){
     b.push(); b.tr(0,6.6,0); b.box(21,.8,21,tc); b.pop();
     for(const s of [1,-1]){ b.push(); b.tr(s*8,8,8); b.box(3,4,3,dark); b.pop(); }
     b.push(); b.tr(0,8,0); b.prism(4.4,4.0,3,10,metal); b.pop();
+  }else if(type==='infernodef'){
+    const heat=[.86,.30,.12], ember=[1,.62,.18];
+    b.push(); b.tr(0,3,0); b.box(17,6,17,conc); b.pop();
+    b.push(); b.tr(0,6.4,0); b.box(18,.8,18,tc); b.pop();
+    for(const sx of [1,-1])for(const sz of [1,-1]){          // fuel tanks at the corners
+      b.push(); b.tr(sx*6,9,sz*6); b.rx(-Math.PI/2); b.prism(2.2,2.2,5,8,dark); b.pop();
+    }
+    b.push(); b.tr(0,9.5,0); b.prism(4.2,3.6,5,10,metal); b.pop();
+    b.push(); b.tr(0,13.5,0); b.prism(2.6,3.4,4,10,heat); b.pop();      // flared nozzle
+    b.push(); b.tr(0,16,0); b.prism(3.4,1.0,1.6,10,ember); b.pop();
   }else if(type==='flak'){
     b.push(); b.tr(0,2.4,0); b.box(14,5,14,conc); b.pop();
     b.push(); b.tr(0,5.2,0); b.box(15,.7,15,tc); b.pop();
@@ -1463,8 +1483,10 @@ const STRUCTS={
            short:'REPAIR PAD', desc:'Friendly aircraft flying low over the pad repair and rearm rapidly.'},
   dome:   {name:'Force Dome',       short:'DOME', hp:2200, cost:0, range:0, r:DOME_R, y:0, turret:null,
            desc:'A shield dome over your Command HQ. Enemy aircraft that touch it are destroyed, and every round aimed at your base is absorbed — until it is beaten down.'},
-  spawner:{name:'Aircraft Hangar',  hp:520,  cost:1900, range:0,    r:28, y:10, turret:null, cd:9, cap:14,
-           short:'HANGAR', desc:'Sits beside the HQ and launches a fighter every 9&nbsp;seconds, up to fourteen airborne. Buy <b>Hangar Crews</b> to go faster still. It is lightly built — destroy the enemy hangar and their reinforcements stop dead.'}
+  infernodef:{name:'Inferno Battery', hp:460, cost:0, range:760, r:14, y:12, turret:'flak', cd:0.09, dmg:11,
+           short:'INFERNO', desc:'A ground mount for the Inferno Beam. Sprays a widening torrent of fire at anything that comes near your HQ, and what it touches keeps burning. Unlocked under permanent upgrades.'},
+  spawner:{name:'Aircraft Hangar',  hp:520,  cost:1900, range:0,    r:28, y:10, turret:null, cd:7, cap:20,
+           short:'HANGAR', desc:'Sits beside the HQ and launches a fighter every 7&nbsp;seconds, up to twenty airborne. Buy <b>Hangar Crews</b> to go faster still. It is lightly built — destroy the enemy hangar and their reinforcements stop dead.'}
 };
 const BOT_HP=55;        // deliberately fragile — a short burst downs one
 const BOT_SPEED=165;    // well under the player's 270+, so you can always disengage
@@ -1544,6 +1566,9 @@ const PERKS=[
   {id:'dome',   name:'Force Dome',           cost:l=>l===0?18:14+l*7, marquee:true,
    eff:l=>l===0?'UNLOCK a shield dome over your HQ — enemy aircraft that touch it are destroyed'
                 :`${domeHp(l)} dome integrity · absorbs every round aimed at your base`},
+  {id:'infernodef',name:'Inferno Defence',   cost:l=>l===0?11:8+l*4, marquee:true,
+   eff:l=>l===0?'UNLOCK an Inferno Battery at your HQ — a ground mount for the beam that sets attackers alight'
+                :`${l===1?'one battery':l+' batteries'} · ×${infernoDefMul(l).toFixed(2)} damage · 760 m reach`},
   {id:'hqhull', name:'HQ Fortification',     cost:l=>3+l*2,
    eff:l=>`+${l*900} Command HQ hull (${5200+l*900} total)`},
   {id:'hull',   name:'Reinforced Airframe', cost:l=>1+l,          eff:l=>`+${l*30} starting hull`},
@@ -1554,6 +1579,8 @@ const PERKS=[
 ];
 /** the beam keeps growing: strong at rank 1, ferocious many ranks later */
 function infernoMul(l){ return l<=0?0:1+(l-1)*.35 }
+/** the ground beam grows with rank, like the airborne one */
+function infernoDefMul(l){ return l<=0?0:1+(l-1)*.30 }
 /** the dome is meant to be a late, expensive wall — not a small buff */
 function domeHp(l){ return l<=0?0:2200+1600*(l-1) }
 const DIFFS=[
@@ -1610,12 +1637,12 @@ const diff={
   struct(){ return (1+.07*(PROFILE.level-1))*DK().k },          // tougher defences, still soft
   hangarRate(){ return Math.pow(.90,PROFILE.level-1)/DK().k },  // faster launches
   hangars(){ return 1+Math.floor((PROFILE.level-1)/3) },        // more of them
-  cap(){ return Math.round((16+Math.floor((PROFILE.level-1)/2))*clamp(DK().k,.6,2.5)) },
+  cap(){ return Math.round((22+Math.floor((PROFILE.level-1)/2))*clamp(DK().k,.6,2.5)) },
   extraDefences(){ const k=DK().k;
     return Math.round((Math.min(PROFILE.level-1,7)+(k>=3?6:0))*Math.min(k,2.2)) },
   // only ~40% of a force presses the HQ now, so the group is a little larger
   // to keep the pressure on it comparable
-  bots(){ return Math.round((12+Math.floor((PROFILE.level-1)/2))*clamp(DK().k,.6,2.5)) },
+  bots(){ return Math.round((16+Math.floor((PROFILE.level-1)/2))*clamp(DK().k,.6,2.5)) },
   economy(){ return 1/Math.max(1,DK().k*.6) },     // how fast they rebuild
   structCap(){ return Math.round(6*clamp(DK().k,1,2.5)) }
 };
@@ -1632,7 +1659,7 @@ try{ localStorage.removeItem('ironskies.board'); }catch(e){}   // retired featur
 const G={
   mode:'menu', started:false, t:0, dt:0,
   planes:new Map(), bullets:[], missiles:[], parts:[], structures:[],
-  me:null, myId:uid(), team:'blue', eliminated:{}, netLevel:null, netMap:null,
+  me:null, myId:uid(), team:'blue', eliminated:{}, netLevel:null, netMap:null, hangarT:{},
   credits:600, kills:0, deaths:0, score:0,
   camMode:0, camPos:[0,120,300], camLook:[0,60,0],
   round:null, botFill:5, economyT:0, fires:[], roster:[],
@@ -1650,7 +1677,7 @@ function newPlane(o){
     ctrl:{pitch:0,yaw:0,roll:0,lift:0,strafe:0,fire:0,fire2:0,ab:0},
     shield:0, maxShield:0, shieldT:0, drone:false,
     wep:'mg', cool:{}, ammo:{}, flares:0, maxFlares:0,
-    upg:{}, kills:0, deaths:0, score:0, lock:null, lockT:0, lastHitBy:null, aiT:0, aiTarget:null
+    upg:{}, kills:0, deaths:0, score:0, lock:null, lockT:0, lastHitBy:null, aiT:0, aiTarget:null, safeT:0
   },o);
 }
 
@@ -1721,29 +1748,10 @@ function structPos(team,idx){
 let hangarSlot={blue:0,red:0};
 function hangarPos(team){
   const b=BASES[team], i=hangarSlot[team]++;
-  const x=b[0]+(i%2?150:-150), z=b[2]+(i<2?95:-95);
+  // an arc beside the HQ, so a side that keeps rebuilding does not stack them
+  const a=.6+i*1.71, r=168+((i%3)*40);
+  const x=b[0]+Math.cos(a)*r, z=b[2]+Math.sin(a)*r;
   return [x,terrainH(x,z),z];
-}
-/* A canyon rim belt. These sit on top of the mesa, belong to nobody, and fire
-   on every aircraft regardless of side — they are what makes climbing over the
-   wall a decision rather than a free pass. */
-const NEUTRAL='neutral';
-function addRimSams(){
-  if(!TERRAIN.trench) return;
-  const cfg=STRUCTS.sam, n=10;
-  // stop short of the base bowls at either end, which are cut back down to
-  // ground level — a SAM placed there would sit in the enemy's front garden
-  const bz=Math.abs(BASES[teamList()[0]][2]);
-  const span=Math.min(TERRAIN.wallZ*.82, bz-BOWL_R-250);
-  for(let i=0;i<n;i++){
-    const z=-span+2*span*(i/(n-1));
-    const side=(i%2)?1:-1;
-    const x=trenchX(z)+side*(TERRAIN.half+520);
-    const hp=Math.round(cfg.hp*1.4);
-    G.structures.push({id:uid(),type:'sam',team:NEUTRAL,owner:null,
-      pos:[x,terrainH(x,z),z],hp,maxHp:hp,cd:rnd(0,3),
-      yaw:side>0?Math.PI:0,pitch:0,spin:0,alive:true,rim:true});
-  }
 }
 function addStruct(type,team,ownerId,idx){
   const cfg=STRUCTS[type];
@@ -1753,6 +1761,7 @@ function addStruct(type,team,ownerId,idx){
   let hp=cfg.hp;
   if(type==='dome') hp=domeHp(teamPerk(team,'dome'));
   else if(type==='hq'&&!G.tut) hp+=teamPerk(team,'hqhull')*900;   // each pilot's own fortification
+  else if(type==='infernodef') hp=Math.round(hp*(1+.25*Math.max(0,teamPerk(team,'infernodef')-1)));
   // campaign difficulty stacks the enemy against you; it must never be applied
   // to another human's compound in multiplayer
   if(campaign()&&net.mode==='solo'&&team!==G.team)
@@ -1767,6 +1776,7 @@ let AC=null, engineOsc=null, engineGain=null, masterGain=null;
 function setMuted(m){
   PROFILE.muted=!!m; saveProfile();
   if(masterGain) masterGain.gain.value=PROFILE.muted?0:.35;
+  if(AC&&MUS.gain&&!PROFILE.muted) MUS.next=AC.currentTime+.1;   // resync the loop on unmute
   const lbl='SOUND: '+(PROFILE.muted?'OFF':'ON');
   for(const id of ['btnSound','btnSound2','btnSound3']){ const e=$(id); if(e) e.textContent=lbl; }
   if(G.started) toast(PROFILE.muted?'SOUND MUTED':'SOUND ON','grn',1.2);
@@ -1779,6 +1789,80 @@ function audioInit(){
   engineGain=AC.createGain(); engineGain.gain.value=0;
   const f=AC.createBiquadFilter(); f.type='lowpass'; f.frequency.value=420;
   engineOsc.connect(f); f.connect(engineGain); engineGain.connect(masterGain); engineOsc.start();
+  musicInit();
+}
+/* ------------------------------- music ----------------------------------- */
+/* An action loop built out of oscillators rather than an audio file: nothing to
+   download, nothing a content policy can block, and it costs no bandwidth. It
+   hangs off masterGain, so the sound toggle silences it with everything else.
+   A minor, i–VI–III–VII, two bars each; the lead only comes in once there is
+   actually a fight on. */
+const MUS={gain:null,next:0,step:0,heat:0};
+const MUS_STEP=60/126/4;                       // one sixteenth at 126 bpm
+const MUS_CHORDS=[[57,60,64],[53,57,60],[48,52,55],[55,59,62]];
+const MUS_LEAD=[0,3,5,7,5,3,0,-2];             // motif, semitones above the root
+const mtof=m=>440*Math.pow(2,(m-69)/12);
+function musicInit(){
+  if(!AC||MUS.gain) return;
+  MUS.gain=AC.createGain(); MUS.gain.gain.value=.32;   // sits under the guns
+  const lp=AC.createBiquadFilter(); lp.type='lowpass'; lp.frequency.value=5200;
+  MUS.gain.connect(lp); lp.connect(masterGain);
+  MUS.next=AC.currentTime+.12; MUS.step=0;
+}
+function musTone(freq,at,dur,vol,type){
+  const o=AC.createOscillator(), g=AC.createGain();
+  o.type=type||'triangle'; o.frequency.setValueAtTime(freq,at);
+  g.gain.setValueAtTime(.0001,at);
+  g.gain.linearRampToValueAtTime(vol,at+.014);
+  g.gain.exponentialRampToValueAtTime(.0008,at+dur);
+  o.connect(g); g.connect(MUS.gain); o.start(at); o.stop(at+dur+.03);
+}
+function musDrum(kind,at,vol){
+  if(kind==='kick'){
+    const o=AC.createOscillator(), g=AC.createGain();
+    o.type='sine';
+    o.frequency.setValueAtTime(152,at); o.frequency.exponentialRampToValueAtTime(44,at+.11);
+    g.gain.setValueAtTime(vol,at); g.gain.exponentialRampToValueAtTime(.001,at+.19);
+    o.connect(g); g.connect(MUS.gain); o.start(at); o.stop(at+.21);
+    return;
+  }
+  const snare=kind==='snare';
+  const len=Math.max(1,Math.floor(AC.sampleRate*(snare?.17:.045)));
+  const buf=AC.createBuffer(1,len,AC.sampleRate), d=buf.getChannelData(0);
+  for(let i=0;i<len;i++) d[i]=(Math.random()*2-1)*Math.pow(1-i/len,snare?2.2:3.6);
+  const b=AC.createBufferSource(); b.buffer=buf;
+  const f=AC.createBiquadFilter(); f.type=snare?'bandpass':'highpass';
+  f.frequency.value=snare?1900:7200;
+  const g=AC.createGain(); g.gain.value=vol;
+  b.connect(f); f.connect(g); g.connect(MUS.gain); b.start(at);
+}
+/** how busy the sky is right where you are — drives how hard the loop pushes */
+function musHeat(){
+  if(!G.me||!G.me.alive) return 0;
+  let near=0;
+  for(const q of G.planes.values())
+    if(q.alive&&q.team!==G.team&&dist(q.pos,G.me.pos)<1500) near++;
+  return clamp(near/5,0,1);
+}
+function musicTick(){
+  if(!AC||!MUS.gain) return;
+  // silent in the menus, between rounds, and when the sound is off
+  if(PROFILE.muted||!G.started||G.over||G.paused){ MUS.next=AC.currentTime+.05; return; }
+  MUS.heat+=(musHeat()-MUS.heat)*.03;
+  const heat=MUS.heat;
+  let guard=0;
+  while(MUS.next<AC.currentTime+.30&&guard++<64){
+    const at=MUS.next, st=MUS.step, b16=st%16;
+    const ch=MUS_CHORDS[Math.floor(st/32)%4], root=ch[0]-12;
+    if(b16===0||b16===6||b16===10) musDrum('kick',at,.42);
+    if(b16===4||b16===12) musDrum('snare',at,.26);
+    if(b16%2===0) musDrum('hat',at,.05+.05*heat);
+    if(b16%2===0) musTone(mtof(root),at,.17,.17,'sawtooth');
+    if(b16===0) for(const nn of ch) musTone(mtof(nn),at,1.8,.040,'triangle');
+    if(heat>.30&&b16%2===0)
+      musTone(mtof(ch[0]+12+MUS_LEAD[(st/2)%MUS_LEAD.length]),at,.22,.055*heat,'square');
+    MUS.next+=MUS_STEP; MUS.step++;
+  }
 }
 function sfx(type,vol,pan){
   if(!AC) return; vol=(vol===undefined?1:vol);
@@ -1932,7 +2016,7 @@ function simPlane(p,dt){
       if(p.noRespawn){ G.planes.delete(p.id); return; }   // training drones stay down
       if(!hangarFor(p.team)&&!G.tut&&!G.mission){
         if(p.isLocal){ $('deadTitle').textContent='NO HANGARS LEFT';
-          $('deadTxt').textContent='EVERY HANGAR ON YOUR SIDE IS DOWN — NOTHING LEFT TO LAUNCH'; }
+          $('deadTxt').textContent='EVERY HANGAR ON YOUR SIDE IS DOWN — HOLD ON, ONE IS BEING REBUILT'; }
         else if(p.isBot){ G.planes.delete(p.id); }
         p.respawn=1;
         return;
@@ -1987,6 +2071,23 @@ function simPlane(p,dt){
   }
   if(p.pos[1]>CEILING) p.pos[1]=CEILING;
 
+  // Ground-proximity guard, bots only. Steering alone still put roughly a third
+  // of them in the dirt, so below this height the aircraft simply will not
+  // descend any further and the nose is forced up until it is clear. The player
+  // gets no such help.
+  if(p.isBot&&!p.isLocal&&p.alive){
+    const g0=Math.max(terrainH(p.pos[0],p.pos[2]),SEA);
+    if(p.pos[1]<g0+46){
+      p.pos[1]=g0+46;
+      const fw=fwdOf(p,[0,0,0]);
+      if(fw[1]<.30){                       // climb out instead of scraping along
+        const flat=Math.hypot(fw[0],fw[2])||1;
+        qLookDir(p.quat,[fw[0]/flat*.90,.44,fw[2]/flat*.90],[0,1,0]);
+      }
+      p.thr=1; p.pullUp=Math.max(p.pullUp||0,.8);
+    }
+  }
+
   // terrain / sea collision
   const gh=Math.max(terrainH(p.pos[0],p.pos[2]),SEA);
   if(p.pos[1]<gh+4){
@@ -1994,14 +2095,16 @@ function simPlane(p,dt){
     p.pos[1]=gh+4;
     const bite=Math.max(0,-f[1])*.7+.3;                 // nose-down hurts more
     const dmg=impactDamage(p.speed*bite)*2.2;
-    if(dmg>=p.hp){ killPlane(p,p.lastHitBy||null,true); }
+    if(dmg>=p.hp){ p.crashLabel='FLEW INTO THE TERRAIN'; killPlane(p,p.lastHitBy||null,true); }
     else{
       damagePlane(p,dmg,null);
       p.speed*=.45;
       explode(p.pos,10,.7);
-      if(p.isLocal) toast('SCRAPED THE GROUND  −'+Math.round(dmg)+' HULL','red',1.6);
+      if(p.isLocal) toast('CRASHED INTO THE GROUND  −'+Math.round(dmg)+' HULL','red',1.8);
     }
   }
+
+  if(p.safeT>0) p.safeT-=dt;
 
   // shields rebuild once nothing has hit you for a few seconds
   if(p.maxShield>0){
@@ -2026,12 +2129,21 @@ function hangarFor(team){
 }
 function doRespawn(p){
   const h=hangarFor(p.team);
+  // Aircraft come out of hangars, full stop. Without this a bot with no hangar
+  // left fell through to the mid-air fallback below and appeared out of thin
+  // air, which made destroying the sheds look like it had done nothing.
+  if(!h&&p.isBot&&!G.tut&&!G.mission){ G.planes.delete(p.id); return; }
   const b=BASES[p.team], a=rnd(0,Math.PI*2);
-  if(h) p.pos=[h.pos[0]+rnd(-24,24), h.pos[1]+18, h.pos[2]+rnd(-24,24)];   // roll out of the shed
+  if(h){                                                    // roll out of the shed
+    p.pos=[h.pos[0]+rnd(-24,24), 0, h.pos[2]+rnd(-24,24)];
+    // the apron can slope away from the hangar, so clear the ground under the
+    // aircraft rather than the ground under the building
+    p.pos[1]=Math.max(h.pos[1]+18, terrainH(p.pos[0],p.pos[2])+20);
+  }
   else  p.pos=[b[0]+Math.cos(a)*420, BASE_Y+rnd(320,460), b[2]+Math.sin(a)*420];
   const toC=[-p.pos[0],0,-p.pos[2]]; const l=Math.hypot(toC[0],toC[2])||1;
   qLookDir(p.quat,[toC[0]/l,0.06,toC[2]/l],[0,1,0]);
-  p.speed=h?120:190; p.thr=.9; p.alive=true; applyUpgrades(p); rearm(p);
+  p.speed=h?120:190; p.thr=.9; p.alive=true; p.safeT=3.0; applyUpgrades(p); rearm(p);
   if(p.isBot) p.cruiseY=p.pos[1];
   if(p.isLocal){ $('dead').classList.remove('on'); toast('AIRBORNE','grn',1.2); }
 }
@@ -2076,7 +2188,7 @@ function fireWeapon(p,dt){
           rocket:id==='rocket',
           // 0.55 was tuned when every bot gunned the HQ. Now only the raiders
           // do, so they hit properly and the rest stay incidental.
-          antiStruct:p.isBot?(p.role==='hq'?2.0:0.7):1, life:id==='laser'?1.4:id==='inferno'?.38:3.0,
+          antiStruct:p.isBot?(p.role==='hq'?3.4:0.9):1, life:id==='laser'?1.4:id==='inferno'?.38:3.0,
           fire:id==='inferno', grow:id==='inferno'?1:0, kind:id});
       }
       if(id==='inferno'){          // embers streaming off the flame
@@ -2139,6 +2251,7 @@ function crashInto(p,vRel,otherMass,label){
   const m=MASS(p);
   const share=otherMass/(m+otherMass);        // the lighter body takes the worse of it
   const dmg=impactDamage(vRel)*2*share;
+  if(dmg>=p.hp&&p.alive){ killPlane(p,null,true); return dmg; }   // a crash is a crash, not a shootdown
   damagePlane(p,dmg,null);
   if(p.isLocal) toast(label+'  −'+Math.round(dmg)+' HULL','red',1.6);
   return dmg;
@@ -2194,10 +2307,26 @@ function killPlane(p,byId,crash){
     G.deaths++;
     G.crashed=!!crash;
     $('deadTitle').textContent=crash?'CRASHED':'SHOT DOWN';
+    const who=killerName(byId);
+    G.deadBy = crash ? (p.crashLabel||'FLEW INTO THE TERRAIN')
+                     : (who?('SHOT DOWN BY '+who):'BROUGHT DOWN BY ENEMY FIRE');
+    p.crashLabel=null;
     $('dead').classList.add('on');
     net.send({t:'dead',id:p.id,by:byId||null,crash:!!crash});
   }
   if(p.isBot&&net.isHost) net.send({t:'botdead',id:p.id,by:byId||null});
+}
+/** Who or what an owner id refers to — a pilot, or an emplacement and its side. */
+function killerName(byId){
+  if(!byId) return null;
+  if(typeof byId==='string'&&byId.slice(0,2)==='s:'){
+    const st=G.structures.find(x=>x.id===byId.slice(2));
+    if(!st) return 'GROUND FIRE';
+    const nm=(STRUCTS[st.type].short||STRUCTS[st.type].name).toUpperCase();
+    return teamList().length>2 ? nm+' · '+st.team.toUpperCase() : nm;
+  }
+  const q=G.planes.get(byId);
+  return q?q.name.toUpperCase()+(q.isBot?'':' (PILOT)'):null;
 }
 function damageStruct(s,amt,byId){
   if(!s.alive) return;
@@ -2234,8 +2363,10 @@ function stepCollisions(dt){
       const rel=Math.hypot(fa[0]*a.speed-fb[0]*b.speed,
                            fa[1]*a.speed-fb[1]*b.speed,
                            fa[2]*a.speed-fb[2]*b.speed);
-      crashInto(a,rel,MASS(b),'MID-AIR COLLISION');
-      if(b.isLocal||(b.isBot&&authority())) crashInto(b,rel,MASS(a),'MID-AIR COLLISION');
+      a.crashLabel='MID-AIR COLLISION WITH '+b.name.toUpperCase();
+      b.crashLabel='MID-AIR COLLISION WITH '+a.name.toUpperCase();
+      crashInto(a,rel,MASS(b),a.crashLabel);
+      if(b.isLocal||(b.isBot&&authority())) crashInto(b,rel,MASS(a),b.crashLabel);
       // shove them apart so they do not grind together for several frames
       const away=[a.pos[0]-b.pos[0],a.pos[1]-b.pos[1],a.pos[2]-b.pos[2]];
       const l=Math.hypot(...away)||1;
@@ -2249,17 +2380,24 @@ function stepCollisions(dt){
       hitDome(d,140+MASS(a)*impactDamage(a.speed)*.5,a.id);
       explode(a.pos,34,1.5); sfxAt('boom',a.pos,1);
       if(a.isLocal) toast('FLEW INTO THE FORCE DOME','red',2.2);
+      a.crashLabel='FLEW INTO THE FORCE DOME';
       killPlane(a,null,true);
       break;
     }
     if(!a.alive) continue;
-    // aircraft against buildings — never your own side's
+    // Aircraft against buildings. You hit your own side's just as hard — the
+    // difference is that your own take no damage from it.
     for(const s of G.structures){
-      if(!s.alive||s.team===a.team) continue;
+      if(!s.alive) continue;
       const cfg=STRUCTS[s.type], cy=s.pos[1]+(cfg.y||8);
       if(dist(a.pos,[s.pos[0],cy,s.pos[2]])>cfg.r+9) continue;
-      const dmg=crashInto(a,a.speed,MASS(a)*3,'STRUCK '+cfg.short);
-      if(authority()) damageStruct(s,impactDamage(a.speed)*MASS(a)*1.6,a.id);
+      // an aircraft rolling out of its own hangar is sitting inside that
+      // building's collision sphere; it must not be wrecked by its own shed
+      const own=s.team===a.team;
+      if(own&&(a.safeT||0)>0) continue;
+      a.crashLabel='CRASHED INTO '+(own?'YOUR OWN ':'A ')+cfg.short;
+      crashInto(a,a.speed,MASS(a)*3,a.crashLabel);
+      if(authority()&&!own) damageStruct(s,impactDamage(a.speed)*MASS(a)*1.6,a.id);
       explode(a.pos,20,1.2);
     }
   }
@@ -2505,6 +2643,18 @@ function fireStruct(s,target){
       target,dmg:cfg.dmg,turn:2.0,speed:400,life:16,fromStruct:true});
     sfxAt('launch',org,.9);
     net.send({t:'smsl',s:s.id,tg:target.id});
+  }else if(s.type==='infernodef'){
+    // the ground beam: short-lived, widening rounds that leave fires behind
+    const mul=infernoDefMul(teamPerk(s.team,'infernodef'))||1;
+    const to=[target.pos[0]-org[0],target.pos[1]-org[1],target.pos[2]-org[2]];
+    const l=Math.hypot(...to)||1;
+    const sp=620, sprd=.03;
+    spawnBullet({pos:org.slice(),
+      vel:[(to[0]/l+rnd(-sprd,sprd))*sp,(to[1]/l+rnd(-sprd,sprd))*sp,(to[2]/l+rnd(-sprd,sprd))*sp],
+      dmg:cfg.dmg*mul, team:s.team, owner:s.owner||('s:'+s.id),
+      col:[1,.55,.14], len:9, wid:3.2, life:1.25, fire:true, grow:1, travel:0});
+    sfxAt('gun',org,.35);
+    net.send({t:'sshot',s:s.id,p:org.map(v=>+v.toFixed(1)),v:[to[0]/l*sp,to[1]/l*sp,to[2]/l*sp].map(v=>+v.toFixed(1))});
   }else{
     // lead the target
     const w=s.type==='sniper'?{sp:1500,sp2:0}:{sp:900};
@@ -2528,10 +2678,10 @@ function fireStruct(s,target){
    installations, come for you personally, or stay out of trouble. */
 function pickRole(){
   const r=Math.random();
-  if(r<.40) return 'hq';
-  if(r<.62) return 'hunter';
-  if(r<.74) return 'ace';
-  if(r<.88) return 'bomber';
+  if(r<.32) return 'hq';       // the HQ is still the single biggest draw
+  if(r<.62) return 'ace';      // and nearly as many come for you personally
+  if(r<.78) return 'hunter';
+  if(r<.92) return 'bomber';
   return 'shy';
 }
 /** whoever is sitting on this aircraft's tail, if anyone */
@@ -2559,21 +2709,56 @@ function stepBot(p,dt){
     return;
   }
   p.aiT-=dt;
+  // If it has not gained ground on its objective in eight seconds it is not
+  // going to — pick something else rather than milling about.
+  if(p.aiTarget&&p.aiTarget.pos){
+    const d=dist(p.pos,p.aiTarget.pos);
+    if(p.aiBest===undefined||d<p.aiBest-25){ p.aiBest=d; p.aiStuck=0; }
+    else {
+      p.aiStuck=(p.aiStuck||0)+dt;
+      // A stern chase after another aircraft is the thing worth abandoning. A
+      // building does not move, so a long transit through a fight is normal
+      // progress and gets a much longer fuse.
+      const fuse=(p.aiTarget.speed!==undefined)?7:22;
+      if(p.aiStuck>fuse){ p.aiAvoid=p.aiTarget.id; p.aiTarget=null; p.aiT=0; }
+    }
+  }
   if(p.aiT<=0||!p.aiTarget||(p.aiTarget.alive===false)){
+    p.aiBest=undefined; p.aiStuck=0;
     p.aiT=rnd(2.5,5);
     // A mixed force rather than one endless bombing run: see pickRole().
     if(!p.role) p.role=pickRole();
     const foeTeam=foeBaseOf(p.team,p.pos);
     // a dome makes the HQ untouchable, so it becomes the objective instead
-    const hqT=domeOf(foeTeam)||G.structures.find(s=>s.alive&&s.type==='hq'&&s.team!==p.team);
-    const nearestFoe=()=>{
-      let best=null,bd=1e9;
+    // the nearest rival HQ, not merely the first one in the array — with six
+    // compounds on the map that difference is several kilometres
+    let hqT=domeOf(foeTeam);
+    if(!hqT){
+      let bd=1e18;
+      for(const st of G.structures){
+        if(!st.alive||st.type!=='hq'||st.team===p.team) continue;
+        const d=dist(st.pos,p.pos); if(d<bd){ bd=d; hqT=st; }
+      }
+    }
+    // Nearest is not the same as catchable. A target out in front can be run
+    // down; one behind or a long way off turns into a stern chase the aircraft
+    // never wins, which is what most of the aimless drifting actually was.
+    const fwd=fwdOf(p,[0,0,0]);
+    const nearestFoe=(maxD)=>{
+      let best=null,bs=1e18;
       for(const q of G.planes.values()){
         if(q===p||!q.alive||q.team===p.team) continue;
-        const d=dist(q.pos,p.pos); if(d<bd){bd=d;best=q}
+        if(q.id===p.aiAvoid) continue;          // just gave up on this one
+        const dx=q.pos[0]-p.pos[0],dy=q.pos[1]-p.pos[1],dz=q.pos[2]-p.pos[2];
+        const d=Math.hypot(dx,dy,dz)||1;
+        if(maxD&&d>maxD) continue;
+        const ahead=(dx*fwd[0]+dy*fwd[1]+dz*fwd[2])/d;
+        const sc=d*(ahead>.2?1:ahead>-.3?1.6:2.6);
+        if(sc<bs){bs=sc;best=q}
       }
       return best;
     };
+    const CHASE=2600;
     // Hangars are the target that actually decides a match: take them out and
     // the side stops launching. Weight them well above the nearest gun, which
     // is otherwise all a ground-attack aircraft ever picks.
@@ -2595,14 +2780,19 @@ function stepBot(p,dt){
     };
     let tgt=null;
     switch(p.role){
-      case 'hq':     tgt=hqT||anyGround()||nearestFoe(); break;
-      case 'bomber': tgt=anyGround()||hqT||nearestFoe(); break;
-      case 'hunter': tgt=nearestFoe()||hqT; break;
+      case 'hq':     tgt=hqT||anyGround()||nearestFoe(CHASE); break;
+      case 'bomber': tgt=anyGround()||hqT||nearestFoe(CHASE); break;
+      case 'hunter': {   // a hunter that finds you close by comes for you
+        const near=nearestFoe(CHASE);
+        tgt=(G.me&&G.me.alive&&G.me.team!==p.team&&dist(G.me.pos,p.pos)<2200)
+            ? G.me : (near||anyGround()||hqT);
+        break;
+      }
       case 'ace':    // comes for the human specifically
-        tgt=(G.me&&G.me.alive&&G.me.team!==p.team)?G.me:(nearestFoe()||hqT); break;
+        tgt=(G.me&&G.me.alive&&G.me.team!==p.team)?G.me:(nearestFoe(CHASE)||hqT); break;
       case 'shy':    // works the edges and avoids the furball
         tgt=anyGround(true)||hqT; break;
-      default:       p.role=pickRole(); tgt=hqT||nearestFoe();
+      default:       p.role=pickRole(); tgt=hqT||nearestFoe(CHASE);
     }
     p.aiTarget=tgt||null;
     p.aiStruct=!!(tgt&&tgt.type);   // a structure rather than an aircraft
@@ -2617,13 +2807,38 @@ function stepBot(p,dt){
              return [t.pos[0]+f[0]*t.speed*lt,t.pos[1]+f[1]*t.speed*lt,t.pos[2]+f[2]*t.speed*lt]})()
       : [t.pos[0],t.pos[1]+(STRUCTS[t.type]?STRUCTS[t.type].y:0)+26,t.pos[2]]) : null;
   }
-  // terrain avoidance dominates
+  // Terrain avoidance. A fixed 620m lookahead is under three seconds at bot
+  // speed and only samples the far end, so a ridge halfway there went unseen —
+  // which is how nearly half of them were dying. Scale it with speed and sample
+  // the whole path.
   const f=fwdOf(p,[0,0,0]);
-  const LOOK=620;   // enough warning to out-climb a ridgeline at bot speed
+  const LOOK=clamp(p.speed*4.5,760,1600);
   const ahead=[p.pos[0]+f[0]*LOOK,p.pos[1]+f[1]*LOOK,p.pos[2]+f[2]*LOOK];
-  const gh=Math.max(terrainH(ahead[0],ahead[2]),SEA);
+  let gh=SEA;
+  for(let i=1;i<=6;i++){
+    const d=LOOK*i/6;
+    gh=Math.max(gh,terrainH(p.pos[0]+f[0]*d,p.pos[2]+f[2]*d));
+  }
+  // Buildings count as terrain for avoidance. An attack run is supposed to end
+  // in a pull-up, not in the roof of the thing it was shooting at.
+  for(const st of G.structures){
+    if(!st.alive) continue;
+    const cfg=STRUCTS[st.type];
+    if(cfg.r>200) continue;                      // the force dome is a hazard on purpose
+    if(st===p.aiTarget) continue;                // its own objective is not an obstacle
+    const dx=st.pos[0]-p.pos[0], dz=st.pos[2]-p.pos[2];
+    const along=dx*f[0]+dz*f[2];
+    if(along<-40||along>LOOK*.7) continue;
+    const lat=Math.abs(dx*f[2]-dz*f[0]);         // perpendicular distance, in plan
+    if(lat>cfg.r+60) continue;
+    gh=Math.max(gh, st.pos[1]+(cfg.y||8)+cfg.r+20);
+  }
   const ghNow=Math.max(terrainH(p.pos[0],p.pos[2]),SEA);
-  const lowNow=p.pos[1]<ghNow+120;
+  const lowNow=p.pos[1]<ghNow+150;
+  // Where it will actually be by the end of that look, if it holds this
+  // attitude. A shallow descent that looks fine right now is what turns a gun
+  // run into a smoking hole.
+  const clearAhead=p.pos[1]+f[1]*LOOK-gh;
   // On canyon levels the midfield wall is above the ceiling, so "pull up" is
   // suicide. Inside the band the AI flies the trench centreline instead.
   // Free manoeuvring only when the fight is inside the bowl you are already in.
@@ -2656,9 +2871,12 @@ function stepBot(p,dt){
     // On a run at a ground target the 620m lookahead always reports "ground
     // ahead" the instant the nose drops, so avoidance cancels every attack and
     // they orbit instead. Inside the run-in, only the hard floor applies.
+    // The run-in has to start early enough to actually get the nose down. With
+    // the lookahead now reaching 1.6 km, avoidance was holding them at cruise
+    // until 750 m out — too late to lose 300 m and still be aimed at anything.
     const attackRun=p.aiStruct&&aim&&
-      Math.hypot(aim[0]-p.pos[0],aim[2]-p.pos[2])<750&&p.pos[1]>ghNow+70;
-    if(!attackRun&&(ahead[1]<gh+180||lowNow)){
+      Math.hypot(aim[0]-p.pos[0],aim[2]-p.pos[2])<1500&&p.pos[1]>ghNow+120;
+    if(!attackRun&&(clearAhead<240||lowNow)){
       // Inside a bowl there is no climbing out — the rim tops the ceiling — so
       // the answer to terrain ahead is to turn back into the bowl, not to pull up.
       if(myBowl){ const bc=BASES[myBowl]; aim=[bc[0],BASE_Y+320,bc[2]]; }
@@ -2692,7 +2910,7 @@ function stepBot(p,dt){
   // Transit high and only dive on the run-in. Without this a raider starts its
   // descent the moment it acquires a distant ground target and flies straight
   // into the ridgelines between the bases.
-  const farGround=p.aiStruct&&aim&&Math.hypot(aim[0]-p.pos[0],aim[2]-p.pos[2])>900;
+  const farGround=p.aiStruct&&aim&&Math.hypot(aim[0]-p.pos[0],aim[2]-p.pos[2])>1500;
   if((chasingPlane||farGround)&&!lowNow&&!inCanyon&&ahead[1]>=gh+140)
     aim=[aim[0],Math.max(p.cruiseY,ghNow+330,gh+330),aim[2]];
 
@@ -2703,12 +2921,87 @@ function stepBot(p,dt){
   if(TERRAIN.trench)
     aim=[aim[0],Math.min(aim[1],(nearBowl?BASE_Y:TERRAIN.floor)+560),aim[2]];
 
+  // Keep them out of each other. With this many aircraft up, a head-on at
+  // combined closing speed is otherwise a routine way to die.
+  // On short final at a building they are committed; jinking there is what
+  // turned every attack run into another orbit.
+  const committed=p.aiStruct&&t&&t.pos&&
+    Math.hypot(t.pos[0]-p.pos[0],t.pos[2]-p.pos[2])<520;
+  let dodge=null, dodgeD=1e9;
+  if(!committed) for(const q of G.planes.values()){
+    // Friendlies pass straight through each other, so they are not a hazard —
+    // dodging them was firing constantly and turning every attack run into an
+    // orbit. Only an enemy aircraft can actually be hit.
+    if(q===p||!q.alive||q.team===p.team) continue;
+    if(q===t) continue;                                // the one it is fighting
+    const dx=q.pos[0]-p.pos[0], dy=q.pos[1]-p.pos[1], dz=q.pos[2]-p.pos[2];
+    const d=Math.hypot(dx,dy,dz);
+    if(d>300||d<1) continue;
+    if((dx*f[0]+dy*f[1]+dz*f[2])/d < .70) continue;    // dead ahead only
+    if(d<dodgeD){ dodgeD=d; dodge=q; }
+  }
+  if(dodge){
+    // break both up and to one side — a pure climb is too slow to clear a
+    // head-on at combined closing speed
+    const over=(dodge.pos[1]<p.pos[1])?1:-1;
+    const rt=rightOf(p,[0,0,0]);
+    const side=((dodge.pos[0]-p.pos[0])*rt[0]+(dodge.pos[2]-p.pos[2])*rt[2])>0?-1:1;
+    aim=[aim[0]+rt[0]*side*400, aim[1]+over*420, aim[2]+rt[2]*side*400];
+  }
+
+  // Hold off the building it is shooting at: close enough to hit, never close
+  // enough to fly into.
+  if(p.aiStruct&&t&&t.type&&STRUCTS[t.type]&&STRUCTS[t.type].r<200){
+    const cfg=STRUCTS[t.type], cy=t.pos[1]+(cfg.y||8);
+    const ox=p.pos[0]-t.pos[0], oy=p.pos[1]-cy, oz=p.pos[2]-t.pos[2];
+    const od=Math.hypot(ox,oy,oz)||1, stand=cfg.r+50;
+    if(od<stand)
+      aim=[t.pos[0]+ox/od*stand*2.4, cy+Math.max(oy,stand*1.1), t.pos[2]+oz/od*stand*2.4];
+  }
+
+  // A hard floor that overrides everything — the objective, the gun run, the
+  // chase, the flee. An aircraft that trades itself for a hangar is not a
+  // trade the AI should be making.
+  // A fixed clearance forbids ever pointing the nose down, which cancelled
+  // every gun run. What matters is whether there is room left to pull out:
+  // how far ahead this attitude actually meets the ground.
+  const FLOOR=90, PULLOUT=360;
+  const sink=-f[1], altNow=p.pos[1]-ghNow;
+  const toGround = sink>.02 ? altNow/sink : 1e9;
+  if(inCanyon){
+    // Inside the slot the rock is beside you, not under you. Sampling straight
+    // ahead reads the wall and would command a climb every frame, so the only
+    // floor that counts in here is the trench floor.
+    if(p.pos[1]<TERRAIN.floor+150){ aim=[aim[0],TERRAIN.floor+340,aim[2]]; p.pullUp=.5; }
+  }else{
+    const ahead2=p.pos[1]+f[1]*LOOK*.5-gh;      // rising ground, not just a descent
+    if(altNow<FLOOR||toGround<PULLOUT||ahead2<0){
+      aim=[p.pos[0]+f[0]*420, Math.max(ghNow,gh)+520, p.pos[2]+f[2]*420];
+      p.pullUp=.7;                               // hold it for a beat once clear
+    }
+  }
+  p.pullUp=Math.max(0,(p.pullUp||0)-dt);
+  if(p.pullUp>0&&!inCanyon&&p.pos[1]<gh+380)
+    aim=[aim[0],Math.max(aim[1],Math.max(ghNow,gh)+430),aim[2]];
+
+  // Damaged aircraft break off and go home to heal rather than pressing on into
+  // the guns. Survival is worth more than one more pass.
+  if(!p.isLocal&&p.hp<p.maxHp*.30&&!p.rtb&&Math.random()<dt*.9) p.rtb=true;
+  if(p.rtb){
+    if(p.hp>p.maxHp*.72||!hangarFor(p.team)) p.rtb=false;
+    else{
+      const b=BASES[p.team]||BASES[teamList()[0]];
+      aim=[b[0],Math.max(b[1]+340,ghNow+320),b[2]];
+      p.thr=1; c.fire=0;
+    }
+  }
+
   // steer: convert target direction into local space
   const to=[aim[0]-p.pos[0],aim[1]-p.pos[1],aim[2]-p.pos[2]];
   const dl=Math.hypot(...to)||1; to[0]/=dl;to[1]/=dl;to[2]/=dl;
   const inv=[-p.quat[0],-p.quat[1],-p.quat[2],p.quat[3]];
   const loc=qrot([0,0,0],to,inv);
-  const pl=inCanyon?1:.55;              // capped outside the canyon: no looping
+  const pl=(inCanyon||p.pullUp>0)?1:.55;   // full authority when pulling off the ground
   c.pitch=clamp(loc[1]*3.0,-pl,pl);
   c.yaw=clamp(loc[0]*1.4,-1,1);
   // bank into the turn
@@ -2757,7 +3050,10 @@ function stepBot(p,dt){
     const tv=[tp[0]-p.pos[0],tp[1]-p.pos[1],tp[2]-p.pos[2]];
     const td=Math.hypot(...tv)||1;
     const tl=qrot([0,0,0],[tv[0]/td,tv[1]/td,tv[2]/td],inv);
-    if(tl[2]<-0.986){                    // inside about ten degrees
+    // Ten degrees is right for a fighter. A building is a large, stationary
+    // target and holding that cone on a diving run is why they flew all the way
+    // in and then never pulled the trigger.
+    if(tl[2] < (gAir?-0.986:-0.94)){
       c.fire=1;
       if(p.have.missile&&gAir&&td>300&&td<1600&&Math.random()<dt*.7){ p.lock=gt; c.fire2=1; }
     }
@@ -3100,9 +3396,10 @@ function updateHUD(dt){
       :hf>.25?'linear-gradient(90deg,#d4a02a,#ffd451)':'linear-gradient(90deg,#c0392b,#ff7a6b)';
   }
 
-  if(!p.alive) $('deadTxt').textContent=(G.crashed?'FLEW INTO THE TERRAIN — RESPAWN IN ':'RESPAWN IN ')+Math.ceil(p.respawn);
+  if(!p.alive) $('deadTxt').textContent=(G.deadBy?G.deadBy+' — RESPAWN IN ':'RESPAWN IN ')+Math.ceil(p.respawn);
   updateWarnings(dt);
   updateBaseBars();
+  updateNameTags();
   updateMissionHUD();
   drawMini();
 }
@@ -3207,6 +3504,45 @@ function project(pos){
   const w=m[3]*v[0]+m[7]*v[1]+m[11]*v[2]+m[15];
   if(w<=0.01) return null;
   return [(x/w*.5+.5)*innerWidth,(-y/w*.5+.5)*innerHeight];
+}
+/* Name tags over every other pilot. Bots are unnamed clutter — this is for
+   telling actual people apart, so it only ever labels humans. */
+const tagEls=new Map(), _seenTags=new Set();
+function updateNameTags(){
+  const host=$('nametags'); if(!host) return;
+  _seenTags.clear();
+  for(const q of G.planes.values()){
+    if(q.isBot||q.isLocal||!q.alive) continue;
+    _seenTags.add(q.id);
+    let el=tagEls.get(q.id);
+    if(!el){
+      el=document.createElement('div'); el.className='ntag';
+      el.innerHTML='<b></b><div class="tr"><i class="fl"></i></div>';
+      host.appendChild(el); tagEls.set(q.id,el);
+    }
+    const d=dist(G.camPos,q.pos);
+    const sp=d<5200?project([q.pos[0],q.pos[1]+16,q.pos[2]]):null;
+    if(!sp){ el.classList.remove('on'); continue; }
+    const w=clamp(9000/Math.max(d,1),52,150);
+    const f=clamp(q.hp/(q.maxHp||100),0,1);
+    el.classList.add('on');
+    el.style.left=sp[0]+'px'; el.style.top=sp[1]+'px';
+    el.style.opacity=clamp(1.3-d/5200,.4,1);
+    const nm=el.firstElementChild;
+    nm.textContent=q.name;
+    nm.style.color=q.team===G.team?'#7fe6c0':teamHex(q.team);
+    nm.style.fontSize=clamp(w/11,9,13)+'px';
+    const tr=el.children[1];
+    tr.style.width=w+'px';
+    tr.firstElementChild.style.width=(f*100)+'%';
+    tr.firstElementChild.style.background=
+      f>.5?'linear-gradient(90deg,#2ecc8f,#7fe6c0)':
+      f>.25?'linear-gradient(90deg,#d4a02a,#ffd451)':'linear-gradient(90deg,#c0392b,#ff7a6b)';
+  }
+  tagEls.forEach((el,id)=>{
+    if(_seenTags.has(id)) return;
+    el.remove(); tagEls.delete(id);
+  });
 }
 const mc=$('mini').getContext('2d');
 function drawMini(){
@@ -3427,8 +3763,9 @@ function quitToMenu(){
   G.planes.clear(); G.structures.length=0; G.bullets.length=0; G.missiles.length=0;
   G.parts.length=0; G.rings.length=0; G.fires.length=0;
   setupTeams(2);
-  G.me=null; G.crew=null; G.roster=[]; G.netLevel=null; G.netMap=null; G.credits=600; G.kills=0; G.deaths=0; G.score=0; G.camMode=0;
+  G.me=null; G.crew=null; G.roster=[]; G.netLevel=null; G.netMap=null; G.hangarT={}; G.credits=600; G.kills=0; G.deaths=0; G.score=0; G.camMode=0;
   baseBarEls.forEach(el=>el.classList.remove('on'));
+  tagEls.forEach(el=>el.remove()); tagEls.clear();
   for(const id of ['pause','over','shop','dead','tut','mission']) $(id).classList.remove('on');
   $('hud').classList.remove('on');
   $('menu').classList.add('on');
@@ -3579,7 +3916,7 @@ function helloStub(){
   return {id:G.myId,name:nm,team:TEAM_DEFS[0].id,pos:[0,BASE_Y+300,0],q:[0,0,0,1],
           hp:100,maxHp:100,speed:0,alive:false,bot:false,upg:{},k:0,d:0};
 }
-function myPerks(){ return {dome:perk('dome'),hqhull:perk('hqhull')} }
+function myPerks(){ return {dome:perk('dome'),hqhull:perk('hqhull'),infernodef:perk('infernodef')} }
 function lobbyCount(){ lobbyWait() }
 function packPlayer(p){
   return {id:p.id,name:p.name,team:p.team,pos:p.pos.map(v=>+v.toFixed(1)),q:p.quat.map(v=>+v.toFixed(3)),
@@ -4328,7 +4665,7 @@ function spawnBotFrom(s){
   p.pos=[s.pos[0]+rnd(-50,50), s.pos[1]+rnd(200,330), s.pos[2]+rnd(-50,50)];
   const to=[-p.pos[0],0,-p.pos[2]], l=Math.hypot(to[0],to[2])||1;
   qLookDir(p.quat,[to[0]/l,.03,to[2]/l],[0,1,0]);
-  p.speed=185; p.thr=.8; p.cruiseY=p.pos[1];
+  p.speed=185; p.thr=.8; p.cruiseY=p.pos[1]; p.safeT=3.0;
   G.planes.set(p.id,p);
   return p;
 }
@@ -4336,7 +4673,6 @@ function spawnBotFrom(s){
    = an identical compound for every pilot, plus whatever permanent upgrades
    that particular pilot brought with them. */
 function buildCompounds(){
-  addRimSams();          // canyon maps only; no-op everywhere else
   TEAMPERK={};
   for(const pl of G.planes.values()){
     if(pl.isBot) continue;
@@ -4352,12 +4688,14 @@ function buildCompounds(){
       if(teamPerk(k,'dome')>0) addStruct('dome',k);
       addStruct('spawner',k); addStruct('spawner',k);
       addStruct('flak',k); addStruct('sniper',k); addStruct('sam',k);
+      for(let i=0;i<teamPerk(k,'infernodef');i++) addStruct('infernodef',k);
     }
     return;
   }
   const foe=foeBaseOf(G.team);
   addStruct('hq',G.team); addStruct('hq',foe);
   if(teamPerk(G.team,'dome')>0) addStruct('dome',G.team);
+  for(let i=0;i<teamPerk(G.team,'infernodef');i++) addStruct('infernodef',G.team);
   addStruct('spawner',G.team); addStruct('spawner',G.team); addStruct('spawner',foe);
   for(let i=1;i<diff.hangars();i++) addStruct('spawner',foe);   // a bigger enemy air force each level
   addStruct('flak',foe); addStruct('sniper',foe); addStruct('flak',G.team);
@@ -4392,8 +4730,7 @@ function startGame(team,nteams){
   if(crewMode()){ G.me.alive=false; G.me.respawn=1e9; takeEmplacement(); }
   toast('CLICK TO CAPTURE MOUSE · <kbd>B</kbd> OPENS THE HANGAR','grn',5);
   if(TERRAIN.trench)
-    toast('CANYON RUN — the trench is the fast way through. You can climb over the mesa, '+
-          'but the rim is lined with SAMs that fire on everybody.','gold',9);
+    toast('CANYON RUN — the trench is the fast way through, but you can climb over the mesa.','gold',7);
   else if(TERRAIN.ridges.length)
     toast('RIDGELINES AHEAD — find the gaps','gold',5);
   canvas.requestPointerLock();
@@ -4482,6 +4819,25 @@ function frame(now){
     G.credits+=9*dt;
     if(G.tut&&!G.tut.done) stepTutorial(dt);
     if(authority()&&!(G.tut&&!G.tut.done)&&!G.mission){
+      // A side that loses its hangars is crippled, not finished. While the HQ
+      // stands they rebuild, so knocking the sheds out buys you time rather
+      // than ending it — losing the HQ is still the only thing that is final.
+      for(const k of teamList()){
+        if(G.eliminated&&G.eliminated[k]) continue;
+        if(!G.structures.some(x=>x.alive&&x.type==='hq'&&x.team===k)){ G.hangarT[k]=0; continue; }
+        const have=G.structures.filter(x=>x.alive&&x.type==='spawner'&&x.team===k).length;
+        if(have>=2){ G.hangarT[k]=0; continue; }
+        G.hangarT[k]=(G.hangarT[k]||0)+dt;
+        const wait=(have===0?34:62)*(campaign()&&net.mode==='solo'&&k!==G.team?diff.economy():1);
+        if(G.hangarT[k]>=wait){
+          G.hangarT[k]=0;
+          const st=addStruct('spawner',k,null);
+          net.send({t:'sbuilt',s:packStruct(st)});
+          feed(`<span class="${k}">${k.toUpperCase()}</span> brought a hangar back online`);
+          toast(k===G.team?'A NEW HANGAR IS OPERATIONAL — YOU CAN LAUNCH AGAIN'
+                          :k.toUpperCase()+' REBUILT A HANGAR', k===G.team?'grn':'gold',3.5);
+        }
+      }
       G.economyT-=dt;
       if(G.economyT<=0){
         G.economyT=rnd(150,240)*diff.economy();
@@ -4497,6 +4853,7 @@ function frame(now){
       }
     }
     stepMission(dt);
+    musicTick();
     netTick(dt);
     if(G.crew) stepCrew(dt); else updateCamera(dt);
     updateHUD(dt);
