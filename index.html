@@ -365,6 +365,13 @@ td{padding:6px 8px;border-bottom:1px solid rgba(255,255,255,.045)}
     </div>
 
     <div class="srow">
+      <h4>YOU FLY / YOU CREW</h4>
+      <p id="crewDesc">Take an aircraft, or man an emplacement at your own base and hold the line
+      from the ground. Gun crews cannot move, but they see everything and hit hard.</p>
+      <div class="seg" id="crewSeg"></div>
+    </div>
+
+    <div class="srow">
       <h4>MOUSE SENSITIVITY — <span id="sensVal">1.00</span>×</h4>
       <p>How sharply the aircraft answers the mouse.</p>
       <input type="range" id="sensRange" min="30" max="250" step="5" value="100" />
@@ -743,8 +750,8 @@ function draw(mesh,model,opt){
 }
 
 /* ------------------------------ world ----------------------------------- */
-const WORLD=4200, BASE_Y=42, SEA=0;
-const BASES={ blue:[0,BASE_Y,2900], red:[0,BASE_Y,-2900] };
+const WORLD=5400, BASE_Y=42, SEA=0;
+const BASES={ blue:[0,BASE_Y,3800], red:[0,BASE_Y,-3800] };
 const TEAMCOL={ blue:[0.30,0.55,0.92], red:[0.86,0.30,0.26] };
 
 function hash2(x,z){const s=Math.sin(x*127.1+z*311.7)*43758.5453;return s-Math.floor(s)}
@@ -784,7 +791,7 @@ function setTerrain(lv,trench){
   TERRAIN.trench=!!trench;
   // walls stand above the ceiling, so the trench really is the only way
   TERRAIN.wallTop=CEILING+60;
-  TERRAIN.wallZ=3600;                          // mesa covers nearly the whole map
+  TERRAIN.wallZ=4600;                          // mesa covers nearly the whole map
   TERRAIN.half=Math.max(170,290-9*lv);         // tighter slot each level
   TERRAIN.floor=80;
   TERRAIN.ridges=[];
@@ -870,7 +877,7 @@ function freeMesh(m){
 function buildTerrainMesh(){
   if(MESH.terrain) for(const m of MESH.terrain) freeMesh(m);
   // split into chunks so each stays inside the 16-bit index limit
-  const CH=3, NC=64, step=WORLD*2/(CH*NC);   // 9 chunks, each inside the 16-bit index limit
+  const CH=4, NC=56, step=WORLD*2/(CH*NC);   // 16 chunks, each inside the 16-bit index limit
   MESH.terrain=[];
   for(let cx=0;cx<CH;cx++)for(let cz=0;cz<CH;cz++){
     const b=new Builder();
@@ -923,7 +930,7 @@ function buildWorld(){
 
   /* --- clouds (one static mesh) --- */
   const c=new Builder();
-  for(let i=0;i<120;i++){
+  for(let i=0;i<190;i++){
     const cx=rnd(-WORLD,WORLD),cz=rnd(-WORLD,WORLD),cy=rnd(420,900),sc=rnd(38,95);
     c.push(); c.tr(cx,cy,cz);
     for(let k=0;k<rndi(3,6);k++){
@@ -1359,8 +1366,8 @@ const STRUCTS={
            short:'REPAIR PAD', desc:'Friendly aircraft flying low over the pad repair and rearm rapidly.'},
   dome:   {name:'Force Dome',       short:'DOME', hp:2200, cost:0, range:0, r:DOME_R, y:0, turret:null,
            desc:'A shield dome over your Command HQ. Enemy aircraft that touch it are destroyed, and every round aimed at your base is absorbed — until it is beaten down.'},
-  spawner:{name:'Aircraft Hangar',  hp:520,  cost:1900, range:0,    r:28, y:10, turret:null, cd:9, cap:8,
-           short:'HANGAR', desc:'Sits beside the HQ and launches a fighter every 9&nbsp;seconds, up to eight airborne. Buy <b>Hangar Crews</b> to go faster still. It is lightly built — destroy the enemy hangar and their reinforcements stop dead.'}
+  spawner:{name:'Aircraft Hangar',  hp:520,  cost:1900, range:0,    r:28, y:10, turret:null, cd:9, cap:14,
+           short:'HANGAR', desc:'Sits beside the HQ and launches a fighter every 9&nbsp;seconds, up to fourteen airborne. Buy <b>Hangar Crews</b> to go faster still. It is lightly built — destroy the enemy hangar and their reinforcements stop dead.'}
 };
 const BOT_HP=55;        // deliberately fragile — a short burst downs one
 const BOT_SPEED=165;    // well under the player's 270+, so you can always disengage
@@ -1462,7 +1469,7 @@ const DIFFS=[
 ];
 const PROFILE={tokens:0,perks:{},muted:false,level:1,wins:0,losses:0,
                kills:0,deaths:0,missions:0,callsign:'',difficulty:1,sens:1,
-               plane:{frame:0,paint:0,frames:[0],paints:[0]},gTol:7};
+               plane:{frame:0,paint:0,frames:[0],paints:[0]},gTol:7,playAs:'plane'};
 const DK=()=>DIFFS[clamp(PROFILE.difficulty|0,0,DIFFS.length-1)];
 function loadProfile(){
   try{
@@ -1475,7 +1482,7 @@ function loadProfile(){
       PROFILE.difficulty=d.difficulty===undefined?1:clamp(d.difficulty|0,0,DIFFS.length-1);
       PROFILE.sens=d.sens||1;
       if(d.plane) PROFILE.plane=d.plane;
-      PROFILE.gTol=d.gTol||7; }
+      PROFILE.gTol=d.gTol||7; PROFILE.playAs=d.playAs||'plane'; }
   }catch(e){}
   // Auto-Tracker was retired: give back what was spent on it rather than
   // quietly pocketing the tokens.
@@ -1505,10 +1512,10 @@ const diff={
   struct(){ return (1+.07*(PROFILE.level-1))*DK().k },          // tougher defences, still soft
   hangarRate(){ return Math.pow(.90,PROFILE.level-1)/DK().k },  // faster launches
   hangars(){ return 1+Math.floor((PROFILE.level-1)/3) },        // more of them
-  cap(){ return Math.round((8+Math.floor((PROFILE.level-1)/2))*clamp(DK().k,.6,2.5)) },
+  cap(){ return Math.round((14+Math.floor((PROFILE.level-1)/2))*clamp(DK().k,.6,2.5)) },
   extraDefences(){ const k=DK().k;
     return Math.round((Math.min(PROFILE.level-1,7)+(k>=3?6:0))*Math.min(k,2.2)) },
-  bots(){ return Math.round((4+Math.floor((PROFILE.level-1)/2))*clamp(DK().k,.6,2.5)) },
+  bots(){ return Math.round((10+Math.floor((PROFILE.level-1)/2))*clamp(DK().k,.6,2.5)) },
   economy(){ return 1/Math.max(1,DK().k*.6) },     // how fast they rebuild
   structCap(){ return Math.round(6*clamp(DK().k,1,2.5)) }
 };
@@ -1528,7 +1535,7 @@ const G={
   me:null, myId:uid(), team:'blue',
   credits:600, kills:0, deaths:0, score:0,
   camMode:0, camPos:[0,120,300], camLook:[0,60,0],
-  round:null, botFill:5, economyT:0, fires:[],
+  round:null, botFill:5, economyT:0, fires:[], roster:[],
   paused:false, over:false, mission:null,
   hangarLvl:{blue:0,red:0}, shieldLvl:{blue:0,red:0}, droneLvl:{blue:0,red:0},
   botLvl:{blue:0,red:0}, rings:[]
@@ -1539,6 +1546,7 @@ function newPlane(o){
     id:uid(), name:'PILOT', team:'blue', isBot:false, isLocal:false, remote:false,
     pos:[0,BASE_Y+120,0], quat:[0,0,0,1], q2:[0,0,0,1], tpos:null, tquat:null,
     speed:150, thr:.62, hp:100, maxHp:100, alive:true, respawn:0,
+    joined:Date.now(),
     ctrl:{pitch:0,yaw:0,roll:0,lift:0,strafe:0,fire:0,fire2:0,ab:0},
     shield:0, maxShield:0, shieldT:0, drone:false,
     wep:'mg', cool:{}, ammo:{}, flares:0, maxFlares:0,
@@ -1798,6 +1806,13 @@ function simPlane(p,dt){
     p.respawn-=dt;
     if(p.respawn<=0){
       if(p.noRespawn){ G.planes.delete(p.id); return; }   // training drones stay down
+      if(!hangarFor(p.team)&&!G.tut&&!G.mission){
+        if(p.isLocal){ $('deadTitle').textContent='NO HANGARS LEFT';
+          $('deadTxt').textContent='EVERY HANGAR ON YOUR SIDE IS DOWN — NOTHING LEFT TO LAUNCH'; }
+        else if(p.isBot){ G.planes.delete(p.id); }
+        p.respawn=1;
+        return;
+      }
       doRespawn(p);
     }
     return;
@@ -1879,12 +1894,19 @@ function simPlane(p,dt){
   }
 }
 
+/** a live hangar on this side, if any is left standing */
+function hangarFor(team){
+  const list=G.structures.filter(s=>s.alive&&s.type==='spawner'&&s.team===team);
+  return list.length?list[rndi(0,list.length-1)]:null;
+}
 function doRespawn(p){
+  const h=hangarFor(p.team);
   const b=BASES[p.team], a=rnd(0,Math.PI*2);
-  p.pos=[b[0]+Math.cos(a)*420, BASE_Y+rnd(320,460), b[2]+Math.sin(a)*420];
+  if(h) p.pos=[h.pos[0]+rnd(-24,24), h.pos[1]+18, h.pos[2]+rnd(-24,24)];   // roll out of the shed
+  else  p.pos=[b[0]+Math.cos(a)*420, BASE_Y+rnd(320,460), b[2]+Math.sin(a)*420];
   const toC=[-p.pos[0],0,-p.pos[2]]; const l=Math.hypot(toC[0],toC[2])||1;
   qLookDir(p.quat,[toC[0]/l,0.06,toC[2]/l],[0,1,0]);
-  p.speed=190; p.thr=.75; p.alive=true; applyUpgrades(p); rearm(p);
+  p.speed=h?120:190; p.thr=.9; p.alive=true; applyUpgrades(p); rearm(p);
   if(p.isBot) p.cruiseY=p.pos[1];
   if(p.isLocal){ $('dead').classList.remove('on'); toast('AIRBORNE','grn',1.2); }
 }
@@ -2062,6 +2084,13 @@ function damageStruct(s,amt,byId){
     feed(`<span class="${s.team}">${STRUCTS[s.type].name}</span> destroyed`);
     net.send({t:'sdead',id:s.id,by:byId||null});
     if(s.type==='hq') endRound(s.team==='blue'?'red':'blue');
+    if(s.type==='spawner'&&!hangarFor(s.team)&&!G.tut&&!G.mission){
+      const mine=s.team===G.team;
+      toast(mine?'ALL YOUR HANGARS ARE DOWN — NO MORE AIRCRAFT, NO RESPAWN'
+                :'ENEMY HANGARS ALL DESTROYED — THEIR AIRCRAFT ARE FINISHED',
+            mine?'red':'gold',7);
+      feed(`<span class="${s.team}">${s.team.toUpperCase()}</span> has no hangars left`);
+    }
   }
 }
 
@@ -2294,6 +2323,7 @@ function stepStructs(dt){
   for(const s of G.structures){
     if(!s.alive) continue;
     const cfg=STRUCTS[s.type];
+    if(s.crewed) continue;            // you are aiming this one
     if(s.type==='radar'){ s.spin+=dt*1.1; continue; }
     if(s.type==='spawner'){
       if(!authority) continue;
@@ -2329,7 +2359,7 @@ function stepStructs(dt){
       s.yaw+=clamp(d,-1.9*dt,1.9*dt);
       s.pitch=lerp(s.pitch,clamp(wantP,-.2,1.2),clamp(dt*3,0,1));
       s.cd-=dt;
-      if(s.cd<=0 && Math.abs(d)<.16 && authority){
+      if(s.cd<=0 && Math.abs(d)<.16 && authority && !s.crewed){
         s.cd=cfg.cd;
         fireStruct(s,best);
       }
@@ -2367,6 +2397,29 @@ function fireStruct(s,target){
 }
 
 /* -------------------------------- bots ----------------------------------- */
+/* Roughly forty in a hundred press the HQ; the rest hunt aircraft, bomb
+   installations, come for you personally, or stay out of trouble. */
+function pickRole(){
+  const r=Math.random();
+  if(r<.40) return 'hq';
+  if(r<.62) return 'hunter';
+  if(r<.74) return 'ace';
+  if(r<.88) return 'bomber';
+  return 'shy';
+}
+/** whoever is sitting on this aircraft's tail, if anyone */
+function threatBehind(p){
+  const f=fwdOf(p,[0,0,0]);
+  for(const q of G.planes.values()){
+    if(q===p||!q.alive||q.team===p.team) continue;
+    const to=[p.pos[0]-q.pos[0],p.pos[1]-q.pos[1],p.pos[2]-q.pos[2]];
+    const l=Math.hypot(...to)||1; if(l>650) continue;
+    const qf=fwdOf(q,[0,0,0]);
+    if((to[0]*qf[0]+to[1]*qf[1]+to[2]*qf[2])/l>.90 &&
+       (to[0]*f[0]+to[1]*f[1]+to[2]*f[2])/l>.30) return q;
+  }
+  return null;
+}
 function stepBot(p,dt){
   if(!p.alive){ p.ctrl.fire=0; p.ctrl.fire2=0; return; }
   if(p.passive){                       // training drone: unarmed, holds a lazy orbit
@@ -2381,31 +2434,40 @@ function stepBot(p,dt){
   p.aiT-=dt;
   if(p.aiT<=0||!p.aiTarget||(p.aiTarget.alive===false)){
     p.aiT=rnd(2.5,5);
-    // Every aircraft is on a strike: the enemy HQ is the standing objective and
-    // nothing pulls them off it. They still shoot whatever crosses their sights
-    // on the way — see the gunnery section below — but they never divert to
-    // chase it, which is what used to dissolve the raid into a midfield brawl.
-    // a dome makes the HQ untouchable, so it becomes the objective instead
+    // A mixed force rather than one endless bombing run: see pickRole().
+    if(!p.role) p.role=pickRole();
     const foeTeam=p.team==='blue'?'red':'blue';
-    let ground=domeOf(foeTeam)||G.structures.find(s=>s.alive&&s.type==='hq'&&s.team!==p.team);
-    if(!ground){
-      // HQ already levelled: only now is an emplacement worth the trip
-      let gd=1e9;
-      for(const s of G.structures){
-        if(!s.alive||s.team===p.team) continue;
-        const d=dist(s.pos,p.pos); if(d<gd){gd=d;ground=s}
-      }
-    }
-    let best=null;
-    if(!ground){                       // nothing left on the ground: hunt aircraft
-      let bd=1e9;
+    // a dome makes the HQ untouchable, so it becomes the objective instead
+    const hqT=domeOf(foeTeam)||G.structures.find(s=>s.alive&&s.type==='hq'&&s.team!==p.team);
+    const nearestFoe=()=>{
+      let best=null,bd=1e9;
       for(const q of G.planes.values()){
         if(q===p||!q.alive||q.team===p.team) continue;
         const d=dist(q.pos,p.pos); if(d<bd){bd=d;best=q}
       }
+      return best;
+    };
+    const anyGround=()=>{
+      let g=null,gd=1e9;
+      for(const st of G.structures){
+        if(!st.alive||st.team===p.team||st.type==='hq') continue;
+        const d=dist(st.pos,p.pos); if(d<gd){gd=d;g=st}
+      }
+      return g;
+    };
+    let tgt=null;
+    switch(p.role){
+      case 'hq':     tgt=hqT||anyGround()||nearestFoe(); break;
+      case 'bomber': tgt=anyGround()||hqT||nearestFoe(); break;
+      case 'hunter': tgt=nearestFoe()||hqT; break;
+      case 'ace':    // comes for the human specifically
+        tgt=(G.me&&G.me.alive&&G.me.team!==p.team)?G.me:(nearestFoe()||hqT); break;
+      case 'shy':    // works the edges and avoids the furball
+        tgt=anyGround()||hqT; break;
+      default:       tgt=hqT||nearestFoe();
     }
-    p.aiTarget=ground||best||null;
-    p.aiStruct=!best&&!!ground;
+    p.aiTarget=tgt||null;
+    p.aiStruct=!!(tgt&&tgt.type);   // a structure rather than an aircraft
   }
   const t=p.aiTarget;
   const c=p.ctrl;
@@ -2465,6 +2527,21 @@ function stepBot(p,dt){
       else aim=[p.pos[0]+f[0]*600, Math.max(gh,p.pos[1])+460, p.pos[2]+f[2]*600];
     }
     else if(!aim){ const b=BASES[p.team==='blue'?'red':'blue']; aim=[b[0],b[1]+320,b[2]]; }
+  }
+
+  // Being shot at outweighs the mission: run for it, and the timid run sooner.
+  p.fleeT=Math.max(0,(p.fleeT||0)-dt);
+  if(p.fleeT<=0){
+    const chaser=threatBehind(p);
+    if(chaser&&(p.role==='shy'||p.hp<p.maxHp*.55||Math.random()<.45)){
+      p.fleeFrom=chaser; p.fleeT=rnd(2.5,5);
+    }
+  }
+  if(p.fleeT>0&&p.fleeFrom&&p.fleeFrom.alive&&!inCanyon){
+    const away=[p.pos[0]-p.fleeFrom.pos[0],p.pos[1]-p.fleeFrom.pos[1],p.pos[2]-p.fleeFrom.pos[2]];
+    const l=Math.hypot(...away)||1;
+    aim=[p.pos[0]+away[0]/l*900,Math.max(p.pos[1]+away[1]/l*300,ghNow+280),p.pos[2]+away[2]/l*900];
+    p.thr=1; c.ab=1;
   }
 
   // Hold a cruise altitude while dogfighting so bots stay in a roughly
@@ -2612,7 +2689,7 @@ function render(){
   gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);
 
   const cockpit=inCockpit();
-  M4.persp(proj,1.15,w/h,1.2,14000);
+  M4.persp(proj,1.15,w/h,1.2,18000);
   const up=G.me?upOf(G.me,[0,0,0]):[0,1,0];
   const upBlend=cockpit?up:[lerp(0,up[0],.35),lerp(1,up[1],.35),lerp(0,up[2],.35)];
   M4.lookAt(view,G.camPos,G.camLook,upBlend);
@@ -2622,11 +2699,11 @@ function render(){
   // --- sky ---
   gl.depthMask(false); gl.disable(gl.DEPTH_TEST); gl.disable(gl.CULL_FACE);
   gl.uniform1f(U.uFogNear,1e9); gl.uniform1f(U.uFogFar,1e9+1);
-  M4.trans(model,G.camPos[0],G.camPos[1],G.camPos[2]); M4.mul(model,model,M4.scl(tmpM,12000,12000,12000));
+  M4.trans(model,G.camPos[0],G.camPos[1],G.camPos[2]); M4.mul(model,model,M4.scl(tmpM,15000,15000,15000));
   draw(MESH.sky,model,{unlit:true});
   gl.enable(gl.DEPTH_TEST); gl.depthMask(true); gl.enable(gl.CULL_FACE);
 
-  gl.uniform1f(U.uFogNear,1900); gl.uniform1f(U.uFogFar,9800);
+  gl.uniform1f(U.uFogNear,2400); gl.uniform1f(U.uFogFar,12500);
 
   // --- terrain + clouds ---
   M4.ident(model);
@@ -3202,7 +3279,7 @@ function quitToMenu(){
   structSlot={blue:0,red:0}; hangarSlot={blue:0,red:0};
   G.hangarLvl={blue:0,red:0}; G.shieldLvl={blue:0,red:0}; G.droneLvl={blue:0,red:0};
   G.botLvl={blue:0,red:0};
-  G.me=null; G.credits=600; G.kills=0; G.deaths=0; G.score=0; G.camMode=0;
+  G.me=null; G.crew=null; G.roster=[]; G.credits=600; G.kills=0; G.deaths=0; G.score=0; G.camMode=0;
   baseBarEls.forEach(el=>el.classList.remove('on'));
   for(const id of ['pause','over','shop','dead','tut','mission']) $(id).classList.remove('on');
   $('hud').classList.remove('on');
@@ -3275,7 +3352,7 @@ async function joinGame(code){
   net.peer.on('open',()=>{
     const c=net.peer.connect(ROOM_PREFIX+code,{reliable:true});
     net.conns=[c];
-    c.on('open',()=>{ net.ready=true; netmsg('Connected to '+code); startGame('red'); c.send(JSON.stringify({t:'hello',p:packPlayer(G.me)})); });
+    c.on('open',()=>{ net.ready=true; netmsg('Connected to '+code+' — the host deals the sides.'); startGame('red'); c.send(JSON.stringify({t:'hello',p:packPlayer(G.me)})); });
     c.on('data',d=>onNet(d,c));
     c.on('close',()=>{ toast('DISCONNECTED FROM HOST','red',5); net.ready=false; });
     c.on('error',()=>{netmsg('Connection failed. Check the code.');unlockButtons()});
@@ -3284,9 +3361,53 @@ async function joinGame(code){
   net.peer.on('error',e=>{ if(!net.ready){ netmsg('Join failed: '+e.type); unlockButtons(); } });
 }
 function unlockButtons(){ $('btnHost').disabled=false; $('btnJoin').disabled=false; }
+/* Humans are never on the same side by default: they are dealt alternately so
+   the smaller side always gets the next arrival. Past three players the match
+   holds until the sides are even. */
+function assignTeams(){
+  if(!net.isHost) return;
+  const humans=[...G.planes.values()].filter(p=>!p.isBot)
+    .sort((a,b)=>(a.joined||0)-(b.joined||0));
+  let nb=0,nr=0;
+  for(const h of humans){
+    const team=nb<=nr?'blue':'red';
+    if(h.team!==team){
+      h.team=team;
+      if(h.isLocal){ G.team=team; doRespawn(h); toast('ASSIGNED TO '+team.toUpperCase(),team,3); }
+    }
+    team==='blue'?nb++:nr++;
+  }
+  G.roster=humans.map(h=>({id:h.id,name:h.name,team:h.team}));
+  net.send({t:'roster',list:G.roster});
+  lobbyWait();
+}
+/** with four or more pilots the sides must be even before anyone flies */
+function evenSidesNeeded(){
+  const list=G.roster||[];
+  if(list.length<4) return false;
+  const nb=list.filter(r=>r.team==='blue').length;
+  return nb*2!==list.length;
+}
+function lobbyWait(){
+  const el=$('lobbyCount'); if(!el) return;
+  const list=G.roster||[];
+  const nb=list.filter(r=>r.team==='blue').length, nr=list.length-nb;
+  const btn=$('btnEnterRoom');
+  if(evenSidesNeeded()){
+    el.innerHTML=`<span style="color:#ffd451">${list.length} pilots — BLUE ${nb} v RED ${nr}. `+
+      `Waiting for an even number before the match can start.</span>`;
+    if(btn) btn.disabled=true;
+  }else{
+    el.textContent=list.length?(list.length+' pilot'+(list.length===1?'':'s')+
+      ' — BLUE '+nb+' v RED '+nr):
+      'Waiting for pilots — you can enter now and they will join you.';
+    if(btn) btn.disabled=false;
+  }
+}
 function dropConn(c){
   net.conns=net.conns.filter(x=>x!==c);
   if(c._pid){ const p=G.planes.get(c._pid); if(p){ feed(`<span class="${p.team}">${esc(p.name)}</span> left`); G.planes.delete(c._pid); } }
+  if(net.isHost) assignTeams();
 }
 function netmsg(s){$('netmsg').innerHTML=s}
 function sendWelcome(c){
@@ -3325,20 +3446,25 @@ function relay(msg,except){
 function onNet(raw,conn){
   let m; try{ m=typeof raw==='string'?JSON.parse(raw):raw }catch(e){ return }
   switch(m.t){
+    case 'roster': {          // host tells everyone the current line-up
+      G.roster=m.list||[];
+      const me=G.roster.find(r=>r.id===G.myId);
+      if(me&&G.me&&me.team!==G.me.team){ G.me.team=G.team=me.team; doRespawn(G.me); 
+        toast('ASSIGNED TO '+me.team.toUpperCase(),me.team,3); }
+      lobbyWait();
+      break;
+    }
     case 'welcome': {
       G.structures.length=0;
       for(const s of m.world){ const st={...s,cd:0,yaw:0,pitch:0,spin:0,maxHp:STRUCTS[s.type].hp}; G.structures.push(st); }
       for(const p of m.players) if(p.id!==G.myId) unpackPlayer(p);
-      // keep the sides even — joiners default to red, flip if red is already stacked
-      const hum=[...G.planes.values()].filter(p=>!p.isBot&&p.id!==G.myId);
-      const nb=hum.filter(p=>p.team==='blue').length, nr=hum.filter(p=>p.team==='red').length;
-      if(G.me&&nr>nb){ G.me.team=G.team='blue'; doRespawn(G.me); toast('ASSIGNED TO BLUE TEAM','blue',3); }
       break;
     }
     case 'hello':
       conn._pid=m.p.id;
       unpackPlayer(m.p);
       relay({t:'peer',p:m.p},conn);
+      if(net.isHost) assignTeams();
       break;
     case 'me':
       if(net.isHost){ conn._pid=m.p.id; relay({t:'peer',p:m.p},conn); }
@@ -3733,7 +3859,21 @@ function renderCustom(){
 
 /* ------------------------------ settings --------------------------------- */
 let confirmArm={level:0,all:0};
+const CREWS=[
+  {id:'plane', name:'AIRCRAFT',    note:'Fly. Everything in the game is built around this.'},
+  {id:'sniper',name:'SNIPER TOWER',note:'A 1.5 km railgun on a tower. Pinpoint, slow to cycle.'},
+  {id:'sam',   name:'SAM SITE',    note:'Radar-guided missiles that chase aircraft across the map.'},
+  {id:'flak',  name:'FLAK CANNON', note:'Twin rapid-fire guns. Shreds anything that comes close.'}
+];
 function renderSettings(){
+  $('crewSeg').innerHTML=CREWS.map(c=>
+    `<button data-crew="${c.id}" class="${c.id===(PROFILE.playAs||'plane')?'on':''}">${c.name}</button>`).join('');
+  [...document.querySelectorAll('[data-crew]')].forEach(b=>b.onclick=()=>{
+    PROFILE.playAs=b.dataset.crew; saveProfile(); renderSettings(); sfx('buy',.4);
+  });
+  const cur=CREWS.find(c=>c.id===(PROFILE.playAs||'plane'))||CREWS[0];
+  $('crewDesc').textContent=cur.note+(cur.id==='plane'?'':
+    '  You will man this emplacement at your base; destroyed, it rebuilds and you take it again.');
   $('diffSeg').innerHTML=DIFFS.map((d,i)=>
     `<button data-diff="${i}" class="${i===PROFILE.difficulty?'on':''}">${d.name}</button>`).join('');
   [...document.querySelectorAll('[data-diff]')].forEach(b=>b.onclick=()=>{
@@ -3923,6 +4063,75 @@ function finishTutorial(){
   setTimeout(()=>$('tut').classList.remove('on'),14000);
 }
 
+/* --------------------------- crewing a gun -------------------------------- */
+/* You occupy one of your own emplacements: it stops firing by itself, you aim it
+   with the mouse and shoot with the trigger. Everything else — its health bar,
+   the enemy targeting it — carries on as normal. */
+function crewMode(){ return G.started&&!G.tut&&!G.mission&&(PROFILE.playAs||'plane')!=='plane' }
+function takeEmplacement(){
+  const want=PROFILE.playAs;
+  let s=G.structures.find(x=>x.alive&&x.type===want&&x.team===G.team);
+  if(!s) s=addStruct(want,G.team,G.myId);
+  s.crewed=true;
+  G.crew=s;
+  toast('YOU HAVE THE '+STRUCTS[want].short+' — MOUSE AIMS, TRIGGER FIRES','grn',5);
+  return s;
+}
+function stepCrew(dt){
+  const s=G.crew;
+  if(!s) return;
+  if(!s.alive){                      // blown up: rebuild and climb back in
+    G.crewT=(G.crewT||0)-dt;
+    $('deadTitle').textContent='EMPLACEMENT DESTROYED';
+    $('deadTxt').textContent='REBUILDING IN '+Math.max(1,Math.ceil(G.crewT));
+    $('dead').classList.add('on');
+    if(G.crewT<=0){ G.crew=null; takeEmplacement(); $('dead').classList.remove('on'); }
+    return;
+  }
+  G.crewT=6;
+  const cfg=STRUCTS[s.type];
+  // the mouse walks the turret round and up
+  s.yaw-=stick.x*2.4*dt*(PROFILE.sens||1)*14;
+  s.pitch=clamp(s.pitch-stick.y*1.6*dt*(PROFILE.sens||1)*14,-.15,1.15);
+  stick.x=lerp(stick.x,0,clamp(dt*9,0,1));
+  stick.y=lerp(stick.y,0,clamp(dt*9,0,1));
+  s.cd=Math.max(0,(s.cd||0)-dt);
+  if((mouse.fire||keys.Space)&&s.cd<=0){
+    s.cd=cfg.cd;
+    const cy=s.pos[1]+(cfg.y||8)+6;
+    const org=[s.pos[0],cy,s.pos[2]];
+    const dir=[Math.sin(s.yaw)*Math.cos(s.pitch),Math.sin(s.pitch),Math.cos(s.yaw)*Math.cos(s.pitch)];
+    if(s.type==='sam'){
+      let best=null,bd=cfg.range;
+      for(const q of G.planes.values()){
+        if(!q.alive||q.team===s.team) continue;
+        const to=[q.pos[0]-org[0],q.pos[1]-org[1],q.pos[2]-org[2]];
+        const l=Math.hypot(...to)||1;
+        if(l>cfg.range) continue;
+        if((to[0]*dir[0]+to[1]*dir[1]+to[2]*dir[2])/l<.93) continue;   // roughly where you point
+        if(l<bd){ bd=l; best=q; }
+      }
+      spawnMissile({pos:org.slice(),vel:[dir[0]*180,220,dir[2]*180],team:s.team,owner:G.myId,
+        target:best,dmg:cfg.dmg,turn:2.0,speed:400,life:16,fromStruct:true});
+      sfxAt('launch',org,.9);
+      if(!best) toast('NO LOCK — POINT AT A TARGET','red',1.4);
+    }else{
+      const sp=s.type==='sniper'?1500:900, sprd=s.type==='sniper'?0:.02;
+      spawnBullet({pos:org.slice(),
+        vel:[(dir[0]+rnd(-sprd,sprd))*sp,(dir[1]+rnd(-sprd,sprd))*sp,(dir[2]+rnd(-sprd,sprd))*sp],
+        dmg:cfg.dmg,team:s.team,owner:G.myId,
+        col:s.type==='sniper'?[.6,1,1]:[1,.7,.3],len:s.type==='sniper'?20:7,
+        wid:s.type==='sniper'?3.0:2.4,life:2.5,splash:s.type==='flak'?10:0});
+      sfxAt(s.type==='sniper'?'cannon':'gun',org,.6);
+    }
+  }
+  // sit at the gunsight
+  const cy=s.pos[1]+(cfg.y||8)+7;
+  const dir=[Math.sin(s.yaw)*Math.cos(s.pitch),Math.sin(s.pitch),Math.cos(s.yaw)*Math.cos(s.pitch)];
+  G.camPos=[s.pos[0]-dir[0]*3,cy+2,s.pos[2]-dir[2]*3];
+  G.camLook=[s.pos[0]+dir[0]*400,cy+dir[1]*400,s.pos[2]+dir[2]*400];
+}
+
 /* ------------------------------ bootstrap -------------------------------- */
 const BOT_NAMES=['VIPER','GHOST','RAZOR','TALON','HAWK','COBRA','WRAITH','FANG','BOLT','ZERO','ECHO','NOVA'];
 function botName(){ return BOT_NAMES[rndi(0,BOT_NAMES.length-1)]+'-'+rndi(10,99) }
@@ -3966,7 +4175,7 @@ function startGame(team){
     if(!G.tut&&!G.mission){   // training and missions build their own worlds
       const foe=G.team==='blue'?'red':'blue';
       if(perk('dome')>0) addStruct('dome',G.team);
-      addStruct('spawner',G.team); addStruct('spawner',foe);
+      addStruct('spawner',G.team); addStruct('spawner',G.team); addStruct('spawner',foe);
       // the enemy grows a bigger air force and more defences each campaign level
       for(let i=1;i<diff.hangars();i++) addStruct('spawner',foe);
       addStruct('flak',foe); addStruct('sniper',foe); addStruct('flak',G.team);
@@ -3978,6 +4187,7 @@ function startGame(team){
   $('menu').classList.remove('on');
   $('hud').classList.add('on');
   updateWeps();
+  if(crewMode()){ G.me.alive=false; G.me.respawn=1e9; takeEmplacement(); }
   toast('CLICK TO CAPTURE MOUSE · <kbd>B</kbd> OPENS THE HANGAR','grn',5);
   if(TERRAIN.trench)
     toast('CANYON RUN — the walls top the flight ceiling. The trench is the only way through.','gold',8);
@@ -3989,7 +4199,7 @@ function startGame(team){
 $('btnSolo').onclick=()=>{ net.mode='solo'; startGame('blue') };
 $('btnMission').onclick=()=>startMission();
 $('btnEnterRoom').onclick=()=>{
-  if(G.started) return;
+  if(G.started||evenSidesNeeded()) return;
   startGame('blue');
   for(const c of net.pending) sendWelcome(c);   // release anyone who joined early
   net.pending=[];
@@ -4036,7 +4246,8 @@ function frame(now){
   if(G.started&&!G.paused&&!G.over){
     const p=G.me;
     if(p){
-      if(!shopOpen&&p.alive) readInput(p,dt);
+      if(G.crew){ /* crewing a gun: the aircraft stays parked */ }
+      else if(!shopOpen&&p.alive) readInput(p,dt);
       else if(p.alive){ // autopilot levels the wings while the hangar is open
         p.ctrl.fire=0;p.ctrl.fire2=0;p.ctrl.lift=0;p.ctrl.strafe=0;
         const u=upOf(p,[0,0,0]),f=fwdOf(p,[0,0,0]);
@@ -4082,7 +4293,7 @@ function frame(now){
     }
     stepMission(dt);
     netTick(dt);
-    updateCamera(dt);
+    if(G.crew) stepCrew(dt); else updateCamera(dt);
     updateHUD(dt);
     if($('board').classList.contains('on')) updateBoard();
     if(shopOpen&&Math.floor(G.t*4)%2===0) $('shopCred').textContent=Math.floor(G.credits);
