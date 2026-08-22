@@ -75,6 +75,7 @@ html,body{width:100%;height:100%;overflow:hidden;background:#05080f;color:#dbe7f
   letter-spacing:1.5px;text-shadow:0 2px 8px #000}
 #toast div{margin-bottom:4px}
 .blue{color:#5fb2ff}.red{color:#ff7a6b}.gold{color:#ffd451}.grn{color:#7fe6c0}
+.green{color:#54d97a}.amber{color:#f5b73c}.violet{color:#b98cf5}.cyan{color:#4fd8e6}
 
 /* --- overlays --- */
 .ovl{position:absolute;inset:0;z-index:20;display:none;align-items:center;justify-content:center;
@@ -446,7 +447,7 @@ td{padding:6px 8px;border-bottom:1px solid rgba(255,255,255,.045)}
     <div id="netmsg"></div>
     <div class="row" id="codeRow" style="display:none;align-items:center;gap:18px">
       <div>
-        <div class="hint" style="margin-bottom:4px">SHARE THIS ROOM CODE — other computers pick JOIN GAME</div>
+        <div class="hint" style="margin-bottom:4px">SHARE THIS ROOM CODE — other computers pick JOIN GAME.<br/>EVERY PILOT GETS THEIR OWN HQ, HANGARS AND DEFENCES. LAST COMPOUND STANDING WINS.</div>
         <div id="code"></div>
         <div class="hint" id="lobbyCount" style="margin-top:4px"></div>
       </div>
@@ -751,8 +752,63 @@ function draw(mesh,model,opt){
 
 /* ------------------------------ world ----------------------------------- */
 const WORLD=5400, BASE_Y=42, SEA=0;
-const BASES={ blue:[0,BASE_Y,3800], red:[0,BASE_Y,-3800] };
-const TEAMCOL={ blue:[0.30,0.55,0.92], red:[0.86,0.30,0.26] };
+/* Sides are dealt per match, never fixed at two. A duel or a campaign keeps the
+   classic north-versus-south layout; a free-for-all rings the map with one
+   compound per pilot, so nobody ever shares an HQ with anyone else. */
+const TEAM_DEFS=[
+  {id:'blue',  col:[0.30,0.55,0.92]},
+  {id:'red',   col:[0.86,0.30,0.26]},
+  {id:'green', col:[0.24,0.74,0.38]},
+  {id:'amber', col:[0.94,0.66,0.16]},
+  {id:'violet',col:[0.62,0.38,0.88]},
+  {id:'cyan',  col:[0.18,0.80,0.86]}
+];
+const MAX_TEAMS=TEAM_DEFS.length, RING_R=3500;
+let BASES={ blue:[0,BASE_Y,3800], red:[0,BASE_Y,-3800] };
+let TEAMCOL={ blue:TEAM_DEFS[0].col, red:TEAM_DEFS[1].col };
+function teamList(){ return Object.keys(BASES) }
+function teamIdx(t){ const i=TEAM_DEFS.findIndex(d=>d.id===t); return i<0?0:i }
+const _hexCache={};
+/** a side's colour as CSS, for the minimap and the health bars */
+function teamHex(t){
+  if(_hexCache[t]) return _hexCache[t];
+  const c=TEAMCOL[t]||(TEAM_DEFS.find(d=>d.id===t)||TEAM_DEFS[1]).col;
+  return _hexCache[t]='#'+c.map(v=>Math.round(Math.max(0,Math.min(1,v))*255)
+                                   .toString(16).padStart(2,'0')).join('');
+}
+function teamMap(v){ const o={}; for(const k of teamList()) o[k]=v; return o }
+/** Lay out n sides and rebuild everything that is keyed by team. */
+function setupTeams(n){
+  n=Math.max(2,Math.min(MAX_TEAMS,n|0));
+  BASES={}; TEAMCOL={};
+  for(let i=0;i<n;i++){
+    const d=TEAM_DEFS[i], a=i/n*Math.PI*2;
+    TEAMCOL[d.id]=d.col;
+    BASES[d.id]= n===2 ? [0,BASE_Y,i===0?3800:-3800]
+                       : [Math.cos(a)*RING_R, BASE_Y, Math.sin(a)*RING_R];
+  }
+  buildTeamMeshes();
+  structSlot=teamMap(0); hangarSlot=teamMap(0);
+  G.hangarLvl=teamMap(0); G.shieldLvl=teamMap(0); G.droneLvl=teamMap(0); G.botLvl=teamMap(0);
+  G.eliminated={}; TEAMPERK={};
+}
+/** The enemy base nearest a point. With two sides this is just "the other one". */
+function foeBaseOf(team,pos){
+  let best=null,bd=1e18;
+  for(const k in BASES){
+    if(k===team||(G.eliminated&&G.eliminated[k])) continue;
+    const d=pos?Math.hypot(pos[0]-BASES[k][0],pos[2]-BASES[k][2]):0;
+    if(d<bd){ bd=d; best=k; }
+  }
+  if(best) return best;
+  return teamList().find(k=>k!==team)||team;
+}
+/** Every pilot's own permanent upgrades apply to their own compound. */
+let TEAMPERK={};
+function teamPerk(team,id){
+  if(TEAMPERK[team]) return TEAMPERK[team][id]||0;
+  return team===G.team?perk(id):0;
+}
 
 function hash2(x,z){const s=Math.sin(x*127.1+z*311.7)*43758.5453;return s-Math.floor(s)}
 function vnoise(x,z){
@@ -900,7 +956,9 @@ function buildTerrainMesh(){
 function applyTerrain(){
   if(G.tut) setTerrain(1,false);                 // training stays open and forgiving
   else if(G.mission) setTerrain(rndi(4,16),true);   // every mission is a canyon
-  else setTerrain(PROFILE.level,isTrenchLevel(PROFILE.level));
+  // a canyon has two mouths, so it can only serve two sides
+  else { const lv=(G.netLevel!=null)?G.netLevel:PROFILE.level;   // clients follow the host's map
+         setTerrain(lv,teamList().length<=2&&isTrenchLevel(lv)); }
   buildTerrainMesh();
 }
 function buildWorld(){
@@ -944,8 +1002,6 @@ function buildWorld(){
   MESH.clouds=c.build();
 
   /* --- planes (per team) --- */
-  for(const team in TEAMCOL){ MESH['plane_'+team]=buildPlaneMesh(TEAMCOL[team]);
-                              MESH['drone_'+team]=buildDroneMesh(TEAMCOL[team]); }
   MESH.cockpit=buildCockpit(); MESH.cockpitGlow=buildCockpitGlow(); MESH.stick=buildStick();
 
   /* --- projectiles / fx --- */
@@ -987,10 +1043,22 @@ function buildWorld(){
   MESH.ring=rg.build();
 
   /* --- structures --- */
-  MESH.struct={};
-  for(const t in STRUCTS) MESH.struct[t]={
-    blue:buildStructMesh(t,TEAMCOL.blue), red:buildStructMesh(t,TEAMCOL.red)
-  };
+  buildTeamMeshes();
+}
+/** Aircraft and buildings are coloured per side; build any that are missing. */
+function buildTeamMeshes(){
+  MESH.struct=MESH.struct||{};
+  for(const team in TEAMCOL){
+    if(!MESH['plane_'+team]){
+      MESH['plane_'+team]=buildPlaneMesh(TEAMCOL[team]);
+      MESH['drone_'+team]=buildDroneMesh(TEAMCOL[team]);
+    }
+  }
+  for(const t in STRUCTS){
+    MESH.struct[t]=MESH.struct[t]||{};
+    for(const team in TEAMCOL)
+      if(!MESH.struct[t][team]) MESH.struct[t][team]=buildStructMesh(t,TEAMCOL[team]);
+  }
 }
 
 /* Unmanned: no canopy, a blended body, twin tail booms and a sensor turret. */
@@ -1532,7 +1600,7 @@ try{ localStorage.removeItem('ironskies.board'); }catch(e){}   // retired featur
 const G={
   mode:'menu', started:false, t:0, dt:0,
   planes:new Map(), bullets:[], missiles:[], parts:[], structures:[],
-  me:null, myId:uid(), team:'blue',
+  me:null, myId:uid(), team:'blue', eliminated:{}, netLevel:null,
   credits:600, kills:0, deaths:0, score:0,
   camMode:0, camPos:[0,120,300], camLook:[0,60,0],
   round:null, botFill:5, economyT:0, fires:[], roster:[],
@@ -1613,7 +1681,7 @@ function rearm(p){
 /* --------------------------- structures --------------------------------- */
 let structSlot={blue:0,red:0};
 function structPos(team,idx){
-  const b=BASES[team], a=idx*(Math.PI*2/11)+ (team==='blue'?0.3:0.85), r=210+((idx%3)*80);
+  const b=BASES[team], a=idx*(Math.PI*2/11)+0.3+teamIdx(team)*0.55, r=210+((idx%3)*80);
   const x=b[0]+Math.cos(a)*r, z=b[2]+Math.sin(a)*r;
   return [x,terrainH(x,z),z];
 }
@@ -1630,10 +1698,13 @@ function addStruct(type,team,ownerId,idx){
             : type==='spawner' ? hangarPos(team)
                           : structPos(team,idx===undefined?structSlot[team]++:idx);
   let hp=cfg.hp;
-  if(type==='dome') hp=domeHp(perk('dome'));
-  else if(type==='hq'&&team===G.team&&!G.tut) hp+=perk('hqhull')*900;   // your fortification
-  if(campaign()&&team!==G.team) hp=Math.round(hp*(type==='hq'?diff.hq():diff.struct()));
-  const s={id:uid(),type,team,owner:ownerId||null,pos,hp,maxHp:hp,cd:0,yaw:team==='blue'?Math.PI:0,pitch:0,spin:0,alive:true};
+  if(type==='dome') hp=domeHp(teamPerk(team,'dome'));
+  else if(type==='hq'&&!G.tut) hp+=teamPerk(team,'hqhull')*900;   // each pilot's own fortification
+  // campaign difficulty stacks the enemy against you; it must never be applied
+  // to another human's compound in multiplayer
+  if(campaign()&&net.mode==='solo'&&team!==G.team)
+    hp=Math.round(hp*(type==='hq'?diff.hq():diff.struct()));
+  const s={id:uid(),type,team,owner:ownerId||null,pos,hp,maxHp:hp,cd:0,yaw:Math.atan2(-BASES[team][0],-BASES[team][2]),pitch:0,spin:0,alive:true};
   G.structures.push(s);
   return s;
 }
@@ -1896,6 +1967,7 @@ function simPlane(p,dt){
 
 /** a live hangar on this side, if any is left standing */
 function hangarFor(team){
+  if(G.eliminated&&G.eliminated[team]) return null;   // HQ gone: the side is finished
   const list=G.structures.filter(s=>s.alive&&s.type==='spawner'&&s.team===team);
   return list.length?list[rndi(0,list.length-1)]:null;
 }
@@ -2083,7 +2155,7 @@ function damageStruct(s,amt,byId){
       toast(`${STRUCTS[s.type].name.toUpperCase()} DESTROYED  +${s.type==='hq'?1500:220}`,'gold',1.8); }
     feed(`<span class="${s.team}">${STRUCTS[s.type].name}</span> destroyed`);
     net.send({t:'sdead',id:s.id,by:byId||null});
-    if(s.type==='hq') endRound(s.team==='blue'?'red':'blue');
+    if(s.type==='hq') teamOut(s.team);
     if(s.type==='spawner'&&!hangarFor(s.team)&&!G.tut&&!G.mission){
       const mine=s.team===G.team;
       toast(mine?'ALL YOUR HANGARS ARE DOWN — NO MORE AIRCRAFT, NO RESPAWN'
@@ -2436,7 +2508,7 @@ function stepBot(p,dt){
     p.aiT=rnd(2.5,5);
     // A mixed force rather than one endless bombing run: see pickRole().
     if(!p.role) p.role=pickRole();
-    const foeTeam=p.team==='blue'?'red':'blue';
+    const foeTeam=foeBaseOf(p.team,p.pos);
     // a dome makes the HQ untouchable, so it becomes the objective instead
     const hqT=domeOf(foeTeam)||G.structures.find(s=>s.alive&&s.type==='hq'&&s.team!==p.team);
     const nearestFoe=()=>{
@@ -2492,14 +2564,14 @@ function stepBot(p,dt){
   // Otherwise follow the trench — including while still in the bowl, so the
   // aircraft is lined up with the mouth before it reaches the sheer wall.
   const myBowl=!TERRAIN.trench?null
-    :dist(p.pos,BASES.blue)<BOWL_R?'blue':dist(p.pos,BASES.red)<BOWL_R?'red':null;
+    :teamList().find(k=>dist(p.pos,BASES[k])<BOWL_R)||null;
   const nearBowl=!!myBowl;
   const fightInBowl=myBowl&&t&&t.pos&&dist(t.pos,BASES[myBowl])<BOWL_R;
   const inCanyon=TERRAIN.trench&&!fightInBowl;
   if(inCanyon){
     // head for the enemy base, never "away from where I am" — that flips sign
     // at z=0 and leaves the aircraft oscillating in the middle of the canyon
-    const tz=t?t.pos[2]:BASES[p.team==='blue'?'red':'blue'][2];
+    const tz=t?t.pos[2]:BASES[foeBaseOf(p.team,p.pos)][2];
     const dir=Math.sign(tz-p.pos[2])||1;
     // look well ahead down the trench so the turn stays inside the bot's turn
     // rate, and descend into the corridor before the wall arrives
@@ -2526,7 +2598,7 @@ function stepBot(p,dt){
       if(myBowl){ const bc=BASES[myBowl]; aim=[bc[0],BASE_Y+320,bc[2]]; }
       else aim=[p.pos[0]+f[0]*600, Math.max(gh,p.pos[1])+460, p.pos[2]+f[2]*600];
     }
-    else if(!aim){ const b=BASES[p.team==='blue'?'red':'blue']; aim=[b[0],b[1]+320,b[2]]; }
+    else if(!aim){ const b=BASES[foeBaseOf(p.team,p.pos)]; aim=[b[0],b[1]+320,b[2]]; }
   }
 
   // Being shot at outweighs the mission: run for it, and the timid run sooner.
@@ -3040,8 +3112,10 @@ function updateBaseBars(){
     el.style.opacity=hq?1:clamp(1.35-d/range,.35,1);
     const nm=el.firstElementChild;
     // a full defence ring overlaps badly at range, so names fade out first
-    nm.textContent=hq?((mine?'YOUR':'ENEMY')+' COMMAND HQ'):(d<1800?(cfg.short||cfg.name):'');
-    nm.style.color=mine?'#7fe6c0':'#ff8a7a';
+    // with six compounds in play, name the side rather than just 'enemy'
+    nm.textContent=hq?((mine?'YOUR':(teamList().length>2?s.team.toUpperCase():'ENEMY'))+' COMMAND HQ')
+                     :(d<1800?(cfg.short||cfg.name):'');
+    nm.style.color=mine?'#7fe6c0':(teamList().length>2?teamHex(s.team):'#ff8a7a');
     nm.style.fontSize=(hq?clamp(w/19,10,15):clamp(w/15,8,10))+'px';
     const fl=el.children[1].firstElementChild;
     fl.style.width=(f*100)+'%';
@@ -3095,7 +3169,7 @@ function drawMini(){
   for(const s of G.structures){
     if(!s.alive) continue;
     const [x,y]=map(s.pos[0],s.pos[2]);
-    mc.fillStyle=s.team===p.team?'#3fa0ff':'#ff6a5a';
+    mc.fillStyle=s.team===p.team?'#3fa0ff':teamHex(s.team);   // rivals keep their own colour
     const sz=s.type==='hq'?7:4;
     mc.fillRect(x-sz/2,y-sz/2,sz,sz);
   }
@@ -3106,7 +3180,7 @@ function drawMini(){
     const friendly=q.team===p.team;
     if(!friendly&&!hasRadar&&d>900) continue;
     const [x,y]=map(q.pos[0],q.pos[2]);
-    mc.fillStyle=friendly?'#7fe6c0':'#ff6a5a';
+    mc.fillStyle=friendly?'#7fe6c0':teamHex(q.team);
     mc.beginPath();mc.arc(x,y,3.2,0,7);mc.fill();
     if(q.pos[1]>p.pos[1]+90){mc.fillRect(x-1,y-8,2,4)}
     else if(q.pos[1]<p.pos[1]-90){mc.fillRect(x-1,y+4,2,4)}
@@ -3229,6 +3303,19 @@ function togglePause(){
   else canvas.requestPointerLock();
 }
 /** Destroying an HQ ends the round outright — no auto-restart. */
+/** A side whose HQ falls is out: no launches, no respawns, no comeback. */
+function teamOut(team){
+  if(!G.eliminated) G.eliminated={};
+  if(G.eliminated[team]) return;
+  G.eliminated[team]=true;
+  const left=teamList().filter(k=>!G.eliminated[k]);
+  if(left.length>1){
+    feed(`<span class="${team}">${team.toUpperCase()}</span> HQ destroyed — knocked out`);
+    if(team===G.team) toast('YOUR HQ IS GONE — YOU ARE OUT','red',6);
+    else toast(team.toUpperCase()+' IS OUT — '+left.length+' SIDES LEFT','gold',4);
+  }
+  if(left.length<=1) endRound(left[0]||team);
+}
 function endRound(winner){
   if(G.round) return;
   G.round=winner; G.over=true; G.paused=false;
@@ -3245,25 +3332,24 @@ function endRound(winner){
   }
   $('overTitle').textContent=win?'VICTORY':'DEFEAT';
   $('overTitle').style.color=win?'#7fe6c0':'#ff7a6b';
+  const ffa=teamList().length>2;
   $('overText').innerHTML=win
-    ? `You levelled the enemy Command HQ.<br/>${G.kills} kills · ${G.deaths} losses`
-    : `Your Command HQ was destroyed.<br/>${G.kills} kills · ${G.deaths} losses`;
+    ? (ffa?`Last compound standing out of ${teamList().length}.`
+          :'You levelled the enemy Command HQ.')+`<br/>${G.kills} kills · ${G.deaths} losses`
+    : (ffa?`<span class="${winner}">${winner.toUpperCase()}</span> was the last one flying.`
+          :'Your Command HQ was destroyed.')+`<br/>${G.kills} kills · ${G.deaths} losses`;
   $('tokline').innerHTML=(tok?`+${tok} ⬢ TOKENS EARNED`:'')+
     (levelled?`<br/><span style="color:#c9a3ff">CAMPAIGN LEVEL ${PROFILE.level} — the enemy will be stronger</span>`:'');
   $('over').classList.add('on');
-  feed(`<span class="${winner}">${winner.toUpperCase()} TEAM WINS</span>`);
+  feed(`<span class="${winner}">${winner.toUpperCase()} WINS</span>`);
   sfx(win?'buy':'boom',.9);
 }
 function resetRound(){
   G.round=null; G.over=false;
   $('over').classList.remove('on');
-  G.structures.length=0; structSlot={blue:0,red:0}; hangarSlot={blue:0,red:0};
+  G.structures.length=0; structSlot=teamMap(0); hangarSlot=teamMap(0); G.eliminated={};
   G.bullets.length=0; G.missiles.length=0; G.parts.length=0; G.fires.length=0;
-  addStruct('hq','blue'); addStruct('hq','red');
-  if(perk('dome')>0) addStruct('dome',G.team);
-  addStruct('spawner','blue'); addStruct('spawner','red');
-  addStruct('flak','red'); addStruct('sniper','red');
-  addStruct('flak','blue');
+  buildCompounds();
   for(const p of G.planes.values()){ p.hp=p.maxHp; p.alive=true; doRespawn(p); }
   toast('NEW ROUND — GO','grn',3);
   net.send({t:'world',structs:G.structures.map(packStruct)});
@@ -3276,10 +3362,8 @@ function quitToMenu(){
   G.started=false; G.paused=false; G.over=false; G.round=null; G.tut=null; G.mission=null;
   G.planes.clear(); G.structures.length=0; G.bullets.length=0; G.missiles.length=0;
   G.parts.length=0; G.rings.length=0; G.fires.length=0;
-  structSlot={blue:0,red:0}; hangarSlot={blue:0,red:0};
-  G.hangarLvl={blue:0,red:0}; G.shieldLvl={blue:0,red:0}; G.droneLvl={blue:0,red:0};
-  G.botLvl={blue:0,red:0};
-  G.me=null; G.crew=null; G.roster=[]; G.credits=600; G.kills=0; G.deaths=0; G.score=0; G.camMode=0;
+  setupTeams(2);
+  G.me=null; G.crew=null; G.roster=[]; G.netLevel=null; G.credits=600; G.kills=0; G.deaths=0; G.score=0; G.camMode=0;
   baseBarEls.forEach(el=>el.classList.remove('on'));
   for(const id of ['pause','over','shop','dead','tut','mission']) $(id).classList.remove('on');
   $('hud').classList.remove('on');
@@ -3326,7 +3410,7 @@ async function hostGame(){
   net.peer.on('open',()=>{
     net.ready=true;
     $('codeRow').style.display='flex'; $('code').textContent=net.room;
-    netmsg('Lobby open. Share the code, then enter the room when you are ready.');
+    netmsg('Lobby open. Share the code, then enter the room — everyone who is in by then gets their own base.');
     lobbyCount();
   });
   net.peer.on('error',e=>{
@@ -3352,7 +3436,11 @@ async function joinGame(code){
   net.peer.on('open',()=>{
     const c=net.peer.connect(ROOM_PREFIX+code,{reliable:true});
     net.conns=[c];
-    c.on('open',()=>{ net.ready=true; netmsg('Connected to '+code+' — the host deals the sides.'); startGame('red'); c.send(JSON.stringify({t:'hello',p:packPlayer(G.me)})); });
+    c.on('open',()=>{ net.ready=true;
+      netmsg('Connected to '+code+' — waiting for the host to open the match.');
+      // the host decides how many compounds there are, so the world cannot be
+      // built until the welcome arrives
+      c.send(JSON.stringify({t:'hello',p:helloStub(),perks:myPerks()})); });
     c.on('data',d=>onNet(d,c));
     c.on('close',()=>{ toast('DISCONNECTED FROM HOST','red',5); net.ready=false; });
     c.on('error',()=>{netmsg('Connection failed. Check the code.');unlockButtons()});
@@ -3367,40 +3455,43 @@ function unlockButtons(){ $('btnHost').disabled=false; $('btnJoin').disabled=fal
 function assignTeams(){
   if(!net.isHost) return;
   const humans=[...G.planes.values()].filter(p=>!p.isBot)
-    .sort((a,b)=>(a.joined||0)-(b.joined||0));
-  let nb=0,nr=0;
-  for(const h of humans){
-    const team=nb<=nr?'blue':'red';
+    .sort((a,b)=>(a.isLocal?-1:b.isLocal?1:0)||((a.joined||0)-(b.joined||0)));
+  const slots=teamList(), count=teamMap(0);
+  humans.forEach((h,i)=>{
+    // a compound each while any are spare; only once the map is full do late
+    // arrivals double up, and then onto whichever side is thinnest
+    const team = i<slots.length ? slots[i]
+               : slots.reduce((a,b)=>count[b]<count[a]?b:a);
+    count[team]++;
     if(h.team!==team){
       h.team=team;
-      if(h.isLocal){ G.team=team; doRespawn(h); toast('ASSIGNED TO '+team.toUpperCase(),team,3); }
+      if(h.isLocal){ G.team=team; doRespawn(h); toast('YOUR COMPOUND IS '+team.toUpperCase(),team,3); }
     }
-    team==='blue'?nb++:nr++;
-  }
+  });
   G.roster=humans.map(h=>({id:h.id,name:h.name,team:h.team}));
   net.send({t:'roster',list:G.roster});
   lobbyWait();
 }
-/** with four or more pilots the sides must be even before anyone flies */
-function evenSidesNeeded(){
-  const list=G.roster||[];
-  if(list.length<4) return false;
-  const nb=list.filter(r=>r.team==='blue').length;
-  return nb*2!==list.length;
+function pilotCount(){
+  return (net.isHost&&!G.started) ? net.conns.length+1 : (G.roster||[]).length;
+}
+/** There is one compound per pilot up to MAX_TEAMS. Past that pilots have to
+    share, so the match waits for a number that divides evenly between them. */
+function evenSidesNeeded(n){
+  if(n===undefined) n=pilotCount();
+  return n>MAX_TEAMS && n%MAX_TEAMS!==0;
 }
 function lobbyWait(){
   const el=$('lobbyCount'); if(!el) return;
-  const list=G.roster||[];
-  const nb=list.filter(r=>r.team==='blue').length, nr=list.length-nb;
-  const btn=$('btnEnterRoom');
-  if(evenSidesNeeded()){
-    el.innerHTML=`<span style="color:#ffd451">${list.length} pilots — BLUE ${nb} v RED ${nr}. `+
-      `Waiting for an even number before the match can start.</span>`;
+  const n=pilotCount(), btn=$('btnEnterRoom');
+  if(evenSidesNeeded(n)){
+    el.innerHTML=`<span style="color:#ffd451">${n} pilots but only ${MAX_TEAMS} compounds, `+
+      `so pilots must pair up. Waiting for a number that splits evenly.</span>`;
     if(btn) btn.disabled=true;
   }else{
-    el.textContent=list.length?(list.length+' pilot'+(list.length===1?'':'s')+
-      ' — BLUE '+nb+' v RED '+nr):
-      'Waiting for pilots — you can enter now and they will join you.';
+    el.textContent=n>1
+      ? n+' pilots — '+Math.min(n,MAX_TEAMS)+' compounds. Everyone defends their own HQ.'
+      : 'Waiting for pilots — you can enter now and they will join you.';
     if(btn) btn.disabled=false;
   }
 }
@@ -3411,15 +3502,21 @@ function dropConn(c){
 }
 function netmsg(s){$('netmsg').innerHTML=s}
 function sendWelcome(c){
-  try{ c.send(JSON.stringify({t:'welcome',world:G.structures.map(packStruct),
+  const p=c._pid?G.planes.get(c._pid):null;
+  try{ c.send(JSON.stringify({t:'welcome',
+    teams:teamList().length, you:p?p.team:teamList()[0], level:PROFILE.level,
+    world:G.structures.map(packStruct),
     players:[...G.planes.values()].map(packPlayer)})); }catch(e){}
 }
-function lobbyCount(){
-  const el=$('lobbyCount'); if(!el) return;
-  const n=net.conns.length;
-  el.textContent=n?(n+' pilot'+(n===1?'':'s')+' connected'):
-    'Waiting for pilots — you can enter now and they will join you.';
+/** A joining pilot announces themself before there is a world to fly in. */
+function helloStub(){
+  const nm=($('nameIn').value||'').trim().toUpperCase().slice(0,12)||PROFILE.callsign||'PILOT-'+rndi(10,99);
+  PROFILE.callsign=nm; saveProfile();
+  return {id:G.myId,name:nm,team:TEAM_DEFS[0].id,pos:[0,BASE_Y+300,0],q:[0,0,0,1],
+          hp:100,maxHp:100,speed:0,alive:false,bot:false,upg:{},k:0,d:0};
 }
+function myPerks(){ return {dome:perk('dome'),hqhull:perk('hqhull')} }
+function lobbyCount(){ lobbyWait() }
 function packPlayer(p){
   return {id:p.id,name:p.name,team:p.team,pos:p.pos.map(v=>+v.toFixed(1)),q:p.quat.map(v=>+v.toFixed(3)),
     hp:Math.round(p.hp),maxHp:p.maxHp,speed:Math.round(p.speed),alive:p.alive,bot:!!p.isBot,upg:p.upg,k:p.kills,d:p.deaths};
@@ -3455,17 +3552,20 @@ function onNet(raw,conn){
       break;
     }
     case 'welcome': {
+      if(!G.started){ G.netLevel=m.level; startGame(m.you,m.teams||2); }
       G.structures.length=0;
       for(const s of m.world){ const st={...s,cd:0,yaw:0,pitch:0,spin:0,maxHp:STRUCTS[s.type].hp}; G.structures.push(st); }
       for(const p of m.players) if(p.id!==G.myId) unpackPlayer(p);
       break;
     }
-    case 'hello':
+    case 'hello': {
       conn._pid=m.p.id;
-      unpackPlayer(m.p);
+      const hp=unpackPlayer(m.p);
+      if(hp) hp.perks=m.perks||null;      // their permanent upgrades, for their own base
       relay({t:'peer',p:m.p},conn);
       if(net.isHost) assignTeams();
       break;
+    }
     case 'me':
       if(net.isHost){ conn._pid=m.p.id; relay({t:'peer',p:m.p},conn); }
       unpackPlayer(m.p);
@@ -3555,7 +3655,7 @@ function onNet(raw,conn){
       if(s&&s.alive){ s.alive=false; s.hp=0; explode(s.pos,60,2.6); sfxAt('boom',s.pos,1.1);
         feed(`<span class="${s.team}">${STRUCTS[s.type].name}</span> destroyed`);
         if(m.by===G.myId){G.credits+=s.type==='hq'?1500:220}
-        if(s.type==='hq') endRound(s.team==='blue'?'red':'blue'); }
+        if(s.type==='hq') teamOut(s.team); }
       break;
     }
     case 'buildreq':
@@ -4137,7 +4237,9 @@ const BOT_NAMES=['VIPER','GHOST','RAZOR','TALON','HAWK','COBRA','WRAITH','FANG',
 function botName(){ return BOT_NAMES[rndi(0,BOT_NAMES.length-1)]+'-'+rndi(10,99) }
 function addBots(n){
   for(let i=0;i<n;i++){
-    const team=i%2===0?'red':'blue';
+    const teams=teamList();
+    const team=teams.length>2?teams[i%teams.length]
+                             :(i%2===0?foeBaseOf(G.team):G.team);
     const p=newPlane({name:botName(),team,isBot:true,role:Math.random()<.65?'raider':'interceptor'});
     p.upg={mg:rndi(1,2),engine:rndi(0,1),flare:0,missile:Math.random()<.25?1:0};
     applyUpgrades(p); rearm(p); doRespawn(p);
@@ -4158,10 +4260,43 @@ function spawnBotFrom(s){
   G.planes.set(p.id,p);
   return p;
 }
-function startGame(team){
+/* Two sides = the campaign layout, you against a scaled-up enemy. More than two
+   = an identical compound for every pilot, plus whatever permanent upgrades
+   that particular pilot brought with them. */
+function buildCompounds(){
+  TEAMPERK={};
+  for(const pl of G.planes.values()){
+    if(pl.isBot) continue;
+    if(pl.isLocal) TEAMPERK[pl.team]=myPerks();
+    else if(pl.perks) TEAMPERK[pl.team]=pl.perks;
+  }
+  const teams=teamList();
+  // Any match against other people is symmetrical — the lopsided layout below
+  // is the campaign, where the enemy is deliberately stacked against you.
+  if(teams.length>2||net.mode!=='solo'){
+    for(const k of teams){
+      addStruct('hq',k);
+      if(teamPerk(k,'dome')>0) addStruct('dome',k);
+      addStruct('spawner',k); addStruct('spawner',k);
+      addStruct('flak',k); addStruct('sniper',k); addStruct('sam',k);
+    }
+    return;
+  }
+  const foe=foeBaseOf(G.team);
+  addStruct('hq',G.team); addStruct('hq',foe);
+  if(teamPerk(G.team,'dome')>0) addStruct('dome',G.team);
+  addStruct('spawner',G.team); addStruct('spawner',G.team); addStruct('spawner',foe);
+  for(let i=1;i<diff.hangars();i++) addStruct('spawner',foe);   // a bigger enemy air force each level
+  addStruct('flak',foe); addStruct('sniper',foe); addStruct('flak',G.team);
+  const kinds=['flak','sniper','sam','radar','repair'];
+  for(let i=0;i<diff.extraDefences();i++) addStruct(kinds[i%kinds.length],foe);
+}
+function startGame(team,nteams){
   if(G.started) return;
   audioInit();
-  G.started=true; G.team=team||'blue'; G.mode=net.mode;
+  G.started=true; G.mode=net.mode;
+  setupTeams(nteams||2);     // sides must exist before the terrain bowls are cut
+  G.team=(team&&BASES[team])?team:teamList()[0];
   applyTerrain();            // must precede any structure or spawn placement
   G.economyT=rnd(110,160)*(campaign()?diff.economy():1);   // not on the very first frame
   const nm=($('nameIn').value||'').trim().toUpperCase().slice(0,12)||PROFILE.callsign||'PILOT-'+rndi(10,99);
@@ -4171,17 +4306,11 @@ function startGame(team){
   G.me=me; G.planes.set(me.id,me);
 
   if(net.isHost||net.mode==='solo'){
-    addStruct('hq','blue'); addStruct('hq','red');
-    if(!G.tut&&!G.mission){   // training and missions build their own worlds
-      const foe=G.team==='blue'?'red':'blue';
-      if(perk('dome')>0) addStruct('dome',G.team);
-      addStruct('spawner',G.team); addStruct('spawner',G.team); addStruct('spawner',foe);
-      // the enemy grows a bigger air force and more defences each campaign level
-      for(let i=1;i<diff.hangars();i++) addStruct('spawner',foe);
-      addStruct('flak',foe); addStruct('sniper',foe); addStruct('flak',G.team);
-      const kinds=['flak','sniper','sam','radar','repair'];
-      for(let i=0;i<diff.extraDefences();i++) addStruct(kinds[i%kinds.length],foe);
-      addBots(net.mode==='solo'?diff.bots():3);
+    if(G.tut||G.mission){    // training and missions build their own worlds
+      addStruct('hq',G.team); addStruct('hq',foeBaseOf(G.team));
+    }else{
+      buildCompounds();
+      addBots(net.mode==='solo'?diff.bots():teamList().length>2?teamList().length*2:3);
     }
   }
   $('menu').classList.remove('on');
@@ -4200,7 +4329,8 @@ $('btnSolo').onclick=()=>{ net.mode='solo'; startGame('blue') };
 $('btnMission').onclick=()=>startMission();
 $('btnEnterRoom').onclick=()=>{
   if(G.started||evenSidesNeeded()) return;
-  startGame('blue');
+  startGame(TEAM_DEFS[0].id, Math.min(MAX_TEAMS, net.conns.length+1));
+  assignTeams();
   for(const c of net.pending) sendWelcome(c);   // release anyone who joined early
   net.pending=[];
 };
@@ -4281,7 +4411,8 @@ function frame(now){
       G.economyT-=dt;
       if(G.economyT<=0){
         G.economyT=rnd(150,240)*diff.economy();
-        const enemy=G.team==='blue'?'red':'blue';
+        const others=teamList().filter(k=>k!==G.team&&!(G.eliminated&&G.eliminated[k]));
+        const enemy=others.length?others[rndi(0,others.length-1)]:foeBaseOf(G.team);
         const built=G.structures.filter(s=>s.team===enemy&&s.alive&&s.type!=='hq').length;
         if(built<diff.structCap()){
           const pick=['sniper','sam','flak','radar','repair'][rndi(0,4)];
