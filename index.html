@@ -1580,10 +1580,12 @@ const diff={
   struct(){ return (1+.07*(PROFILE.level-1))*DK().k },          // tougher defences, still soft
   hangarRate(){ return Math.pow(.90,PROFILE.level-1)/DK().k },  // faster launches
   hangars(){ return 1+Math.floor((PROFILE.level-1)/3) },        // more of them
-  cap(){ return Math.round((14+Math.floor((PROFILE.level-1)/2))*clamp(DK().k,.6,2.5)) },
+  cap(){ return Math.round((16+Math.floor((PROFILE.level-1)/2))*clamp(DK().k,.6,2.5)) },
   extraDefences(){ const k=DK().k;
     return Math.round((Math.min(PROFILE.level-1,7)+(k>=3?6:0))*Math.min(k,2.2)) },
-  bots(){ return Math.round((10+Math.floor((PROFILE.level-1)/2))*clamp(DK().k,.6,2.5)) },
+  // only ~40% of a force presses the HQ now, so the group is a little larger
+  // to keep the pressure on it comparable
+  bots(){ return Math.round((12+Math.floor((PROFILE.level-1)/2))*clamp(DK().k,.6,2.5)) },
   economy(){ return 1/Math.max(1,DK().k*.6) },     // how fast they rebuild
   structCap(){ return Math.round(6*clamp(DK().k,1,2.5)) }
 };
@@ -2021,7 +2023,9 @@ function fireWeapon(p,dt){
         spawnBullet({pos:org.slice(),vel:[dir[0]*w.speed+f[0]*p.speed*.3,dir[1]*w.speed+f[1]*p.speed*.3,dir[2]*w.speed+f[2]*p.speed*.3],
           dmg,team:p.team,owner:p.id,col:w.col,len:w.len,wid:w.wid||1,splash:w.splash||0,
           rocket:id==='rocket',
-          antiStruct:p.isBot?0.55:1, life:id==='laser'?1.4:id==='inferno'?.38:3.0,
+          // 0.55 was tuned when every bot gunned the HQ. Now only the raiders
+          // do, so they hit properly and the rest stay incidental.
+          antiStruct:p.isBot?(p.role==='hq'?2.0:0.7):1, life:id==='laser'?1.4:id==='inferno'?.38:3.0,
           fire:id==='inferno', grow:id==='inferno'?1:0, kind:id});
       }
       if(id==='inferno'){          // embers streaming off the flame
@@ -2519,11 +2523,22 @@ function stepBot(p,dt){
       }
       return best;
     };
-    const anyGround=()=>{
-      let g=null,gd=1e9;
+    // Hangars are the target that actually decides a match: take them out and
+    // the side stops launching. Weight them well above the nearest gun, which
+    // is otherwise all a ground-attack aircraft ever picks.
+    // Ground attack splits two ways. A bomber goes for the hangars, because
+    // taking those out stops the side launching at all. An aircraft working the
+    // edges picks off the outlying guns and support instead, which is both
+    // safer and how the defensive ring actually gets worn down.
+    const anyGround=(soft)=>{
+      let g=null,gs=1e18;
       for(const st of G.structures){
         if(!st.alive||st.team===p.team||st.type==='hq') continue;
-        const d=dist(st.pos,p.pos); if(d<gd){gd=d;g=st}
+        const w = st.type==='spawner'            ? (soft?1.35:.50)
+                : st.type==='radar'||st.type==='repair' ? .75
+                :                                   (soft?.60:1.15);
+        const sc=dist(st.pos,p.pos)*w;
+        if(sc<gs){gs=sc;g=st}
       }
       return g;
     };
@@ -2535,8 +2550,8 @@ function stepBot(p,dt){
       case 'ace':    // comes for the human specifically
         tgt=(G.me&&G.me.alive&&G.me.team!==p.team)?G.me:(nearestFoe()||hqT); break;
       case 'shy':    // works the edges and avoids the furball
-        tgt=anyGround()||hqT; break;
-      default:       tgt=hqT||nearestFoe();
+        tgt=anyGround(true)||hqT; break;
+      default:       p.role=pickRole(); tgt=hqT||nearestFoe();
     }
     p.aiTarget=tgt||null;
     p.aiStruct=!!(tgt&&tgt.type);   // a structure rather than an aircraft
@@ -2658,20 +2673,19 @@ function stepBot(p,dt){
   // sky and canyon walls whenever a waypoint happened to sit ahead of them.
   // Gunnery is independent of navigation: shoot whatever hostile is closest,
   // be it an aircraft, the player, an HQ or a defence emplacement.
-  // Priority: the HQ whenever it is in reach — that is the whole point of the
-  // sortie — then any aircraft crossing their sights, and an emplacement only
-  // when there is nothing else to shoot at.
+  // The gun follows the sortie: a bomber guns the hangar it is diving on rather
+  // than an HQ five kilometres behind it. Then anything that crosses the sights
+  // on the way in, then whatever else is in reach.
+  const gunPoint=st=> st.type==='dome'
+    ? [st.pos[0],st.pos[1]+DOME_R*.55,st.pos[2]]        // shoot the shell, not the ground
+    : [st.pos[0],st.pos[1]+(STRUCTS[st.type]?STRUCTS[st.type].y||8:8),st.pos[2]];
   let gt=null, gd=1e9, gAir=false;
-  for(const st of G.structures){
-    if(!st.alive||st.team===p.team) continue;
-    if(st.type!=='hq'&&st.type!=='dome') continue;
-    const c2=st.type==='dome'
-      ? [st.pos[0],st.pos[1]+DOME_R*.55,st.pos[2]]      // shoot the shell, not the ground
-      : [st.pos[0],st.pos[1]+(STRUCTS.hq.y||8),st.pos[2]];
-    const d=dist(c2,p.pos);
-    if(d<gd){ gd=d; gt={pos:c2}; }
+  const at=p.aiTarget;
+  if(at&&at.alive!==false&&at.pos){
+    if(at.type){ const c2=gunPoint(at), d=dist(c2,p.pos); if(d<700){ gt={pos:c2}; gd=d; } }
+    else { const d=dist(at.pos,p.pos); if(d<820){ gt=at; gd=d; gAir=true; } }
   }
-  if(!gt||gd>700){                       // nothing to bomb yet: fight en route
+  if(!gt){                               // nothing on the objective yet: fight en route
     let bd=1e9, air=null;
     for(const q of G.planes.values()){
       if(q===p||!q.alive||q.team===p.team) continue;
@@ -2682,9 +2696,8 @@ function stepBot(p,dt){
   }
   if(!gt){
     for(const st of G.structures){
-      if(!st.alive||st.team===p.team||st.type==='hq') continue;
-      const c2=[st.pos[0],st.pos[1]+(STRUCTS[st.type]?STRUCTS[st.type].y||8:8),st.pos[2]];
-      const d=dist(c2,p.pos);
+      if(!st.alive||st.team===p.team) continue;
+      const c2=gunPoint(st), d=dist(c2,p.pos);
       if(d<gd){ gd=d; gt={pos:c2}; }
     }
   }
@@ -4240,7 +4253,7 @@ function addBots(n){
     const teams=teamList();
     const team=teams.length>2?teams[i%teams.length]
                              :(i%2===0?foeBaseOf(G.team):G.team);
-    const p=newPlane({name:botName(),team,isBot:true,role:Math.random()<.65?'raider':'interceptor'});
+    const p=newPlane({name:botName(),team,isBot:true,role:pickRole()});
     p.upg={mg:rndi(1,2),engine:rndi(0,1),flare:0,missile:Math.random()<.25?1:0};
     applyUpgrades(p); rearm(p); doRespawn(p);
     G.planes.set(p.id,p);
@@ -4250,7 +4263,7 @@ function addBots(n){
 function spawnBotFrom(s){
   const drone=Math.random()<(G.droneLvl[s.team]||0)*.33;
   const p=newPlane({name:(drone?'UCAV-':'')+botName(),team:s.team,isBot:true,drone,
-                    role:Math.random()<.65?'raider':'interceptor'});
+                    role:pickRole()});
   p.upg={mg:rndi(1,2),engine:rndi(0,1)};
   applyUpgrades(p); rearm(p);
   p.pos=[s.pos[0]+rnd(-50,50), s.pos[1]+rnd(200,330), s.pos[2]+rnd(-50,50)];
