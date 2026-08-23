@@ -233,6 +233,7 @@ input[type=range]{width:100%;accent-color:#7fe6c0}
 .bbar .pc{font-size:10px;color:#dbe7f5;margin-top:2px;letter-spacing:1px;
   font-variant-numeric:tabular-nums;text-shadow:0 1px 5px #000}
 /* pilot name tags — the same idea as a base bar, sized for a moving aircraft */
+#wxflash{position:fixed;inset:0;background:#e6efff;opacity:0;pointer-events:none;z-index:3}
 .ntag{position:absolute;transform:translate(-50%,-100%);display:none;text-align:center;
   pointer-events:none;will-change:transform}
 .ntag.on{display:block}
@@ -307,6 +308,7 @@ td{padding:6px 8px;border-bottom:1px solid rgba(255,255,255,.045)}
     <div id="thr"><i style="height:60%"></i></div>
   </div>
 
+  <div id="wxflash"></div>
   <div id="basebars"></div>
   <div id="nametags"></div>
   <div id="warn"></div>
@@ -854,6 +856,68 @@ function trenchX(z){
        + Math.sin(z/200+TERRAIN.ph2)*70
        + Math.sin(z/100+TERRAIN.ph3)*70;
 }
+/* ------------------------------ weather ---------------------------------- */
+/* Single-player only. Multiplayer stays clear so that everybody in a room is
+   looking at the same sky and nobody is fighting through fog the host picked.
+   Weather is derived from the level number, so a given level always looks the
+   same and you can learn it. */
+const WEATHERS=[
+  {id:'clear', name:'CLEAR',        fog:[.62,.74,.86], near:2400, far:12500, tint:[1,1,1],
+   note:'Clear and bright. Nothing between you and the target.'},
+  {id:'cloud', name:'OVERCAST',     fog:[.57,.61,.66], near:1700, far:8200,  tint:[.80,.82,.86],
+   note:'Low cloud and flat light — you will see them later than you would like.'},
+  {id:'rain',  name:'RAIN',         fog:[.45,.50,.57], near:850,  far:4800,  tint:[.58,.63,.70],
+   prec:'rain', gust:.35,
+   note:'Heavy rain. Visibility is short and the air is rough.'},
+  {id:'storm', name:'THUNDERSTORM', fog:[.24,.27,.33], near:520,  far:3200,  tint:[.36,.39,.48],
+   prec:'rain', gust:1, lightning:true,
+   note:'Thunderstorm. Almost no visibility, and the gusts will throw you around.'},
+  {id:'snow',  name:'SNOW',         fog:[.80,.83,.88], near:760,  far:4200,  tint:[.88,.91,.95],
+   prec:'snow', gust:.25,
+   note:'Snow. Everything is white and the horizon is gone.'},
+  {id:'mist',  name:'FOG BANK',     fog:[.71,.73,.76], near:260,  far:1900,  tint:[.82,.84,.86],
+   note:'Thick fog. You will be on top of things before you see them.'}
+];
+/** Stable per level: the same level always brings the same weather. */
+function weatherFor(lv){
+  if(lv<=1) return WEATHERS[0];                 // the first level stays clear
+  const h=Math.abs(Math.sin(lv*97.13)*43758.5453);
+  const r=h-Math.floor(h);
+  // clear and overcast are the common cases; the set pieces are rarer
+  const table=[0,0,1,1,2,3,4,5];
+  return WEATHERS[table[Math.floor(r*table.length)]];
+}
+const WX={w:WEATHERS[0], t:0, flash:0, thunder:0, gustX:0, gustY:0};
+function applyWeather(){
+  // multiplayer, training and the menus all stay clear
+  const solo=net.mode==='solo';
+  WX.w=(solo&&!G.tut) ? (G.mission?WEATHERS[1+rndi(0,4)]:weatherFor(TERRAIN.level)) : WEATHERS[0];
+  WX.t=0; WX.flash=0; WX.thunder=rnd(4,11); WX.gustX=0; WX.gustY=0;
+  for(let i=0;i<3;i++) FOG[i]=WX.w.fog[i];
+  if(typeof gl!=='undefined'&&gl&&U&&U.uFogCol) gl.uniform3fv(U.uFogCol,FOG);
+}
+/** Rough air: storms and rain buffet everything in the sky. */
+function stepWeather(dt){
+  const w=WX.w;
+  WX.t+=dt;
+  if(w.gust){
+    // two slow sine terms, so it breathes rather than jitters
+    WX.gustX=Math.sin(WX.t*.7)*Math.sin(WX.t*.23+1.7)*w.gust;
+    WX.gustY=Math.sin(WX.t*.9+2.1)*Math.sin(WX.t*.31)*w.gust;
+  }else{ WX.gustX=WX.gustY=0; }
+  WX.flash=Math.max(0,WX.flash-dt*3.2);
+  if(w.lightning){
+    WX.thunder-=dt;
+    if(WX.thunder<=0){
+      WX.thunder=rnd(5,14);
+      WX.flash=1;
+      sfx('boom',.55);                 // the thunder, a beat after the flash
+    }
+  }
+  const el=$('wxflash');
+  if(el) el.style.opacity=(WX.flash*WX.flash*.55).toFixed(3);
+}
+
 /** canyon is the usual ground: open levels are the break, one in four */
 function isTrenchLevel(lv){ return lv>=2 && lv%4!==0 }
 
@@ -997,6 +1061,7 @@ function applyTerrain(){
     setTerrain(lv,kind);
   }
   buildTerrainMesh();
+  applyWeather();
 }
 function buildWorld(){
   buildTerrainMesh();
@@ -1037,6 +1102,30 @@ function buildWorld(){
     c.pop();
   }
   MESH.clouds=c.build();
+
+  /* --- precipitation --- */
+  /* A slab of streaks that travels with the camera and scrolls downward. It is
+     only ever a few dozen metres deep, which is all you can see through rain
+     anyway, and it wraps on a short period so the reset is lost in the motion. */
+  const PREC_R=250, PREC_H=180;
+  const rn=new Builder();
+  for(let i=0;i<1100;i++){
+    rn.push();
+    rn.tr(rnd(-PREC_R,PREC_R), Math.random()*PREC_H, rnd(-PREC_R,PREC_R));
+    rn.rz(rnd(-.13,.13));
+    rn.box(.16,rnd(3.4,7.0),.16,[.72,.80,.92]);
+    rn.pop();
+  }
+  MESH.rain=rn.build();
+  const sn=new Builder();
+  for(let i=0;i<820;i++){
+    sn.push();
+    sn.tr(rnd(-PREC_R,PREC_R), Math.random()*PREC_H, rnd(-PREC_R,PREC_R));
+    const f=rnd(.30,.62);
+    sn.box(f,f,f,[1,1,1]);
+    sn.pop();
+  }
+  MESH.snow=sn.build();
 
   /* --- planes (per team) --- */
   MESH.cockpit=buildCockpit(); MESH.cockpitGlow=buildCockpitGlow(); MESH.stick=buildStick();
@@ -2024,6 +2113,14 @@ function simPlane(p,dt){
       doRespawn(p);
     }
     return;
+  }
+  // Rough air. Storms and rain shove everything in the sky, the player most
+  // noticeably because nothing is correcting for it but you.
+  if((WX.gustX||WX.gustY)&&p.pos[1]>Math.max(terrainH(p.pos[0],p.pos[2]),SEA)+30){
+    const g=(p.isLocal?1:.55)*(p.drone?1.5:1);
+    qAxis(_dq,0,0,1, WX.gustX*.40*g*dt); qmul(p.quat,p.quat,_dq);
+    qAxis(_dq,1,0,0, WX.gustY*.24*g*dt); qmul(p.quat,p.quat,_dq);
+    p.pos[1]+=WX.gustY*7*g*dt;
   }
   const c=p.ctrl, gDrag=p.isLocal?clamp(1-(p.gStress||0)*.55,.35,1):1;
   const ag=(p.agility||1)*(p.canyonBoost||1)*gDrag;
@@ -3110,6 +3207,22 @@ function updateCamera(dt){
   for(let i=0;i<3;i++){ G.camPos[i]=lerp(G.camPos[i],want[i],k); G.camLook[i]=lerp(G.camLook[i],look[i],clamp(dt*12,0,1)); }
 }
 
+/* A slab of rain or snow pinned to the camera. It scrolls downward and wraps on
+   a short period, and it is drawn last so it sits over the whole scene. */
+function drawWeather(){
+  const kind=WX.w.prec; if(!kind) return;
+  const mesh=kind==='rain'?MESH.rain:MESH.snow; if(!mesh) return;
+  const fall=kind==='rain'?58:7.5;
+  const WRAP=90;
+  const shift=-((WX.t*fall)%WRAP);
+  const drift=kind==='snow'?Math.sin(WX.t*.5)*14:WX.gustX*22;
+  gl.enable(gl.BLEND); gl.depthMask(false); gl.disable(gl.CULL_FACE);
+  M4.trans(model, G.camPos[0]+drift, G.camPos[1]-90+shift, G.camPos[2]+drift*.6);
+  draw(mesh,model,{unlit:true, alpha:kind==='rain'?.30:.62,
+                   tint:kind==='rain'?[.78,.85,.96]:[1,1,1]});
+  gl.depthMask(true); gl.disable(gl.BLEND); gl.enable(gl.CULL_FACE);
+}
+
 /* ------------------------------ render ----------------------------------- */
 const proj=M4.create(), view=M4.create(), model=M4.create(), tmpM=M4.create(), projC=M4.create();
 function render(){
@@ -3132,15 +3245,18 @@ function render(){
   gl.depthMask(false); gl.disable(gl.DEPTH_TEST); gl.disable(gl.CULL_FACE);
   gl.uniform1f(U.uFogNear,1e9); gl.uniform1f(U.uFogFar,1e9+1);
   M4.trans(model,G.camPos[0],G.camPos[1],G.camPos[2]); M4.mul(model,model,M4.scl(tmpM,15000,15000,15000));
-  draw(MESH.sky,model,{unlit:true});
+  // lightning lifts the whole sky for a fraction of a second
+  const lf=1+WX.flash*1.5;
+  draw(MESH.sky,model,{unlit:true,
+    tint:[Math.min(1,WX.w.tint[0]*lf),Math.min(1,WX.w.tint[1]*lf),Math.min(1,WX.w.tint[2]*lf)]});
   gl.enable(gl.DEPTH_TEST); gl.depthMask(true); gl.enable(gl.CULL_FACE);
 
-  gl.uniform1f(U.uFogNear,2400); gl.uniform1f(U.uFogFar,12500);
+  gl.uniform1f(U.uFogNear,WX.w.near); gl.uniform1f(U.uFogFar,WX.w.far);
 
   // --- terrain + clouds ---
   M4.ident(model);
   for(const ch of MESH.terrain) draw(ch,model);
-  draw(MESH.clouds,model,{tint:[1,1,1]});
+  draw(MESH.clouds,model,{tint:WX.w.tint});
 
   // --- structures ---
   for(const s of G.structures){
@@ -3289,6 +3405,8 @@ function render(){
   gl.disable(gl.CULL_FACE);
   M4.ident(model); draw(MESH.water,model,{alpha:.80,tint:[1,1,1]});
   gl.enable(gl.CULL_FACE); gl.disable(gl.BLEND);
+
+  drawWeather();          // over the whole scene, under the cockpit glass
 
   /* --- cockpit interior ---
      Drawn in its own near-field pass: the panel sits ~1 unit from the eye, well
@@ -3763,6 +3881,10 @@ function quitToMenu(){
   G.planes.clear(); G.structures.length=0; G.bullets.length=0; G.missiles.length=0;
   G.parts.length=0; G.rings.length=0; G.fires.length=0;
   setupTeams(2);
+  WX.w=WEATHERS[0]; WX.flash=0; WX.gustX=WX.gustY=0;
+  for(let i=0;i<3;i++) FOG[i]=WEATHERS[0].fog[i];
+  if(gl&&U&&U.uFogCol) gl.uniform3fv(U.uFogCol,FOG);
+  { const el=$('wxflash'); if(el) el.style.opacity=0; }
   G.me=null; G.crew=null; G.roster=[]; G.netLevel=null; G.netMap=null; G.hangarT={}; G.credits=600; G.kills=0; G.deaths=0; G.score=0; G.camMode=0;
   baseBarEls.forEach(el=>el.classList.remove('on'));
   tagEls.forEach(el=>el.remove()); tagEls.clear();
@@ -4729,6 +4851,7 @@ function startGame(team,nteams){
   updateWeps();
   if(crewMode()){ G.me.alive=false; G.me.respawn=1e9; takeEmplacement(); }
   toast('CLICK TO CAPTURE MOUSE · <kbd>B</kbd> OPENS THE HANGAR','grn',5);
+  if(WX.w.id!=='clear') toast(WX.w.name+' — '+WX.w.note, WX.w.lightning?'red':'gold', 6);
   if(TERRAIN.trench)
     toast('CANYON RUN — the trench is the fast way through, but you can climb over the mesa.','gold',7);
   else if(TERRAIN.ridges.length)
@@ -4853,6 +4976,7 @@ function frame(now){
       }
     }
     stepMission(dt);
+    stepWeather(dt);
     musicTick();
     netTick(dt);
     if(G.crew) stepCrew(dt); else updateCamera(dt);
