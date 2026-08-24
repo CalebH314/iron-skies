@@ -1726,6 +1726,9 @@ const diff={
   struct(){ return (1+.07*(PROFILE.level-1))*DK().k },          // tougher defences, still soft
   hangarRate(){ return Math.pow(.90,PROFILE.level-1)/DK().k },  // faster launches
   hangars(){ return 1+Math.floor((PROFILE.level-1)/3) },        // more of them
+  // your side grows too, a little behind theirs
+  myHangars(){ return 2+Math.floor((PROFILE.level-1)/3) },
+  myCap(){ return Math.min(26,Math.round(12+PROFILE.level*1.2)) },
   cap(){ return Math.round((22+Math.floor((PROFILE.level-1)/2))*clamp(DK().k,.6,2.5)) },
   extraDefences(){ const k=DK().k;
     return Math.round((Math.min(PROFILE.level-1,7)+(k>=3?6:0))*Math.min(k,2.2)) },
@@ -2492,14 +2495,13 @@ function stepCollisions(dt){
       if(dist(a.pos,[s.pos[0],cy,s.pos[2]])>cfg.r+9) continue;
       // an aircraft rolling out of its own hangar is sitting inside that
       // building's collision sphere; it must not be wrecked by its own shed
-      const own=s.team===a.team;
-      // A bot smashing into its own HQ on the way out of the hangar is a
-      // nuisance, not a rule anyone wanted; only people collide with their own
-      // side's buildings.
-      if(own&&(a.isBot||(a.safeT||0)>0)) continue;
-      a.crashLabel='CRASHED INTO '+(own?'YOUR OWN ':'A ')+cfg.short;
+      // Nothing collides with its own side's buildings. This is also what lets
+      // you fly out through your own force dome: the dome is a structure with a
+      // very large radius, so being inside it read as flying into it.
+      if(s.team===a.team) continue;
+      a.crashLabel='CRASHED INTO A '+cfg.short;
       crashInto(a,a.speed,MASS(a)*3,a.crashLabel);
-      if(authority()&&!own) damageStruct(s,impactDamage(a.speed)*MASS(a)*1.6,a.id);
+      if(authority()) damageStruct(s,impactDamage(a.speed)*MASS(a)*1.6,a.id);
       explode(a.pos,20,1.2);
     }
   }
@@ -2698,7 +2700,7 @@ function stepStructs(dt){
       if(s.cd<=0){
         const foe=campaign()&&s.team!==G.team;
         s.cd=cfg.cd*Math.pow(.8,G.hangarLvl[s.team]||0)*(foe?diff.hangarRate():1);
-        const cap=foe?diff.cap():cfg.cap;
+        const cap=foe?diff.cap():(campaign()?diff.myCap():cfg.cap);
         const up=[...G.planes.values()].filter(q=>q.isBot&&q.team===s.team&&q.alive&&!q.passive).length;
         if(up<cap) spawnBotFrom(s);
       }
@@ -2783,9 +2785,9 @@ function fireStruct(s,target){
    what reads as a sky full of planes wandering about. */
 function pickRole(){
   const r=Math.random();
-  if(r<.32) return 'hq';       // straight for the enemy Command HQ
-  if(r<.60) return 'ace';      // hunts the player, and keeps hunting them
-  if(r<.84) return 'hunter';   // hunts other aircraft
+  if(r<.36) return 'ace';      // hunts the player, and keeps hunting them
+  if(r<.68) return 'hq';       // straight for the enemy Command HQ
+  if(r<.87) return 'hunter';   // hunts other aircraft
   return 'bomber';             // hangars and the defensive ring
 }
 /** whoever is sitting on this aircraft's tail, if anyone */
@@ -3023,8 +3025,12 @@ function stepBot(p,dt){
   // descent the moment it acquires a distant ground target and flies straight
   // into the ridgelines between the bases.
   const farGround=p.aiStruct&&aim&&Math.hypot(aim[0]-p.pos[0],aim[2]-p.pos[2])>1500;
+  // A floor, not a ceiling. This used to *replace* the commanded height, which
+  // pinned a chasing aircraft a couple of hundred metres below whatever it was
+  // chasing - it would sit there in trail forever and never get a shot. Raising
+  // the aim keeps them off the hills; it must never pull them down off a target.
   if((chasingPlane||farGround)&&!lowNow&&!inCanyon&&ahead[1]>=gh+140)
-    aim=[aim[0],Math.max(p.cruiseY,ghNow+330,gh+330),aim[2]];
+    aim=[aim[0],Math.max(aim[1],ghNow+260,gh+260),aim[2]];
 
   // On a canyon map there is nowhere to climb to: the mesa tops the ceiling.
   // Terrain avoidance and the cruise hold both read the bowl rim ahead and
@@ -3047,10 +3053,14 @@ function stepBot(p,dt){
     if(q===p||!q.alive||q.team===p.team) continue;
     const dx=q.pos[0]-p.pos[0], dy=q.pos[1]-p.pos[1], dz=q.pos[2]-p.pos[2];
     const d=Math.hypot(dx,dy,dz);
-    // It presses an attack on its own quarry right in, then breaks off — a
-    // hunter that holds a target for life will otherwise merge with it head-on.
-    if(d>(q===t?130:300)||d<1) continue;
+    if(d>560||d<1) continue;
     if((dx*f[0]+dy*f[1]+dz*f[2])/d < .70) continue;    // dead ahead only
+    // A head-on merge closes at both aircraft's speed at once, so it has to
+    // break far earlier than a tail chase — which can press right in.
+    const qf=fwdOf(q,[0,0,0]);
+    const headOn=(qf[0]*f[0]+qf[1]*f[1]+qf[2]*f[2]) < -.25;
+    const lim = (q===t) ? (headOn?250:110) : (headOn?380:230);
+    if(d>lim) continue;
     if(d<dodgeD){ dodgeD=d; dodge=q; }
   }
   if(dodge){
@@ -3123,6 +3133,9 @@ function stepBot(p,dt){
   if(loc[2]>0&&!inCanyon){ c.roll=clamp(loc[0]>0?1:-1,-1,1); c.pitch=clamp(.6+loc[1],-.55,.55); }
   p.thr=lowNow?1:clamp(.6+dl/2200,.5,1);
   if(dl>900) c.ab=1;
+  // A chase is only a chase if you can catch them: burner on until you are in
+  // gun range, and full throttle the whole way.
+  if(t&&t.speed!==undefined&&dist(t.pos,p.pos)>260){ c.ab=1; p.thr=1; }
 
   // Fire only at the real target. `aim` is a navigation waypoint — terrain
   // avoidance, the cruise hold and the trench follower all rewrite it — so
@@ -3159,7 +3172,17 @@ function stepBot(p,dt){
     }
   }
   if(gt&&gd<(gAir?820:700)){
-    const tp=gt.pos;
+    // Shoot where it is going to be. Bots fired straight down the nose, so
+    // against anything that was actually moving - the player, most obviously -
+    // every round went behind it and nothing ever landed.
+    let tp=gt.pos;
+    if(gAir&&gt.speed!==undefined){
+      const bs=(WEAPONS[p.wep]&&WEAPONS[p.wep].speed)||1000;
+      const tf=fwdOf(gt,[0,0,0]), tof=gd/bs;
+      tp=[gt.pos[0]+tf[0]*gt.speed*tof,
+          gt.pos[1]+tf[1]*gt.speed*tof,
+          gt.pos[2]+tf[2]*gt.speed*tof];
+    }
     const tv=[tp[0]-p.pos[0],tp[1]-p.pos[1],tp[2]-p.pos[2]];
     const td=Math.hypot(...tv)||1;
     const tl=qrot([0,0,0],[tv[0]/td,tv[1]/td,tv[2]/td],inv);
@@ -4834,8 +4857,9 @@ function buildCompounds(){
   addStruct('hq',G.team); addStruct('hq',foe);
   if(teamPerk(G.team,'dome')>0) addStruct('dome',G.team);
   for(let i=0;i<teamPerk(G.team,'infernodef');i++) addStruct('infernodef',G.team);
-  addStruct('spawner',G.team); addStruct('spawner',G.team); addStruct('spawner',foe);
+  addStruct('spawner',foe);
   for(let i=1;i<diff.hangars();i++) addStruct('spawner',foe);   // a bigger enemy air force each level
+  for(let i=0;i<diff.myHangars();i++) addStruct('spawner',G.team);   // and so does yours
   addStruct('flak',foe); addStruct('sniper',foe); addStruct('flak',G.team);
   const kinds=['flak','sniper','sam','radar','repair'];
   for(let i=0;i<diff.extraDefences();i++) addStruct(kinds[i%kinds.length],foe);
