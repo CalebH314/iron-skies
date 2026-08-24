@@ -135,6 +135,19 @@ kbd{background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.16);bord
   padding:2px 7px;border-radius:10px}
 
 /* --- centre-screen warnings --- */
+/* --- menu tabs --- */
+#tabs{display:flex;gap:4px;flex-wrap:wrap;margin:14px 0 4px;
+  border-bottom:1px solid rgba(140,175,215,.22);padding-bottom:0}
+#tabs button{background:transparent;border:1px solid transparent;border-bottom:none;
+  border-radius:8px 8px 0 0;padding:10px 17px;font:inherit;font-size:12.5px;letter-spacing:2.4px;
+  font-weight:700;color:#8fa5bd;cursor:pointer;position:relative;top:1px;transition:color .12s}
+#tabs button:hover{color:#cfe0f2}
+#tabs button.on{color:#7fe6c0;border-color:rgba(140,175,215,.28);
+  background:linear-gradient(180deg,rgba(127,230,192,.11),rgba(10,18,30,0))}
+#tabs button.on::after{content:'';position:absolute;left:0;right:0;bottom:-1px;height:2px;background:#7fe6c0}
+.pane{display:none;padding-top:16px}
+.pane.on{display:block;animation:panefade .16s ease-out}
+@keyframes panefade{from{opacity:0;transform:translateY(-3px)}to{opacity:1;transform:none}}
 #warn{position:absolute;left:50%;top:34%;transform:translateX(-50%);text-align:center;
   pointer-events:none;width:max-content;max-width:90vw}
 #warn div{font-size:19px;font-weight:700;letter-spacing:3px;margin-bottom:6px;
@@ -354,8 +367,8 @@ td{padding:6px 8px;border-bottom:1px solid rgba(255,255,255,.045)}
         <div class="sub" style="margin:0">TOKENS</div>
       </div>
     </div>
-    <div id="cusSummary"></div>
-    <div id="cusBody"></div>
+    <div id="customHost"></div>
+    <div id="customBody"><div id="cusSummary"></div><div id="cusBody"></div></div>
     <div class="btns" style="margin-top:18px;display:flex;gap:10px;justify-content:center">
       <button class="primary" id="btnCloseCustom">DONE</button>
       <button id="btnRandomise">RANDOMISE</button>
@@ -370,6 +383,8 @@ td{padding:6px 8px;border-bottom:1px solid rgba(255,255,255,.045)}
   <div class="box panel">
     <h1 style="font-size:24px;letter-spacing:5px">SETTINGS</h1>
     <div class="sub" style="margin:2px 0 16px">DIFFICULTY · MAP · CONTROLS · ACCOUNT</div>
+    <div id="settingsHost"></div>
+    <div id="settingsBody">
 
     <div class="srow">
       <h4>DIFFICULTY</h4>
@@ -411,6 +426,7 @@ td{padding:6px 8px;border-bottom:1px solid rgba(255,255,255,.045)}
       </div>
     </div>
 
+    </div>
     <div class="btns" style="margin-top:20px;display:flex;gap:10px;justify-content:center">
       <button class="primary" id="btnCloseSettings">DONE</button>
     </div>
@@ -448,6 +464,16 @@ td{padding:6px 8px;border-bottom:1px solid rgba(255,255,255,.045)}
     <h1>AVIATORS</h1>
     <div class="sub">3D COMBAT FLIGHT · ONLINE DOGFIGHT · BASE DEFENSE</div>
 
+    <div id="tabs">
+      <button data-tab="play" class="on">PLAY</button>
+      <button data-tab="net">MULTIPLAYER</button>
+      <button data-tab="perm">UPGRADES</button>
+      <button data-tab="aircraft">AIRCRAFT</button>
+      <button data-tab="settings">SETTINGS</button>
+      <button data-tab="help">CONTROLS</button>
+    </div>
+
+    <div class="pane on" id="paneplay">
     <div class="row">
       <input id="nameIn" placeholder="CALLSIGN" maxlength="12" style="flex:1" />
       <button class="primary" id="btnTutorial">FLIGHT TRAINING</button>
@@ -455,12 +481,25 @@ td{padding:6px 8px;border-bottom:1px solid rgba(255,255,255,.045)}
     </div>
     <div class="row">
       <button id="btnMission" style="border-color:rgba(201,163,255,.5);color:#e9dcff">FLY A MISSION</button>
-      <button id="btnHost">HOST GAME</button>
+      <button class="sndbtn" id="btnSound">SOUND: ON</button>
+    </div>
+    <div class="hint" style="margin-top:14px">
+      <b>FLIGHT TRAINING</b> teaches flying, gunnery, missiles and base defences in about four minutes.<br/>
+      <b>SOLO vs BOTS</b> is the campaign — level the enemy Command HQ to advance.<br/>
+      <b>FLY A MISSION</b> is a canyon run against the clock, no combat.
+    </div>
+    </div>
+
+    <div class="pane" id="panenet">
+    <div class="row">
+      <button class="primary" id="btnHost">HOST GAME</button>
       <input id="joinIn" placeholder="ROOM CODE" maxlength="5" style="width:150px;text-transform:uppercase" />
       <button id="btnJoin">JOIN GAME</button>
-      <button class="sndbtn" id="btnSound">SOUND: ON</button>
-      <button id="btnCustom" style="border-color:rgba(201,163,255,.5);color:#e9dcff">YOUR AIRCRAFT</button>
-      <button id="btnSettings">SETTINGS</button>
+    </div>
+    <div class="hint" style="margin-top:12px">
+      Every pilot gets their own Command HQ, hangars and defences — last compound
+      standing wins. Up to six separate compounds; past that pilots pair up.
+      The weather stays clear in a room so everyone sees the same sky.
     </div>
     <div id="netmsg"></div>
     <div class="row" id="codeRow" style="display:none;align-items:center;gap:18px">
@@ -471,15 +510,21 @@ td{padding:6px 8px;border-bottom:1px solid rgba(255,255,255,.045)}
       </div>
       <button class="primary" id="btnEnterRoom" style="font-size:15px;padding:14px 26px">ENTER ROOM</button>
     </div>
+    </div>
 
+    <div class="pane" id="paneperm">
     <div id="perm">
       <div class="hd"><b>PERMANENT UPGRADES</b><span class="tk" id="tokCount">0 ⬢ TOKENS</span></div>
       <div id="career"></div>
       <div id="permList"></div>
     </div>
+    </div>
 
-    <div class="hint" style="margin-top:18px">
-      New here? <b>FLIGHT TRAINING</b> walks you through flying, gunnery, missiles and building base defenses in about four minutes.<br/><br/>
+    <div class="pane" id="paneaircraft"></div>
+    <div class="pane" id="panesettings"></div>
+
+    <div class="pane" id="panehelp">
+    <div class="hint">
       <b>MOVE</b> <kbd>W</kbd> climb · <kbd>S</kbd> dive · <kbd>Q</kbd><kbd>E</kbd> slide sideways — straight up, down and across, no turning<br/>
       <b>FLY</b> mouse aims · <kbd>A</kbd><kbd>D</kbd> roll · mouse wheel throttle · <kbd>Shift</kbd> afterburner<br/>
       <b>FIGHT</b> <kbd>LMB</kbd>/<kbd>Space</kbd> fire · <kbd>1</kbd>–<kbd>5</kbd> weapon (<kbd>4</kbd> = missiles) · <kbd>RMB</kbd>/<kbd>F</kbd> quick missile · <kbd>X</kbd> flares · <kbd>R</kbd> resupply<br/>
@@ -487,6 +532,7 @@ td{padding:6px 8px;border-bottom:1px solid rgba(255,255,255,.045)}
       <b>VIEW</b> you fly from the <b>cockpit</b> — <kbd>C</kbd> cycles cockpit / chase / cinematic · <kbd>Tab</kbd> scoreboard<br/>
       <b>GAME</b> <kbd>Esc</kbd> or <kbd>P</kbd> pause &amp; exit · <kbd>M</kbd> mute sound<br/><br/>
       Destroy the enemy <b>Command HQ</b> to win the round. Credits come from kills, structure hits and passive income.
+    </div>
     </div>
   </div>
 </div>
@@ -2785,10 +2831,26 @@ function fireStruct(s,target){
    what reads as a sky full of planes wandering about. */
 function pickRole(){
   const r=Math.random();
-  if(r<.36) return 'ace';      // hunts the player, and keeps hunting them
-  if(r<.68) return 'hq';       // straight for the enemy Command HQ
-  if(r<.87) return 'hunter';   // hunts other aircraft
+  if(r<.60) return 'ace';      // most of them are hunting the player
+  if(r<.80) return 'hq';       // straight for the enemy Command HQ
+  if(r<.91) return 'hunter';   // hunts other aircraft
   return 'bomber';             // hangars and the defensive ring
+}
+/* Most of the enemy is hunting the player, which would mean fifteen aircraft
+   arriving at once and nothing anybody could do about it. Only the closest few
+   press the attack; the rest hold off at arm's length and rotate in as slots
+   free up. It reads as being hunted by a pack rather than shot by a wall. */
+function rankAces(){
+  const me=G.me;
+  if(!me||!me.alive){ G.aceSlots=null; return; }
+  const list=[];
+  for(const q of G.planes.values())
+    if(q.isBot&&q.alive&&q.role==='ace'&&q.team!==me.team&&q.aiTarget===me)
+      list.push([dist(q.pos,me.pos),q.id]);
+  list.sort((a,b)=>a[0]-b[0]);
+  const slots=Math.max(3,Math.round(3+DK().k*3.5));   // seven at once on Regular
+  G.aceSlots=new Set(list.slice(0,slots).map(x=>x[1]));
+  G.aceTotal=list.length;
 }
 /** whoever is sitting on this aircraft's tail, if anyone */
 function threatBehind(p){
@@ -3041,6 +3103,18 @@ function stepBot(p,dt){
 
   // Keep them out of each other. With this many aircraft up, a head-on at
   // combined closing speed is otherwise a routine way to die.
+  // Waiting their turn: hold a wide orbit out at arm's length, guns cold, until
+  // a slot opens up.
+  p.holding = p.role==='ace' && t===G.me && G.aceSlots && !G.aceSlots.has(p.id);
+  if(p.holding){
+    const ax=p.pos[0]-t.pos[0], az=p.pos[2]-t.pos[2];
+    const l=Math.hypot(ax,az)||1, R=900;   // close enough to be menacing, and to rotate in fast
+    aim=[t.pos[0]+ax/l*R - az/l*420,
+         Math.max(t.pos[1]+90, ghNow+300),
+         t.pos[2]+az/l*R + ax/l*420];
+    p.thr=.85; c.ab=0;
+  }
+
   // On short final at a building they are committed; jinking there is what
   // turned every attack run into another orbit.
   const committed=p.aiStruct&&t&&t.pos&&
@@ -3109,7 +3183,10 @@ function stepBot(p,dt){
 
   // Damaged aircraft break off and go home to heal rather than pressing on into
   // the guns. Survival is worth more than one more pass.
-  if(!p.isLocal&&p.hp<p.maxHp*.30&&!p.rtb&&Math.random()<dt*.9) p.rtb=true;
+  // An aircraft sent after the player presses the attack; it only goes home
+  // when it is nearly finished, and the rest break off at a third of hull.
+  const rtbAt=p.role==='ace'?.12:.30;
+  if(!p.isLocal&&p.hp<p.maxHp*rtbAt&&!p.rtb&&Math.random()<dt*.9) p.rtb=true;
   if(p.rtb){
     if(p.hp>p.maxHp*.72||!hangarFor(p.team)) p.rtb=false;
     else{
@@ -3150,12 +3227,12 @@ function stepBot(p,dt){
     ? [st.pos[0],st.pos[1]+DOME_R*.55,st.pos[2]]        // shoot the shell, not the ground
     : [st.pos[0],st.pos[1]+(STRUCTS[st.type]?STRUCTS[st.type].y||8:8),st.pos[2]];
   let gt=null, gd=1e9, gAir=false;
-  const at=p.aiTarget;
+  const at=p.holding?null:p.aiTarget;      // holding off: guns cold
   if(at&&at.alive!==false&&at.pos){
     if(at.type){ const c2=gunPoint(at), d=dist(c2,p.pos); if(d<700){ gt={pos:c2}; gd=d; } }
     else { const d=dist(at.pos,p.pos); if(d<820){ gt=at; gd=d; gAir=true; } }
   }
-  if(!gt){                               // nothing on the objective yet: fight en route
+  if(!gt&&!p.holding){                   // nothing on the objective yet: fight en route
     let bd=1e9, air=null;
     for(const q of G.planes.values()){
       if(q===p||!q.alive||q.team===p.team) continue;
@@ -3164,7 +3241,7 @@ function stepBot(p,dt){
     }
     if(air&&bd<820){ gt=air; gd=bd; gAir=true; }
   }
-  if(!gt){
+  if(!gt&&!p.holding){
     for(const st of G.structures){
       if(!st.alive||st.team===p.team) continue;
       const c2=gunPoint(st), d=dist(c2,p.pos);
@@ -3191,7 +3268,9 @@ function stepBot(p,dt){
     // in and then never pulled the trigger.
     if(tl[2] < (gAir?-0.986:-0.94)){
       c.fire=1;
-      if(p.have.missile&&gAir&&td>300&&td<1600&&Math.random()<dt*.7){ p.lock=gt; c.fire2=1; }
+      // an ace shoots sooner and more often; it is here for one aeroplane
+      const mslRate=(p.role==='ace'&&gt===G.me)?.42:.30;
+      if(p.have.missile&&gAir&&td>260&&td<1900&&Math.random()<dt*mslRate){ p.lock=gt; c.fire2=1; }
     }
   }
   if(p.hp<p.maxHp*.28&&Math.random()<dt*.4&&p.flares>0){
@@ -3564,7 +3643,10 @@ function updateHUD(dt){
 /* Threat callouts. Each has its own cooldown so they announce a change in the
    situation rather than nagging every frame. */
 const warns=[];
-let warnCd={six:0,msl:0,base:0};
+let warnCd={six:0,msl:0,base:0,clear:0,hurt:0,pack:0,hangar:0};
+const NUMWORD=['no','one','two','three','four','five','six','seven','eight','nine','ten','eleven','twelve'];
+const numword=n=>String(NUMWORD[n]!==undefined?NUMWORD[n]:n).toUpperCase();
+const pick=a=>a[Math.floor(Math.random()*a.length)];
 function pushWarn(key,txt,cls,hold,cool){
   if(warnCd[key]>0) return;
   warnCd[key]=cool;
@@ -3578,16 +3660,44 @@ function updateWarnings(dt){
     // missile inbound — any missile currently tracking you
     if(G.missiles.some(m=>m.target===p))
       pushWarn('msl', p.flares>0?'⚠ MISSILE INBOUND — PRESS X FOR FLARES':'⚠ MISSILE INBOUND — NO FLARES','crit',2.6,3.0);
-    // bandit on your six
-    const f=fwdOf(p,[0,0,0]);
+    // Who is actually behind you, and which way to break.
+    const f=fwdOf(p,[0,0,0]), rt=rightOf(p,[0,0,0]);
+    let tail=0, nearest=null, nd=1e9;
     for(const q of G.planes.values()){
       if(q===p||!q.alive||q.team===p.team) continue;
       const to=[q.pos[0]-p.pos[0],q.pos[1]-p.pos[1],q.pos[2]-p.pos[2]];
-      const l=Math.hypot(...to); if(l>750) continue;
-      if((to[0]*f[0]+to[1]*f[1]+to[2]*f[2])/l < -.55){
-        pushWarn('six','ENEMY ON YOUR SIX','six',2.2,4.5); break;
+      const l=Math.hypot(...to); if(l>900) continue;
+      if((to[0]*f[0]+to[1]*f[1]+to[2]*f[2])/l < -.45){
+        tail++;
+        if(l<nd){ nd=l; nearest=to; }
       }
     }
+    if(tail>0){
+      const side=nearest&&(nearest[0]*rt[0]+nearest[2]*rt[2])>0?'LEFT':'RIGHT';
+      const txt = tail===1
+        ? pick(['ONE ON YOUR TAIL — BREAK '+side,
+                'BANDIT ON YOUR SIX — BREAK '+side,
+                'HE IS RIGHT BEHIND YOU — BREAK '+side])
+        : numword(tail)+' BIRDS ON YOUR TAIL'+
+          (tail>=4?' — GET OUT OF THERE':' — BREAK '+side);
+      pushWarn('six',txt,'six',2.4,tail>=3?2.6:4.0);
+      G.hadTail=2.5;
+    }else if(G.hadTail>0){
+      G.hadTail-=dt;
+      if(G.hadTail<=0) pushWarn('clear',pick(['TAIL IS CLEAR','YOU ARE CLEAN','NOBODY BEHIND YOU']),'ok',1.8,6);
+    }
+    // the pack waiting its turn out at arm's length
+    if(G.aceTotal>2&&G.aceSlots){
+      const holding=G.aceTotal-G.aceSlots.size;
+      if(holding>=2) pushWarn('pack',numword(holding)+' MORE CIRCLING, WAITING THEIR TURN','warn',2.4,14);
+    }
+    // your own state
+    const hf=p.hp/p.maxHp;
+    if(hf<.22) pushWarn('hurt',pick(['HULL CRITICAL — GET HOME','YOU ARE COMING APART','CRITICAL — DISENGAGE']),'crit',2.6,7);
+    else if(hf<.5) pushWarn('hurt',pick(['YOU ARE HIT','TAKING DAMAGE','SHE IS SMOKING']),'warn',2.0,9);
+    // your hangars, since losing them is what grounds you
+    const myHangars=G.structures.filter(s=>s.alive&&s.type==='spawner'&&s.team===G.team).length;
+    if(myHangars===1) pushWarn('hangar','ONE HANGAR LEFT — DEFEND IT','warn',2.6,25);
     const home=G.structures.find(s=>s.type==='hq'&&s.team===G.team);
     if(home&&home.alive&&home.hp<home.maxHp*.55)
       pushWarn('base','⚠ HOME BASE UNDER ATTACK','crit',2.6,14);
@@ -3930,6 +4040,7 @@ function quitToMenu(){
   for(const id of ['pause','over','shop','dead','tut','mission']) $(id).classList.remove('on');
   $('hud').classList.remove('on');
   $('menu').classList.add('on');
+  homePanels(); selectTab('play');
   $('codeRow').style.display='none'; netmsg('');
   unlockButtons();
   renderPerm();
@@ -3971,6 +4082,7 @@ async function hostGame(){
   net.peer=new Peer(ROOM_PREFIX+net.room,{debug:0});
   net.peer.on('open',()=>{
     net.ready=true;
+    selectTab('net');
     $('codeRow').style.display='flex'; $('code').textContent=net.room;
     netmsg('Lobby open. Share the code, then enter the room — everyone who is in by then gets their own base.');
     lobbyCount();
@@ -4444,6 +4556,8 @@ function buildCustomPlane(){
 }
 let customOpen=false, previewSpin=0, previewDrag=null;
 function openCustom(){
+  if(!G.started){ selectTab('aircraft'); return; }
+  $('customHost').appendChild($('customBody'));
   customOpen=true; renderCustom();
   // the menu's own backdrop is nearly opaque and sits underneath, which would
   // black out the live preview showing through the clear side of this panel
@@ -4451,6 +4565,7 @@ function openCustom(){
   $('custom').classList.add('on');
 }
 $('btnCloseCustom').onclick=()=>{
+  homePanels();
   customOpen=false; previewDrag=null;
   $('custom').classList.remove('on');
   if(!G.started) $('menu').classList.add('on');
@@ -4559,8 +4674,34 @@ function renderSettings(){
   $('btnResetLevel').textContent=confirmArm.level?'TAP AGAIN TO CONFIRM':'RESET CAMPAIGN LEVEL';
   $('btnResetAll').textContent=confirmArm.all?'TAP AGAIN TO ERASE EVERYTHING':'ERASE ALL PROGRESS';
 }
-function openSettings(){ confirmArm={level:0,all:0}; renderSettings(); $('settings').classList.add('on'); }
-$('btnCloseSettings').onclick=()=>$('settings').classList.remove('on');
+/* The menu is tabbed. Settings and Your Aircraft are the same panels the pause
+   screen uses, so their bodies are moved between the menu pane and the overlay
+   rather than duplicated — every control keeps its id and its handler. */
+let menuTab='play';
+function selectTab(id){
+  menuTab=id;
+  for(const b of document.querySelectorAll('#tabs button')) b.classList.toggle('on',b.dataset.tab===id);
+  for(const t of ['play','net','perm','aircraft','settings','help'])
+    $('pane'+t).classList.toggle('on',t===id);
+  if(id==='settings'){ confirmArm={level:0,all:0}; renderSettings(); }
+  if(id==='perm') renderPerm();
+  if(id==='aircraft'){ customOpen=true; renderCustom(); }
+  else if(!$('custom').classList.contains('on')) customOpen=false;
+}
+function homePanels(){          // put both bodies back in their menu panes
+  const sb=$('settingsBody'), cb=$('customBody');
+  if(sb) $('panesettings').appendChild(sb);
+  if(cb) $('paneaircraft').appendChild(cb);
+}
+homePanels();
+for(const b of document.querySelectorAll('#tabs button')) b.onclick=()=>{ selectTab(b.dataset.tab); sfx('buy',.25); };
+function openSettings(){
+  confirmArm={level:0,all:0};
+  if(!G.started){ selectTab('settings'); return; }        // it is a tab in the menu
+  $('settingsHost').appendChild($('settingsBody'));
+  renderSettings(); $('settings').classList.add('on');
+}
+$('btnCloseSettings').onclick=()=>{ $('settings').classList.remove('on'); homePanels(); };
 $('sensRange').oninput=e=>{ PROFILE.sens=(+e.target.value)/100; $('sensVal').textContent=PROFILE.sens.toFixed(2); saveProfile(); };
 $('btnResetLevel').onclick=()=>{
   if(!confirmArm.level){ confirmArm.level=1; renderSettings(); return; }
@@ -4810,8 +4951,11 @@ function addBots(n){
     const teams=teamList();
     const team=teams.length>2?teams[i%teams.length]
                              :(i%2===0?foeBaseOf(G.team):G.team);
-    const p=newPlane({name:botName(),team,isBot:true,role:pickRole()});
-    p.upg={mg:rndi(1,2),engine:rndi(0,1),flare:0,missile:Math.random()<.25?1:0};
+    const role=pickRole();
+    const p=newPlane({name:botName(),team,isBot:true,role});
+    p.upg = role==='ace'
+      ? {mg:2,engine:2,wings:1,flare:1,missile:1}
+      : {mg:rndi(1,2),engine:rndi(0,1),flare:0,missile:Math.random()<.25?1:0};
     applyUpgrades(p); rearm(p); doRespawn(p);
     G.planes.set(p.id,p);
   }
@@ -4819,9 +4963,12 @@ function addBots(n){
 /** launch a fighter from a hangar — host/solo only, clients receive it in the snapshot */
 function spawnBotFrom(s){
   const drone=Math.random()<(G.droneLvl[s.team]||0)*.33;
-  const p=newPlane({name:(drone?'UCAV-':'')+botName(),team:s.team,isBot:true,drone,
-                    role:pickRole()});
-  p.upg={mg:rndi(1,2),engine:rndi(0,1)};
+  const role=pickRole();
+  const p=newPlane({name:(drone?'UCAV-':'')+botName(),team:s.team,isBot:true,drone,role});
+  // the ones sent after the player fly the better aircraft and carry a missile
+  p.upg = role==='ace'
+    ? {mg:2,engine:2,wings:1,flare:1,missile:1}
+    : {mg:rndi(1,2),engine:rndi(0,1)};
   applyUpgrades(p); rearm(p);
   p.pos=[s.pos[0]+rnd(-50,50), s.pos[1]+rnd(200,330), s.pos[2]+rnd(-50,50)];
   const to=[-p.pos[0],0,-p.pos[2]], l=Math.hypot(to[0],to[2])||1;
@@ -4910,8 +5057,6 @@ $('btnEnterRoom').onclick=()=>{
 };
 $('btnSound').onclick=()=>setMuted(!PROFILE.muted);
 $('btnSound3').onclick=()=>setMuted(!PROFILE.muted);
-$('btnSettings').onclick=()=>openSettings();
-$('btnCustom').onclick=()=>openCustom();
 $('btnSettings2').onclick=()=>openSettings();
 $('btnSound2').onclick=()=>setMuted(!PROFILE.muted);
 $('btnResume').onclick=()=>togglePause();
@@ -5029,6 +5174,7 @@ function frame(now){
     }
     stepMission(dt);
     stepWeather(dt);
+    if(authority()) rankAces();
     musicTick();
     netTick(dt);
     if(G.crew) stepCrew(dt); else updateCamera(dt);
