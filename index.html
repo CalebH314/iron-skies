@@ -1748,7 +1748,7 @@ try{ localStorage.removeItem('ironskies.board'); }catch(e){}   // retired featur
 const G={
   mode:'menu', started:false, t:0, dt:0,
   planes:new Map(), bullets:[], missiles:[], parts:[], structures:[],
-  me:null, myId:uid(), team:'blue', eliminated:{}, netLevel:null, netMap:null, hangarT:{},
+  me:null, myId:uid(), team:'blue', eliminated:{}, netLevel:null, netMap:null, hangarT:{}, hangarSaid:{},
   credits:600, kills:0, deaths:0, score:0,
   camMode:0, camPos:[0,120,300], camLook:[0,60,0],
   round:null, botFill:5, economyT:0, fires:[], roster:[],
@@ -2285,7 +2285,7 @@ function fireWeapon(p,dt){
           rocket:id==='rocket',
           // 0.55 was tuned when every bot gunned the HQ. Now only the raiders
           // do, so they hit properly and the rest stay incidental.
-          antiStruct:p.isBot?(p.role==='hq'?3.4:0.9):1, life:id==='laser'?1.4:id==='inferno'?.38:3.0,
+          antiStruct:p.isBot?(p.role==='hq'?2.3:0.8):1, life:id==='laser'?1.4:id==='inferno'?.38:3.0,
           fire:id==='inferno', grow:id==='inferno'?1:0, kind:id});
       }
       if(id==='inferno'){          // embers streaming off the flame
@@ -2388,7 +2388,9 @@ function killPlane(p,byId,crash){
   const killer=byId?G.planes.get(byId):null;
   // flying into the ground is never credited as somebody's kill
   if(crash){
-    feed(`<span class="${p.team}">${esc(p.name)}</span> flew into the ground`);
+    // not every crash is the ground — say what they actually hit
+    const how=(p.crashLabel||'FLEW INTO THE TERRAIN').toLowerCase();
+    feed(`<span class="${p.team}">${esc(p.name)}</span> ${how}`);
   }else if(byId===G.myId){
     G.kills++; G.credits+=260; G.score+=100;
     feed(`<span class="grn">${esc(myName())}</span> ✜ <span class="red">${esc(p.name)}</span>`);
@@ -2409,7 +2411,7 @@ function killPlane(p,byId,crash){
                      : (who?('SHOT DOWN BY '+who):'BROUGHT DOWN BY ENEMY FIRE');
     p.crashLabel=null;
     $('dead').classList.add('on');
-    net.send({t:'dead',id:p.id,by:byId||null,crash:!!crash});
+    net.send({t:'dead',id:p.id,by:byId||null,crash:!!crash,how:(p.crashLabel||'').toLowerCase()||undefined});
   }
   if(p.isBot&&net.isHost) net.send({t:'botdead',id:p.id,by:byId||null});
 }
@@ -2491,7 +2493,10 @@ function stepCollisions(dt){
       // an aircraft rolling out of its own hangar is sitting inside that
       // building's collision sphere; it must not be wrecked by its own shed
       const own=s.team===a.team;
-      if(own&&(a.safeT||0)>0) continue;
+      // A bot smashing into its own HQ on the way out of the hangar is a
+      // nuisance, not a rule anyone wanted; only people collide with their own
+      // side's buildings.
+      if(own&&(a.isBot||(a.safeT||0)>0)) continue;
       a.crashLabel='CRASHED INTO '+(own?'YOUR OWN ':'A ')+cfg.short;
       crashInto(a,a.speed,MASS(a)*3,a.crashLabel);
       if(authority()&&!own) damageStruct(s,impactDamage(a.speed)*MASS(a)*1.6,a.id);
@@ -2773,13 +2778,15 @@ function fireStruct(s,target){
 /* -------------------------------- bots ----------------------------------- */
 /* Roughly forty in a hundred press the HQ; the rest hunt aircraft, bomb
    installations, come for you personally, or stay out of trouble. */
+/* Four jobs, and an aircraft keeps the one it is given for its whole life.
+   There is deliberately no "loiter" role — an aircraft with nothing to do is
+   what reads as a sky full of planes wandering about. */
 function pickRole(){
   const r=Math.random();
-  if(r<.32) return 'hq';       // the HQ is still the single biggest draw
-  if(r<.62) return 'ace';      // and nearly as many come for you personally
-  if(r<.78) return 'hunter';
-  if(r<.92) return 'bomber';
-  return 'shy';
+  if(r<.32) return 'hq';       // straight for the enemy Command HQ
+  if(r<.60) return 'ace';      // hunts the player, and keeps hunting them
+  if(r<.84) return 'hunter';   // hunts other aircraft
+  return 'bomber';             // hangars and the defensive ring
 }
 /** whoever is sitting on this aircraft's tail, if anyone */
 function threatBehind(p){
@@ -2806,25 +2813,28 @@ function stepBot(p,dt){
     return;
   }
   p.aiT-=dt;
-  // If it has not gained ground on its objective in eight seconds it is not
-  // going to — pick something else rather than milling about.
-  if(p.aiTarget&&p.aiTarget.pos){
+  if(!p.role) p.role=pickRole();
+  // An ace is hunting *you*. The moment you are back in the air it comes for
+  // you again, wherever it happens to be.
+  if(p.role==='ace'&&G.me&&G.me.alive&&G.me.team!==p.team&&p.aiTarget!==G.me){
+    p.aiTarget=G.me; p.aiStruct=false; p.aiBest=undefined; p.aiStuck=0; p.aiT=30;
+  }
+  // Aircraft commit. A target is held until it is destroyed — re-rolling every
+  // few seconds is what had a sky full of them drifting: nothing was ever seen
+  // through to the end.
+  if(p.aiTarget&&p.aiTarget.pos&&p.aiTarget.alive!==false){
     const d=dist(p.pos,p.aiTarget.pos);
     if(p.aiBest===undefined||d<p.aiBest-25){ p.aiBest=d; p.aiStuck=0; }
-    else {
+    else if(p.aiTarget.speed!==undefined&&p.aiTarget!==G.me){
+      // a stern chase after another aircraft is worth swapping quarry over —
+      // but it stays a hunter, it does not wander off
       p.aiStuck=(p.aiStuck||0)+dt;
-      // A stern chase after another aircraft is the thing worth abandoning. A
-      // building does not move, so a long transit through a fight is normal
-      // progress and gets a much longer fuse.
-      const fuse=(p.aiTarget.speed!==undefined)?7:22;
-      if(p.aiStuck>fuse){ p.aiAvoid=p.aiTarget.id; p.aiTarget=null; p.aiT=0; }
+      if(p.aiStuck>9){ p.aiAvoid=p.aiTarget.id; p.aiTarget=null; p.aiT=0; }
     }
   }
   if(p.aiT<=0||!p.aiTarget||(p.aiTarget.alive===false)){
     p.aiBest=undefined; p.aiStuck=0;
-    p.aiT=rnd(2.5,5);
-    // A mixed force rather than one endless bombing run: see pickRole().
-    if(!p.role) p.role=pickRole();
+    p.aiT=30;                     // a safety net, not a schedule
     const foeTeam=foeBaseOf(p.team,p.pos);
     // a dome makes the HQ untouchable, so it becomes the objective instead
     // the nearest rival HQ, not merely the first one in the array — with six
@@ -2841,10 +2851,11 @@ function stepBot(p,dt){
     // down; one behind or a long way off turns into a stern chase the aircraft
     // never wins, which is what most of the aimless drifting actually was.
     const fwd=fwdOf(p,[0,0,0]);
-    const nearestFoe=(maxD)=>{
+    const nearestFoe=(maxD,notPlayer)=>{
       let best=null,bs=1e18;
       for(const q of G.planes.values()){
         if(q===p||!q.alive||q.team===p.team) continue;
+        if(notPlayer&&q.isLocal) continue;      // the player is the ace's job
         if(q.id===p.aiAvoid) continue;          // just gave up on this one
         const dx=q.pos[0]-p.pos[0],dy=q.pos[1]-p.pos[1],dz=q.pos[2]-p.pos[2];
         const d=Math.hypot(dx,dy,dz)||1;
@@ -2877,19 +2888,23 @@ function stepBot(p,dt){
     };
     let tgt=null;
     switch(p.role){
-      case 'hq':     tgt=hqT||anyGround()||nearestFoe(CHASE); break;
-      case 'bomber': tgt=anyGround()||hqT||nearestFoe(CHASE); break;
-      case 'hunter': {   // a hunter that finds you close by comes for you
-        const near=nearestFoe(CHASE);
-        tgt=(G.me&&G.me.alive&&G.me.team!==p.team&&dist(G.me.pos,p.pos)<2200)
-            ? G.me : (near||anyGround()||hqT);
+      case 'hq':     tgt=hqT||anyGround()||nearestFoe(0,true); break;
+      case 'bomber': tgt=anyGround()||hqT||nearestFoe(0,true); break;
+      case 'hunter': {
+        // Other aircraft, never the player — otherwise, because targets are now
+        // held for life, hunters accumulate on the human until the whole sky is
+        // chasing one aeroplane.
+        const near=nearestFoe(CHASE,true)||nearestFoe(0,true);
+        tgt=near||anyGround()||hqT;
         break;
       }
-      case 'ace':    // comes for the human specifically
-        tgt=(G.me&&G.me.alive&&G.me.team!==p.team)?G.me:(nearestFoe(CHASE)||hqT); break;
-      case 'shy':    // works the edges and avoids the furball
-        tgt=anyGround(true)||hqT; break;
-      default:       p.role=pickRole(); tgt=hqT||nearestFoe(CHASE);
+      case 'ace':    // the player, and nothing else while they are alive
+        tgt=(G.me&&G.me.alive&&G.me.team!==p.team)
+            ? G.me
+            : (G.me&&G.structures.find(x=>x.alive&&x.type==='hq'&&x.team===G.me.team))
+              || nearestFoe(0,true) || hqT;
+        break;
+      default:       p.role=pickRole(); tgt=hqT||nearestFoe(0,true);
     }
     p.aiTarget=tgt||null;
     p.aiStruct=!!(tgt&&tgt.type);   // a structure rather than an aircraft
@@ -3030,10 +3045,11 @@ function stepBot(p,dt){
     // dodging them was firing constantly and turning every attack run into an
     // orbit. Only an enemy aircraft can actually be hit.
     if(q===p||!q.alive||q.team===p.team) continue;
-    if(q===t) continue;                                // the one it is fighting
     const dx=q.pos[0]-p.pos[0], dy=q.pos[1]-p.pos[1], dz=q.pos[2]-p.pos[2];
     const d=Math.hypot(dx,dy,dz);
-    if(d>300||d<1) continue;
+    // It presses an attack on its own quarry right in, then breaks off — a
+    // hunter that holds a target for life will otherwise merge with it head-on.
+    if(d>(q===t?130:300)||d<1) continue;
     if((dx*f[0]+dy*f[1]+dz*f[2])/d < .70) continue;    // dead ahead only
     if(d<dodgeD){ dodgeD=d; dodge=q; }
   }
@@ -3865,7 +3881,7 @@ function endRound(winner){
 function resetRound(){
   G.round=null; G.over=false;
   $('over').classList.remove('on');
-  G.structures.length=0; structSlot=teamMap(0); hangarSlot=teamMap(0); G.eliminated={};
+  G.structures.length=0; structSlot=teamMap(0); hangarSlot=teamMap(0); G.eliminated={}; G.hangarSaid={};
   G.bullets.length=0; G.missiles.length=0; G.parts.length=0; G.fires.length=0;
   buildCompounds();
   for(const p of G.planes.values()){ p.hp=p.maxHp; p.alive=true; doRespawn(p); }
@@ -3885,7 +3901,7 @@ function quitToMenu(){
   for(let i=0;i<3;i++) FOG[i]=WEATHERS[0].fog[i];
   if(gl&&U&&U.uFogCol) gl.uniform3fv(U.uFogCol,FOG);
   { const el=$('wxflash'); if(el) el.style.opacity=0; }
-  G.me=null; G.crew=null; G.roster=[]; G.netLevel=null; G.netMap=null; G.hangarT={}; G.credits=600; G.kills=0; G.deaths=0; G.score=0; G.camMode=0;
+  G.me=null; G.crew=null; G.roster=[]; G.netLevel=null; G.netMap=null; G.hangarT={}; G.hangarSaid={}; G.credits=600; G.kills=0; G.deaths=0; G.score=0; G.camMode=0;
   baseBarEls.forEach(el=>el.classList.remove('on'));
   tagEls.forEach(el=>el.remove()); tagEls.clear();
   for(const id of ['pause','over','shop','dead','tut','mission']) $(id).classList.remove('on');
@@ -4161,7 +4177,7 @@ function onNet(raw,conn){
       if(m.by===G.myId&&!m.crash){ G.kills++; G.credits+=260; G.score+=100;
         feed(`<span class="grn">${esc(myName())}</span> ✜ <span class="${p.team}">${esc(p.name)}</span>`);
         toast('TARGET DESTROYED  +260','gold',1.4); }
-      else if(m.crash) feed(`<span class="${p.team}">${esc(p.name)}</span> flew into the ground`);
+      else if(m.crash) feed(`<span class="${p.team}">${esc(p.name)}</span> ${(m.how||'flew into the terrain')}`);
       else if(k){ k.kills++; feed(`<span class="${k.team}">${esc(k.name)}</span> ✜ <span class="${p.team}">${esc(p.name)}</span>`); }
       else feed(`<span class="${p.team}">${esc(p.name)}</span> went down`);
       break;
@@ -4949,16 +4965,28 @@ function frame(now){
         if(G.eliminated&&G.eliminated[k]) continue;
         if(!G.structures.some(x=>x.alive&&x.type==='hq'&&x.team===k)){ G.hangarT[k]=0; continue; }
         const have=G.structures.filter(x=>x.alive&&x.type==='spawner'&&x.team===k).length;
-        if(have>=2){ G.hangarT[k]=0; continue; }
+        if(have>=2){ G.hangarT[k]=0; G.hangarSaid[k]=0; continue; }
         G.hangarT[k]=(G.hangarT[k]||0)+dt;
-        const wait=(have===0?34:62)*(campaign()&&net.mode==='solo'&&k!==G.team?diff.economy():1);
+        const wait=(have===0?52:80)*(campaign()&&net.mode==='solo'&&k!==G.team?diff.economy():1);
+        // Say it up front, with the clock, so a rebuilt hangar never looks like
+        // aircraft appearing out of nowhere.
+        if(have===0&&!G.hangarSaid[k]){
+          G.hangarSaid[k]=1;
+          const secs=Math.ceil(wait-G.hangarT[k]);
+          feed(`<span class="${k}">${k.toUpperCase()}</span> has no hangars — rebuilding, ${secs}s`);
+          toast(k===G.team
+            ? 'YOUR LAST HANGAR IS DOWN — A REPLACEMENT IN '+secs+'s'
+            : k.toUpperCase()+' HAS NO HANGARS LEFT — THEY WILL REBUILD ONE IN '+secs+'s',
+            k===G.team?'red':'grn', 6);
+        }
         if(G.hangarT[k]>=wait){
-          G.hangarT[k]=0;
+          G.hangarT[k]=0; G.hangarSaid[k]=0;
           const st=addStruct('spawner',k,null);
           net.send({t:'sbuilt',s:packStruct(st)});
-          feed(`<span class="${k}">${k.toUpperCase()}</span> brought a hangar back online`);
+          feed(`<span class="${k}">${k.toUpperCase()}</span> brought a hangar back online — launching again`);
           toast(k===G.team?'A NEW HANGAR IS OPERATIONAL — YOU CAN LAUNCH AGAIN'
-                          :k.toUpperCase()+' REBUILT A HANGAR', k===G.team?'grn':'gold',3.5);
+                          :k.toUpperCase()+' REBUILT A HANGAR — THEY ARE LAUNCHING AGAIN',
+                k===G.team?'grn':'gold', 6);
         }
       }
       G.economyT-=dt;
