@@ -490,7 +490,7 @@ td{padding:6px 8px;border-bottom:1px solid rgba(255,255,255,.045)}
     <div class="hint" style="margin-top:14px">
       <b>FLIGHT TRAINING</b> teaches flying, gunnery, missiles and base defences in about four minutes.<br/>
       <b>SOLO vs BOTS</b> is the campaign — level the enemy Command HQ to advance.<br/>
-      <b>FLY A MISSION</b> is a canyon run against the clock, no combat.
+      <b>FLY A MISSION</b> is a short solo contract — a strike run down a thin canyon, or a lone interception against a flight already in the air. They pay well in tokens.
     </div>
     </div>
 
@@ -991,6 +991,7 @@ function setTerrain(lv,kind){
   TERRAIN.wallTop=TERRAIN.trench?980:CEILING+60;
   TERRAIN.wallZ=4600;                          // mesa covers nearly the whole map
   TERRAIN.half=Math.max(170,290-9*lv);         // tighter slot each level
+  if(G.mission) TERRAIN.half=Math.max(118,Math.round(TERRAIN.half*.58));   // strike runs are thin
   TERRAIN.floor=80;
   TERRAIN.ridges=[];
   if(kind==='hills'){
@@ -1100,7 +1101,7 @@ function buildTerrainMesh(){
 /** Pick and build the landscape for whatever we are about to play. */
 function applyTerrain(){
   if(G.tut) setTerrain(1,false);                 // training stays open and forgiving
-  else if(G.mission) setTerrain(rndi(4,16),true);   // every mission is a canyon
+  else if(G.mission) setTerrain(rndi(4,16),(G.mission.def&&G.mission.def.map)||'canyon');
   // a canyon has two mouths, so it can only serve two sides
   else {
     const lv=(G.netLevel!=null)?G.netLevel:PROFILE.level;   // clients follow the host's map
@@ -1406,6 +1407,13 @@ function buildStructMesh(type,tc){
     b.push(); b.tr(0,6.6,0); b.box(21,.8,21,tc); b.pop();
     for(const s of [1,-1]){ b.push(); b.tr(s*8,8,8); b.box(3,4,3,dark); b.pop(); }
     b.push(); b.tr(0,8,0); b.prism(4.4,4.0,3,10,metal); b.pop();
+  }else if(type==='bunker'){
+    const slab=[.38,.39,.37], hatch=[.20,.21,.23];
+    b.push(); b.tr(0,3.5,0); b.box(34,7,26,slab); b.pop();
+    b.push(); b.tr(0,9,0); b.box(26,5,19,[.44,.45,.42]); b.pop();
+    b.push(); b.tr(0,13,0); b.box(15,4,12,hatch); b.pop();
+    b.push(); b.tr(0,15.6,0); b.box(9,1.4,7,tc); b.pop();
+    for(const sx of [1,-1]){ b.push(); b.tr(sx*14,5,10); b.prism(2.6,2.2,9,6,slab); b.pop(); }
   }else if(type==='infernodef'){
     const heat=[.86,.30,.12], ember=[1,.62,.18];
     b.push(); b.tr(0,3,0); b.box(17,6,17,conc); b.pop();
@@ -1623,6 +1631,8 @@ const STRUCTS={
            desc:'A shield dome over your Command HQ. Enemy aircraft that touch it are destroyed, and every round aimed at your base is absorbed — until it is beaten down.'},
   infernodef:{name:'Inferno Battery', hp:460, cost:0, range:760, r:14, y:12, turret:'flak', cd:0.09, dmg:11,
            short:'INFERNO', desc:'A ground mount for the Inferno Beam. Sprays a widening torrent of fire at anything that comes near your HQ, and what it touches keeps burning. Unlocked under permanent upgrades.'},
+  bunker: {name:'Hardened Bunker',   hp:300,  cost:0,    range:0,    r:26, y:9,  turret:null,
+           short:'BUNKER', desc:'A reinforced command bunker. Guns and rockets scratch the shell — only a missile strike will crack it.'},
   spawner:{name:'Aircraft Hangar',  hp:520,  cost:1900, range:0,    r:28, y:10, turret:null, cd:7, cap:20,
            short:'HANGAR', desc:'Sits beside the HQ and launches a fighter every 7&nbsp;seconds, up to twenty airborne. Buy <b>Hangar Crews</b> to go faster still. It is lightly built — destroy the enemy hangar and their reinforcements stop dead.'}
 };
@@ -2562,7 +2572,7 @@ function stepCollisions(dt){
       if(s.team===a.team) continue;
       a.crashLabel='CRASHED INTO A '+cfg.short;
       crashInto(a,a.speed,MASS(a)*3,a.crashLabel);
-      if(authority()) damageStruct(s,impactDamage(a.speed)*MASS(a)*1.6,a.id);
+      if(authority()&&!s.missileOnly) damageStruct(s,impactDamage(a.speed)*MASS(a)*1.6,a.id);
       explode(a.pos,20,1.2);
     }
   }
@@ -2602,7 +2612,9 @@ function stepBullets(dt){
     if(!hit) for(const s of myStructs){
       if(s.team===b.team) continue;
       const R=STRUCTS[s.type].r+4, cy=s.pos[1]+(STRUCTS[s.type].y||8);
-      if(segSphere(px,py,pz,b.pos,[s.pos[0],cy,s.pos[2]],R+beamR(b))){ damageStruct(s,dmg*(b.antiStruct||1),b.owner); hit=true; hitPos=[s.pos[0],cy,s.pos[2]]; break; }
+      if(segSphere(px,py,pz,b.pos,[s.pos[0],cy,s.pos[2]],R+beamR(b))){
+        if(!s.missileOnly) damageStruct(s,dmg*(b.antiStruct||1),b.owner);
+        hit=true; hitPos=[s.pos[0],cy,s.pos[2]]; break; }
     }
     if(!hit && b.pos[1]<Math.max(terrainH(b.pos[0],b.pos[2]),SEA)){ hit=true; }
     if(hit){
@@ -2643,8 +2655,9 @@ function stepMissiles(dt){
       // missile chases the tail and a turning target simply outruns the arc.
       const rel=[tgt.pos[0]-m.pos[0],tgt.pos[1]-m.pos[1],tgt.pos[2]-m.pos[2]];
       const range=Math.hypot(...rel)||1;
-      const tf=fwdOf(tgt,[0,0,0]);
-      const tspd=tgt.speed||0;
+      // a building has no heading and does not move, so there is nothing to lead
+      const tf=tgt.quat?fwdOf(tgt,[0,0,0]):[0,0,0];
+      const tspd=tgt.quat?(tgt.speed||0):0;
       const lead=clamp(range/Math.max(vl,1),0,3.2);
       const aim=[rel[0]+tf[0]*tspd*lead, rel[1]+tf[1]*tspd*lead, rel[2]+tf[2]*tspd*lead];
       const al=Math.hypot(...aim)||1;
@@ -4462,43 +4475,113 @@ function netTick(dt){
 /* ------------------------------ missions --------------------------------- */
 /* Short solo contracts. Winning pays tokens, which buy permanent perks on the
    menu that carry across every mode. */
-/* Missions are canyon runs: a long, winding, randomly generated trench with
-   gates strung down it. Every completed run permanently raises your G tolerance. */
+/* Two kinds, drawn evenly. A strike run down a thin canyon onto a bunker that
+   only a missile will crack, then back out the way you came; or a lone
+   interception where a flight of fighters is already up and hunting you. Every
+   completed mission permanently raises your G tolerance. */
+function ringAt(pos,dir){
+  const l=Math.hypot(dir[0],dir[2])||1;
+  G.rings.push({pos:pos.slice(),quat:qLookDir([0,0,0,1],[dir[0]/l,0,dir[2]/l],[0,1,0]),
+                done:false,next:true,i:0});
+}
 const MISSIONS=[
-  {id:'canyon', name:'Canyon Run', tokens:3, time:0,
-   desc(){ return `Fly all ${G.mission.goal} gates down the canyon without leaving it.` },
+  {id:'strike', name:'Precision Strike', tokens:9, map:'canyon', time:0,
+   desc(){ return 'Follow the canyon in, put a missile into the bunker, and get back out.' },
    setup(){
-     const gates=rndi(14,22);
-     G.mission.goal=gates;
-     // gates strung along the trench centreline from one bowl to the other
-     const z0=BASES.red[2]+BOWL_R*.5, z1=BASES.blue[2]-BOWL_R*.5;
-     for(let i=0;i<gates;i++){
-       const z=lerp(z0,z1,i/(gates-1));
-       const x=trenchX(z);
-       const y=TERRAIN.floor+rnd(110,240);
-       const zA=z+40, dx=trenchX(zA)-x, l=Math.hypot(dx,40);
-       G.rings.push({pos:[x,y,z],quat:qLookDir([0,0,0,1],[dx/l,0,40/l],[0,1,0]),
-                     done:false,next:i===0,i});
+     const M=G.mission, me=G.me;
+     // the bunker sits in the far bowl; you come in from your own end
+     const zT=BASES.red[2]+BOWL_R*.45, xT=trenchX(zT);
+     const b={id:uid(),type:'bunker',team:'red',owner:null,
+              pos:[xT,terrainH(xT,zT),zT],hp:STRUCTS.bunker.hp,maxHp:STRUCTS.bunker.hp,
+              cd:0,yaw:0,pitch:0,spin:0,alive:true,missileOnly:true};
+     G.structures.push(b);
+     M.target=b; M.phase='in';
+     // a thin screen of guns around it, so the run in is not a formality
+     for(let i=0;i<3;i++){
+       const a=i/3*Math.PI*2+.6, r=210;
+       const gx=xT+Math.cos(a)*r, gz=zT+Math.sin(a)*r;
+       const g=addStruct(i===1?'sam':'flak','red',null);
+       g.pos=[gx,terrainH(gx,gz),gz];
      }
-     G.mission.time=60+gates*11;
-     // start the player at the mouth, pointing down the trench
-     const me=G.me, z=z0-260, x=trenchX(z);
-     me.pos=[x,TERRAIN.floor+170,z];
-     const zA=z+400, dx=trenchX(zA)-x, l=Math.hypot(dx,400);
-     qLookDir(me.quat,[dx/l,0,400/l],[0,1,0]);
+     const z0=BASES.blue[2]-BOWL_R*.5, x0=trenchX(z0);
+     M.home=[x0,TERRAIN.floor+220,z0];
+     me.pos=[x0,TERRAIN.floor+190,z0];
+     const zA=z0-400, dx=trenchX(zA)-x0, l=Math.hypot(dx,400);
+     qLookDir(me.quat,[dx/l,0,-400/l],[0,1,0]);
      me.speed=230; me.thr=.85;
-     G.mission.ring=0;
+     // you are given the missiles for this, whatever you own
+     me.upg={mg:1,missile:2,flare:1}; applyUpgrades(me); rearm(me); me.wep='missile';
+     M.d0=dist(me.pos,b.pos);
+     M.time=190;
+     ringAt(b.pos,[0,0,1]);
+     updateWeps();
    },
-   progress(){ return clamp(G.mission.ring/G.mission.goal,0,1) },
-   label(){ return G.mission.ring+' / '+G.mission.goal+' gates' }}
+   tick(){
+     const M=G.mission;
+     if(M.phase==='in'&&!M.target.alive){
+       M.phase='out';
+       G.rings.length=0; ringAt(M.home,[0,0,1]);
+       toast('BUNKER DESTROYED — NOW GET OUT','grn',4);
+       sfx('buy',.9);
+     }
+   },
+   progress(){
+     const M=G.mission;
+     if(M.phase==='in') return .5*clamp(1-dist(G.me.pos,M.target.pos)/M.d0,0,1);
+     return .5+.5*clamp(1-dist(G.me.pos,M.home)/M.d0,0,1);
+   },
+   won(){ return G.mission.phase==='out'&&dist(G.me.pos,G.mission.home)<340 },
+   label(){
+     const M=G.mission;
+     return M.phase==='in'
+       ? 'Bunker '+Math.round(dist(G.me.pos,M.target.pos))+' m — missiles only'
+       : 'Egress — '+Math.round(dist(G.me.pos,M.home))+' m to the mouth';
+   }},
+
+  {id:'intercept', name:'Lone Interceptor', tokens:10, map:'hills', time:0,
+   desc(){ return `A flight of ${G.mission.goal} fighters is already up and looking for you. Nobody is coming to help.` },
+   setup(){
+     const M=G.mission, me=G.me;
+     const n=rndi(5,8)+Math.min(4,Math.floor((PROFILE.missions||0)/3));
+     M.goal=n; M.killed=0; M.foes=[];
+     me.pos=[0,760,0]; me.speed=240; me.thr=1;
+     qLookDir(me.quat,[0,0,1],[0,1,0]);
+     me.upg={mg:2,missile:2,flare:2,engine:1}; applyUpgrades(me); rearm(me); me.wep='mg';
+     for(let i=0;i<n;i++){
+       const a=i/n*Math.PI*2, R=rnd(1500,2300);
+       const q=newPlane({name:botName(),team:'red',isBot:true,role:'ace',noRespawn:true});
+       q.upg={mg:2,engine:1,flare:1};
+       applyUpgrades(q); rearm(q);
+       q.pos=[Math.cos(a)*R, me.pos[1]+rnd(-160,220), Math.sin(a)*R];
+       const to=[me.pos[0]-q.pos[0],0,me.pos[2]-q.pos[2]], l=Math.hypot(to[0],to[2])||1;
+       qLookDir(q.quat,[to[0]/l,0,to[2]/l],[0,1,0]);
+       q.speed=210; q.thr=1; q.alive=true; q.cruiseY=q.pos[1];
+       G.planes.set(q.id,q); M.foes.push(q);
+     }
+     M.time=70+n*24;
+     updateWeps();
+   },
+   tick(){
+     const M=G.mission;
+     M.killed=M.foes.filter(q=>!q.alive).length;
+   },
+   progress(){ return clamp(G.mission.killed/G.mission.goal,0,1) },
+   won(){ return G.mission.killed>=G.mission.goal },
+   label(){ return G.mission.killed+' / '+G.mission.goal+' shot down' }}
 ];
+let lastMission=-1;
 function startMission(){
-  const def=MISSIONS[rndi(0,MISSIONS.length-1)];
+  // drawn evenly, and never the same one twice running
+  let i=rndi(0,MISSIONS.length-1);
+  if(MISSIONS.length>1&&i===lastMission) i=(i+1)%MISSIONS.length;
+  lastMission=i;
+  const def=MISSIONS[i];
   net.mode='solo';
   G.mission={def,t:0,time:def.time,goal:1,done:false,ring:0,start:0};
   startGame('blue');
   G.credits=1500;
   def.setup();
+  G.mission.time=G.mission.time||def.time;
   $('mission').classList.add('on');
   $('msTitle').textContent=def.name;
   $('msDesc').textContent=def.desc();
@@ -4515,34 +4598,29 @@ function updateMissionHUD(){
 function stepMission(dt){
   const M=G.mission; if(!M||M.done) return;
   M.t+=dt;
-  // gates are checked by proximity to the ring plane
-  if(G.rings.length&&G.me&&G.me.alive){
-    const r=G.rings[M.ring];
-    if(r&&!r.done&&dist(G.me.pos,r.pos)<64){
-      r.done=true; M.ring++;
-      sfx('buy',.7); toast('GATE '+M.ring+' / '+M.goal,'grn',1.2);
-      if(G.rings[M.ring]) G.rings[M.ring].next=true;
-    }
-  }
-  if(M.def.fail&&M.def.fail()) return endMission(false);
+  if(M.def.tick) M.def.tick(dt);
   if(!G.me.alive) return endMission(false);
-  if(M.def.progress()>=1&&!M.def.winOnTimeout) return endMission(true);
-  if(M.t>=M.time) return endMission(!!M.def.winOnTimeout);
+  if(M.def.won&&M.def.won()) return endMission(true);
+  if(M.t>=M.time) return endMission(false);
 }
 function endMission(won){
   const M=G.mission; if(!M||M.done) return;
   M.done=true; G.over=true; G.paused=false;
   if(mouseLocked) document.exitPointerLock();
-  let tok=0, gGain=0;
+  let tok=0, gGain=0, bonus=0;
   if(won){
-    tok=M.def.tokens; PROFILE.tokens+=tok; PROFILE.missions++;
+    tok=M.def.tokens;
+    // finishing with time in hand pays up to half again on top
+    bonus=Math.round(tok*.5*clamp(1-M.t/M.time,0,1));
+    tok+=bonus;
+    PROFILE.tokens+=tok; PROFILE.missions++;
     gGain=.4; PROFILE.gTol=Math.round((gTolerance()+gGain)*10)/10;
   }
   PROFILE.kills+=G.kills; PROFILE.deaths+=G.deaths; saveProfile();
   $('overTitle').textContent=won?'MISSION COMPLETE':'MISSION FAILED';
   $('overTitle').style.color=won?'#7fe6c0':'#ff7a6b';
   $('overText').innerHTML=M.def.name+'<br/>'+M.def.label();
-  $('tokline').innerHTML=(tok?`+${tok} ⬢ TOKENS EARNED`:'No tokens awarded')+
+  $('tokline').innerHTML=(tok?`+${tok} ⬢ TOKENS EARNED`+(bonus?` <span style="color:#8fa8c4">(${tok-bonus} + ${bonus} for the time left)</span>`:''):'No tokens awarded')+
     (gGain?`<br/><span style="color:#7fe6c0">G TOLERANCE NOW ${gTolerance().toFixed(1)} G</span>`:'');
   $('over').classList.add('on');
   $('btnAgain').textContent='NEW MISSION';
