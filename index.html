@@ -136,18 +136,21 @@ kbd{background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.16);bord
 
 /* --- centre-screen warnings --- */
 /* --- menu tabs --- */
-#tabs{display:flex;gap:4px;flex-wrap:wrap;margin:14px 0 4px;
+#mtabs{display:flex;gap:4px;flex-wrap:wrap;margin:14px 0 4px;
   border-bottom:1px solid rgba(140,175,215,.22);padding-bottom:0}
-#tabs button{background:transparent;border:1px solid transparent;border-bottom:none;
+#mtabs button{background:transparent;border:1px solid transparent;border-bottom:none;
   border-radius:8px 8px 0 0;padding:10px 17px;font:inherit;font-size:12.5px;letter-spacing:2.4px;
   font-weight:700;color:#8fa5bd;cursor:pointer;position:relative;top:1px;transition:color .12s}
-#tabs button:hover{color:#cfe0f2}
-#tabs button.on{color:#7fe6c0;border-color:rgba(140,175,215,.28);
+#mtabs button:hover{color:#cfe0f2}
+#mtabs button.on{color:#7fe6c0;border-color:rgba(140,175,215,.28);
   background:linear-gradient(180deg,rgba(127,230,192,.11),rgba(10,18,30,0))}
-#tabs button.on::after{content:'';position:absolute;left:0;right:0;bottom:-1px;height:2px;background:#7fe6c0}
+#mtabs button.on::after{content:'';position:absolute;left:0;right:0;bottom:-1px;height:2px;background:#7fe6c0}
 .pane{display:none;padding-top:16px}
 .pane.on{display:block;animation:panefade .16s ease-out}
 @keyframes panefade{from{opacity:0;transform:translateY(-3px)}to{opacity:1;transform:none}}
+#empHud{position:absolute;left:50%;top:calc(34% - 34px);transform:translateX(-50%);display:none;
+  font-size:14px;font-weight:700;letter-spacing:3px;color:#8fe8ff;pointer-events:none;
+  text-shadow:0 2px 10px #000,0 0 18px rgba(60,180,255,.7)}
 #warn{position:absolute;left:50%;top:34%;transform:translateX(-50%);text-align:center;
   pointer-events:none;width:max-content;max-width:90vw}
 #warn div{font-size:19px;font-weight:700;letter-spacing:3px;margin-bottom:6px;
@@ -342,6 +345,7 @@ td{padding:6px 8px;border-bottom:1px solid rgba(255,255,255,.045)}
     <div class="skip">PRESS <kbd>N</kbd> TO SKIP THIS STEP</div>
   </div>
 
+  <div id="empHud"></div>
   <div id="weps"></div>
   <div id="feed"></div>
   <div id="toast"></div>
@@ -464,7 +468,7 @@ td{padding:6px 8px;border-bottom:1px solid rgba(255,255,255,.045)}
     <h1>AVIATORS</h1>
     <div class="sub">3D COMBAT FLIGHT · ONLINE DOGFIGHT · BASE DEFENSE</div>
 
-    <div id="tabs">
+    <div id="mtabs">
       <button data-tab="play" class="on">PLAY</button>
       <button data-tab="net">MULTIPLAYER</button>
       <button data-tab="perm">UPGRADES</button>
@@ -929,9 +933,8 @@ function weatherFor(lv){
   if(lv<=1) return WEATHERS[0];                 // the first level stays clear
   const h=Math.abs(Math.sin(lv*97.13)*43758.5453);
   const r=h-Math.floor(h);
-  // clear and overcast are the common cases; the set pieces are rarer
-  const table=[0,0,1,1,2,3,4,5];
-  return WEATHERS[table[Math.floor(r*table.length)]];
+  // every kind is equally likely
+  return WEATHERS[Math.min(WEATHERS.length-1,Math.floor(r*WEATHERS.length))];
 }
 const WX={w:WEATHERS[0], t:0, flash:0, thunder:0, gustX:0, gustY:0};
 function applyWeather(){
@@ -1670,6 +1673,12 @@ const SHOP=[
   {id:'shield', cat:'Airframe', name:'Energy Shield',  max:4, cost:l=>Math.round(650*Math.pow(1.7,l)),
    desc:'A recharging shield on your aircraft <b>and every friendly plane in the air</b>. Soaks damage, then rebuilds a few seconds after you stop being hit.',
    eff:l=>`${l*45} shield · recharges after 4s`},
+  {id:'emp',   cat:'Defenses', name:'EMP Charge',      max:99, cost:()=>2800, repeat:true,
+   desc:'A single-shot pulse fired from your Command HQ. Press <kbd>Enter</kbd> to trigger it. '+
+        'Every enemy aircraft inside the blast comes down and their installations go dark — '+
+        'except SAM sites, which are hardened and keep firing. A force dome standing in the '+
+        'blast soaks a good deal of it, so the pulse covers less ground and wears off sooner.',
+   eff:()=>`one charge · ${EMP_R} m · installations dark for ${EMP_T} s`},
   {id:'repairk',cat:'Airframe', name:'Field Repair Kit',max:99,cost:()=>320, repeat:true,
    desc:'Instantly patch your hull back to full, right now, mid-flight.', eff:()=>'Restores hull to 100%'},
 
@@ -1797,7 +1806,7 @@ try{ localStorage.removeItem('ironskies.board'); }catch(e){}   // retired featur
 const G={
   mode:'menu', started:false, t:0, dt:0,
   planes:new Map(), bullets:[], missiles:[], parts:[], structures:[],
-  me:null, myId:uid(), team:'blue', eliminated:{}, netLevel:null, netMap:null, hangarT:{}, hangarSaid:{},
+  me:null, myId:uid(), team:'blue', emp:0, empFx:null, eliminated:{}, netLevel:null, netMap:null, hangarT:{}, hangarSaid:{},
   credits:600, kills:0, deaths:0, score:0,
   camMode:0, camPos:[0,120,300], camLook:[0,60,0],
   round:null, botFill:5, economyT:0, fires:[], roster:[],
@@ -2057,6 +2066,7 @@ addEventListener('keydown',e=>{
     if(w&&G.me.have[w]){G.me.wep=w;updateWeps()}
   }
   if(e.code==='KeyX') dropFlares();
+  if(e.code==='Enter'&&!G.over){ e.preventDefault(); fireEMP(); }
   if(e.code==='KeyN'&&G.tut&&!G.tut.done){ toast('OBJECTIVE SKIPPED','gold',1.2); advanceTut(); }
 });
 addEventListener('keyup',e=>{
@@ -2503,9 +2513,13 @@ function stepCollisions(dt){
   const mine=ownedPlanes();
   for(const a of mine){
     if(!a.alive) continue;
-    // aircraft against aircraft — friendlies pass through each other
+    // Aircraft against aircraft. Friendlies pass through each other, and so do
+    // two bots: most of the enemy converges on one point now, so bot-on-bot
+    // merges were killing more of them than the fighting was. A collision with
+    // a person is still a collision.
     for(const b of G.planes.values()){
       if(b===a||!b.alive||b.team===a.team) continue;
+      if(!a.isLocal&&!b.isLocal) continue;
       if(dist(a.pos,b.pos)>15) continue;
       const fa=fwdOf(a,[0,0,0]), fb=fwdOf(b,[0,0,0]);
       const rel=Math.hypot(fa[0]*a.speed-fb[0]*b.speed,
@@ -2737,6 +2751,7 @@ function stepStructs(dt){
   const authority = net.isHost||net.mode==='solo';
   for(const s of G.structures){
     if(!s.alive) continue;
+    if(s.emp>0){ s.emp-=dt; continue; }   // knocked out by a pulse
     const cfg=STRUCTS[s.type];
     if(s.crewed) continue;            // you are aiming this one
     if(s.type==='radar'){ s.spin+=dt*1.1; continue; }
@@ -2826,6 +2841,13 @@ function fireStruct(s,target){
 /* -------------------------------- bots ----------------------------------- */
 /* Roughly forty in a hundred press the HQ; the rest hunt aircraft, bomb
    installations, come for you personally, or stay out of trouble. */
+/** 'ace' means hunting the human. An aircraft on the player's own side has no
+    human to hunt, so it would fall through to the enemy HQ — which is why most
+    of your air force used to fly straight past the fight. It escorts instead. */
+function roleFor(team){
+  const r=pickRole();
+  return (r==='ace'&&team===G.team) ? 'hunter' : r;
+}
 /* Four jobs, and an aircraft keeps the one it is given for its whole life.
    There is deliberately no "loiter" role — an aircraft with nothing to do is
    what reads as a sky full of planes wandering about. */
@@ -2835,22 +2857,6 @@ function pickRole(){
   if(r<.80) return 'hq';       // straight for the enemy Command HQ
   if(r<.91) return 'hunter';   // hunts other aircraft
   return 'bomber';             // hangars and the defensive ring
-}
-/* Most of the enemy is hunting the player, which would mean fifteen aircraft
-   arriving at once and nothing anybody could do about it. Only the closest few
-   press the attack; the rest hold off at arm's length and rotate in as slots
-   free up. It reads as being hunted by a pack rather than shot by a wall. */
-function rankAces(){
-  const me=G.me;
-  if(!me||!me.alive){ G.aceSlots=null; return; }
-  const list=[];
-  for(const q of G.planes.values())
-    if(q.isBot&&q.alive&&q.role==='ace'&&q.team!==me.team&&q.aiTarget===me)
-      list.push([dist(q.pos,me.pos),q.id]);
-  list.sort((a,b)=>a[0]-b[0]);
-  const slots=Math.max(3,Math.round(3+DK().k*3.5));   // seven at once on Regular
-  G.aceSlots=new Set(list.slice(0,slots).map(x=>x[1]));
-  G.aceTotal=list.length;
 }
 /** whoever is sitting on this aircraft's tail, if anyone */
 function threatBehind(p){
@@ -2877,7 +2883,7 @@ function stepBot(p,dt){
     return;
   }
   p.aiT-=dt;
-  if(!p.role) p.role=pickRole();
+  if(!p.role) p.role=roleFor(p.team);
   // An ace is hunting *you*. The moment you are back in the air it comes for
   // you again, wherever it happens to be.
   if(p.role==='ace'&&G.me&&G.me.alive&&G.me.team!==p.team&&p.aiTarget!==G.me){
@@ -2968,7 +2974,7 @@ function stepBot(p,dt){
             : (G.me&&G.structures.find(x=>x.alive&&x.type==='hq'&&x.team===G.me.team))
               || nearestFoe(0,true) || hqT;
         break;
-      default:       p.role=pickRole(); tgt=hqT||nearestFoe(0,true);
+      default:       p.role=roleFor(p.team); tgt=hqT||nearestFoe(0,true);
     }
     p.aiTarget=tgt||null;
     p.aiStruct=!!(tgt&&tgt.type);   // a structure rather than an aircraft
@@ -3103,18 +3109,6 @@ function stepBot(p,dt){
 
   // Keep them out of each other. With this many aircraft up, a head-on at
   // combined closing speed is otherwise a routine way to die.
-  // Waiting their turn: hold a wide orbit out at arm's length, guns cold, until
-  // a slot opens up.
-  p.holding = p.role==='ace' && t===G.me && G.aceSlots && !G.aceSlots.has(p.id);
-  if(p.holding){
-    const ax=p.pos[0]-t.pos[0], az=p.pos[2]-t.pos[2];
-    const l=Math.hypot(ax,az)||1, R=900;   // close enough to be menacing, and to rotate in fast
-    aim=[t.pos[0]+ax/l*R - az/l*420,
-         Math.max(t.pos[1]+90, ghNow+300),
-         t.pos[2]+az/l*R + ax/l*420];
-    p.thr=.85; c.ab=0;
-  }
-
   // On short final at a building they are committed; jinking there is what
   // turned every attack run into another orbit.
   const committed=p.aiStruct&&t&&t.pos&&
@@ -3127,13 +3121,13 @@ function stepBot(p,dt){
     if(q===p||!q.alive||q.team===p.team) continue;
     const dx=q.pos[0]-p.pos[0], dy=q.pos[1]-p.pos[1], dz=q.pos[2]-p.pos[2];
     const d=Math.hypot(dx,dy,dz);
-    if(d>560||d<1) continue;
+    if(d>620||d<1) continue;
     if((dx*f[0]+dy*f[1]+dz*f[2])/d < .70) continue;    // dead ahead only
     // A head-on merge closes at both aircraft's speed at once, so it has to
     // break far earlier than a tail chase — which can press right in.
     const qf=fwdOf(q,[0,0,0]);
     const headOn=(qf[0]*f[0]+qf[1]*f[1]+qf[2]*f[2]) < -.25;
-    const lim = (q===t) ? (headOn?250:110) : (headOn?380:230);
+    const lim = (q===t) ? (headOn?300:165) : (headOn?520:300);
     if(d>lim) continue;
     if(d<dodgeD){ dodgeD=d; dodge=q; }
   }
@@ -3227,28 +3221,28 @@ function stepBot(p,dt){
     ? [st.pos[0],st.pos[1]+DOME_R*.55,st.pos[2]]        // shoot the shell, not the ground
     : [st.pos[0],st.pos[1]+(STRUCTS[st.type]?STRUCTS[st.type].y||8:8),st.pos[2]];
   let gt=null, gd=1e9, gAir=false;
-  const at=p.holding?null:p.aiTarget;      // holding off: guns cold
+  const at=p.aiTarget;
   if(at&&at.alive!==false&&at.pos){
-    if(at.type){ const c2=gunPoint(at), d=dist(c2,p.pos); if(d<700){ gt={pos:c2}; gd=d; } }
-    else { const d=dist(at.pos,p.pos); if(d<820){ gt=at; gd=d; gAir=true; } }
+    if(at.type){ const c2=gunPoint(at), d=dist(c2,p.pos); if(d<900){ gt={pos:c2}; gd=d; } }
+    else { const d=dist(at.pos,p.pos); if(d<1700){ gt=at; gd=d; gAir=true; } }
   }
-  if(!gt&&!p.holding){                   // nothing on the objective yet: fight en route
+  if(!gt){                               // nothing on the objective yet: fight en route
     let bd=1e9, air=null;
     for(const q of G.planes.values()){
       if(q===p||!q.alive||q.team===p.team) continue;
       const d=dist(q.pos,p.pos);
       if(d<bd){ bd=d; air=q; }
     }
-    if(air&&bd<820){ gt=air; gd=bd; gAir=true; }
+    if(air&&bd<1700){ gt=air; gd=bd; gAir=true; }
   }
-  if(!gt&&!p.holding){
+  if(!gt){
     for(const st of G.structures){
       if(!st.alive||st.team===p.team) continue;
       const c2=gunPoint(st), d=dist(c2,p.pos);
       if(d<gd){ gd=d; gt={pos:c2}; }
     }
   }
-  if(gt&&gd<(gAir?820:700)){
+  if(gt&&gd<(gAir?1700:900)){
     // Shoot where it is going to be. Bots fired straight down the nose, so
     // against anything that was actually moving - the player, most obviously -
     // every round went behind it and nothing ever landed.
@@ -3266,10 +3260,14 @@ function stepBot(p,dt){
     // Ten degrees is right for a fighter. A building is a large, stationary
     // target and holding that cone on a diving run is why they flew all the way
     // in and then never pulled the trigger.
-    if(tl[2] < (gAir?-0.986:-0.94)){
+    // A wider cone and a much longer reach: they are meant to be hosing the sky,
+    // not waiting for a perfect firing solution.
+    if(tl[2] < (gAir?-0.955:-0.92)){
       c.fire=1;
       // an ace shoots sooner and more often; it is here for one aeroplane
-      const mslRate=(p.role==='ace'&&gt===G.me)?.42:.30;
+      // Guns hose the sky; missiles stay a punctuation mark. A missile every
+      // second and a half from every aircraft is not a fight, it is a firing squad.
+      const mslRate=(p.role==='ace'&&gt===G.me)?.10:.16;
       if(p.have.missile&&gAir&&td>260&&td<1900&&Math.random()<dt*mslRate){ p.lock=gt; c.fire2=1; }
     }
   }
@@ -3524,6 +3522,17 @@ function render(){
   M4.ident(model); draw(MESH.water,model,{alpha:.80,tint:[1,1,1]});
   gl.enable(gl.CULL_FACE); gl.disable(gl.BLEND);
 
+  // --- EMP shell ---
+  if(G.empFx){
+    const k=clamp(G.empFx.t/G.empFx.max,0,1);
+    gl.enable(gl.BLEND); gl.depthMask(false); gl.disable(gl.CULL_FACE);
+    const rr=G.empFx.r*(0.12+k*0.98);
+    M4.trans(model,G.empFx.pos[0],G.empFx.pos[1]+8,G.empFx.pos[2]);
+    M4.mul(model,model,M4.scl(tmpM,rr,rr*.62,rr));
+    draw(MESH.dome,model,{unlit:true,alpha:(1-k)*.55,tint:[.62,.92,1]});
+    gl.depthMask(true); gl.disable(gl.BLEND); gl.enable(gl.CULL_FACE);
+  }
+
   drawWeather();          // over the whole scene, under the cockpit glass
 
   /* --- cockpit interior ---
@@ -3643,10 +3652,7 @@ function updateHUD(dt){
 /* Threat callouts. Each has its own cooldown so they announce a change in the
    situation rather than nagging every frame. */
 const warns=[];
-let warnCd={six:0,msl:0,base:0,clear:0,hurt:0,pack:0,hangar:0};
-const NUMWORD=['no','one','two','three','four','five','six','seven','eight','nine','ten','eleven','twelve'];
-const numword=n=>String(NUMWORD[n]!==undefined?NUMWORD[n]:n).toUpperCase();
-const pick=a=>a[Math.floor(Math.random()*a.length)];
+let warnCd={six:0,msl:0,base:0};
 function pushWarn(key,txt,cls,hold,cool){
   if(warnCd[key]>0) return;
   warnCd[key]=cool;
@@ -3660,49 +3666,23 @@ function updateWarnings(dt){
     // missile inbound — any missile currently tracking you
     if(G.missiles.some(m=>m.target===p))
       pushWarn('msl', p.flares>0?'⚠ MISSILE INBOUND — PRESS X FOR FLARES':'⚠ MISSILE INBOUND — NO FLARES','crit',2.6,3.0);
-    // Who is actually behind you, and which way to break.
-    const f=fwdOf(p,[0,0,0]), rt=rightOf(p,[0,0,0]);
-    let tail=0, nearest=null, nd=1e9;
+    // bandit on your six
+    const f=fwdOf(p,[0,0,0]);
     for(const q of G.planes.values()){
       if(q===p||!q.alive||q.team===p.team) continue;
       const to=[q.pos[0]-p.pos[0],q.pos[1]-p.pos[1],q.pos[2]-p.pos[2]];
-      const l=Math.hypot(...to); if(l>900) continue;
-      if((to[0]*f[0]+to[1]*f[1]+to[2]*f[2])/l < -.45){
-        tail++;
-        if(l<nd){ nd=l; nearest=to; }
+      const l=Math.hypot(...to); if(l>750) continue;
+      if((to[0]*f[0]+to[1]*f[1]+to[2]*f[2])/l < -.55){
+        pushWarn('six','ENEMY ON YOUR SIX','six',2.2,4.5); break;
       }
     }
-    if(tail>0){
-      const side=nearest&&(nearest[0]*rt[0]+nearest[2]*rt[2])>0?'LEFT':'RIGHT';
-      const txt = tail===1
-        ? pick(['ONE ON YOUR TAIL — BREAK '+side,
-                'BANDIT ON YOUR SIX — BREAK '+side,
-                'HE IS RIGHT BEHIND YOU — BREAK '+side])
-        : numword(tail)+' BIRDS ON YOUR TAIL'+
-          (tail>=4?' — GET OUT OF THERE':' — BREAK '+side);
-      pushWarn('six',txt,'six',2.4,tail>=3?2.6:4.0);
-      G.hadTail=2.5;
-    }else if(G.hadTail>0){
-      G.hadTail-=dt;
-      if(G.hadTail<=0) pushWarn('clear',pick(['TAIL IS CLEAR','YOU ARE CLEAN','NOBODY BEHIND YOU']),'ok',1.8,6);
-    }
-    // the pack waiting its turn out at arm's length
-    if(G.aceTotal>2&&G.aceSlots){
-      const holding=G.aceTotal-G.aceSlots.size;
-      if(holding>=2) pushWarn('pack',numword(holding)+' MORE CIRCLING, WAITING THEIR TURN','warn',2.4,14);
-    }
-    // your own state
-    const hf=p.hp/p.maxHp;
-    if(hf<.22) pushWarn('hurt',pick(['HULL CRITICAL — GET HOME','YOU ARE COMING APART','CRITICAL — DISENGAGE']),'crit',2.6,7);
-    else if(hf<.5) pushWarn('hurt',pick(['YOU ARE HIT','TAKING DAMAGE','SHE IS SMOKING']),'warn',2.0,9);
-    // your hangars, since losing them is what grounds you
-    const myHangars=G.structures.filter(s=>s.alive&&s.type==='spawner'&&s.team===G.team).length;
-    if(myHangars===1) pushWarn('hangar','ONE HANGAR LEFT — DEFEND IT','warn',2.6,25);
     const home=G.structures.find(s=>s.type==='hq'&&s.team===G.team);
     if(home&&home.alive&&home.hp<home.maxHp*.55)
       pushWarn('base','⚠ HOME BASE UNDER ATTACK','crit',2.6,14);
   }
   for(let i=warns.length-1;i>=0;i--){ warns[i].t-=dt; if(warns[i].t<=0) warns.splice(i,1); }
+  const eb=$('empHud');
+  if(eb){ eb.style.display=(G.emp>0)?'block':'none'; eb.textContent=G.emp>1?('EMP ×'+G.emp+' — ENTER'):'EMP READY — ENTER'; }
   $('warn').innerHTML=warns.map(w=>
     `<div class="${w.cls}" style="opacity:${clamp(w.t/Math.min(w.max,1),0,1)}">${w.txt}</div>`).join('');
 }
@@ -3929,6 +3909,8 @@ function buy(id,cost){
   const p=G.me; if(G.credits<cost) return;
   const item=SHOP.find(i=>i.id===id);
   if(id==='repairk'){ G.credits-=cost; p.hp=p.maxHp; rearm(p); toast('HULL REPAIRED & REARMED','grn',1.4); }
+  else if(id==='emp'){ G.credits-=cost; G.emp=(G.emp||0)+1;
+    toast('EMP CHARGE LOADED — PRESS ENTER TO FIRE','grn',3); }
   else{
     if((p.upg[id]||0)>=item.max) return;
     G.credits-=cost; p.upg[id]=(p.upg[id]||0)+1;
@@ -3959,6 +3941,49 @@ function buyStruct(type,cost){
   if(G.tut) G.tut.builds++;
   toast(STRUCTS[type].name.toUpperCase()+' DEPLOYED AT BASE','grn',2);
   renderShop();
+}
+
+/* ------------------------------- EMP -------------------------------------- */
+/* A single-shot pulse from your own Command HQ. Everything hostile in the air
+   inside it comes down and every hostile installation goes dark — except SAM
+   sites, which are hardened. A force dome standing in the blast soaks a good
+   part of it. */
+const EMP_R=1900, EMP_T=14;
+function applyEMP(origin,R,D,team){
+  let downed=0, dark=0;
+  for(const q of [...G.planes.values()]){
+    if(!q.alive||q.team===team) continue;
+    if(!(q.isLocal||(q.isBot&&authority()))) continue;   // only what this client owns
+    if(dist(q.pos,origin)>R) continue;
+    q.crashLabel='CAUGHT IN AN EMP';
+    explode(q.pos,26,1.2);
+    killPlane(q,null,true); downed++;
+  }
+  if(authority()) for(const st of G.structures){
+    if(!st.alive||st.team===team) continue;
+    if(st.type==='sam'||st.type==='hq') continue;        // SAMs are hardened; the HQ is a building
+    if(dist(st.pos,origin)>R) continue;
+    st.emp=D; dark++;
+  }
+  G.empFx={t:0,max:1.25,pos:origin.slice(),r:R};
+  sfx('boom',1.1);
+  return {downed,dark};
+}
+function fireEMP(){
+  if(!G.started||G.over||G.paused) return;
+  if((G.emp||0)<1){ toast('NO EMP CHARGE — BUY ONE IN THE HANGAR (B)','red',2.2); return; }
+  const hq=G.structures.find(s=>s.alive&&s.type==='hq'&&s.team===G.team);
+  if(!hq){ toast('YOUR COMMAND HQ IS GONE — NOTHING TO FIRE FROM','red',2.4); return; }
+  G.emp--;
+  let R=EMP_R, D=EMP_T;
+  // any force dome standing in the blast absorbs a good part of it
+  const dome=G.structures.find(s=>s.alive&&s.type==='dome'&&dist(s.pos,hq.pos)<R+DOME_R);
+  if(dome){ R=Math.round(R*.58); D=Math.round(D*.5); }
+  const r=applyEMP(hq.pos,R,D,G.team);
+  net.send({t:'emp',p:hq.pos.map(v=>+v.toFixed(1)),r:R,d:D,team:G.team});
+  toast('EMP DETONATED — '+r.downed+' AIRCRAFT DOWN, '+r.dark+' INSTALLATIONS DARK'+
+        (dome?' · A FORCE DOME ABSORBED PART OF IT':''),'gold',5);
+  feed(`<span class="${G.team}">EMP</span> — ${r.downed} aircraft down, ${r.dark} installations dark`);
 }
 
 /* ------------------------- round management ------------------------------ */
@@ -4034,7 +4059,7 @@ function quitToMenu(){
   for(let i=0;i<3;i++) FOG[i]=WEATHERS[0].fog[i];
   if(gl&&U&&U.uFogCol) gl.uniform3fv(U.uFogCol,FOG);
   { const el=$('wxflash'); if(el) el.style.opacity=0; }
-  G.me=null; G.crew=null; G.roster=[]; G.netLevel=null; G.netMap=null; G.hangarT={}; G.hangarSaid={}; G.credits=600; G.kills=0; G.deaths=0; G.score=0; G.camMode=0;
+  G.me=null; G.crew=null; G.roster=[]; G.emp=0; G.empFx=null; G.netLevel=null; G.netMap=null; G.hangarT={}; G.hangarSaid={}; G.credits=600; G.kills=0; G.deaths=0; G.score=0; G.camMode=0;
   baseBarEls.forEach(el=>el.classList.remove('on'));
   tagEls.forEach(el=>el.remove()); tagEls.clear();
   for(const id of ['pause','over','shop','dead','tut','mission']) $(id).classList.remove('on');
@@ -4230,6 +4255,11 @@ function onNet(raw,conn){
       G.structures.length=0;
       for(const s of m.world){ const st={...s,cd:0,yaw:0,pitch:0,spin:0,maxHp:STRUCTS[s.type].hp}; G.structures.push(st); }
       for(const p of m.players) if(p.id!==G.myId) unpackPlayer(p);
+      break;
+    }
+    case 'emp': {
+      const r=applyEMP(m.p,m.r,m.d,m.team);
+      if(m.team!==G.team) toast('ENEMY EMP — '+r.downed+' OF OUR AIRCRAFT DOWN','red',4);
       break;
     }
     case 'hello': {
@@ -4680,7 +4710,7 @@ function renderSettings(){
 let menuTab='play';
 function selectTab(id){
   menuTab=id;
-  for(const b of document.querySelectorAll('#tabs button')) b.classList.toggle('on',b.dataset.tab===id);
+  for(const b of document.querySelectorAll('#mtabs button')) b.classList.toggle('on',b.dataset.tab===id);
   for(const t of ['play','net','perm','aircraft','settings','help'])
     $('pane'+t).classList.toggle('on',t===id);
   if(id==='settings'){ confirmArm={level:0,all:0}; renderSettings(); }
@@ -4694,7 +4724,7 @@ function homePanels(){          // put both bodies back in their menu panes
   if(cb) $('paneaircraft').appendChild(cb);
 }
 homePanels();
-for(const b of document.querySelectorAll('#tabs button')) b.onclick=()=>{ selectTab(b.dataset.tab); sfx('buy',.25); };
+for(const b of document.querySelectorAll('#mtabs button')) b.onclick=()=>{ selectTab(b.dataset.tab); sfx('buy',.25); };
 function openSettings(){
   confirmArm={level:0,all:0};
   if(!G.started){ selectTab('settings'); return; }        // it is a tab in the menu
@@ -4951,7 +4981,7 @@ function addBots(n){
     const teams=teamList();
     const team=teams.length>2?teams[i%teams.length]
                              :(i%2===0?foeBaseOf(G.team):G.team);
-    const role=pickRole();
+    const role=roleFor(team);
     const p=newPlane({name:botName(),team,isBot:true,role});
     p.upg = role==='ace'
       ? {mg:2,engine:2,wings:1,flare:1,missile:1}
@@ -4963,7 +4993,7 @@ function addBots(n){
 /** launch a fighter from a hangar — host/solo only, clients receive it in the snapshot */
 function spawnBotFrom(s){
   const drone=Math.random()<(G.droneLvl[s.team]||0)*.33;
-  const role=pickRole();
+  const role=roleFor(s.team);
   const p=newPlane({name:(drone?'UCAV-':'')+botName(),team:s.team,isBot:true,drone,role});
   // the ones sent after the player fly the better aircraft and carry a missile
   p.upg = role==='ace'
@@ -5174,7 +5204,7 @@ function frame(now){
     }
     stepMission(dt);
     stepWeather(dt);
-    if(authority()) rankAces();
+    if(G.empFx){ G.empFx.t+=dt; if(G.empFx.t>=G.empFx.max) G.empFx=null; }
     musicTick();
     netTick(dt);
     if(G.crew) stepCrew(dt); else updateCamera(dt);
