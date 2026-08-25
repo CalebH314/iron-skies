@@ -923,7 +923,7 @@ const WEATHERS=[
    note:'Heavy rain. Visibility is short and the air is rough.'},
   {id:'storm', name:'THUNDERSTORM', fog:[.24,.27,.33], near:520,  far:3200,  tint:[.36,.39,.48],
    prec:'rain', gust:1, lightning:true,
-   note:'Thunderstorm. Almost no visibility, and the gusts will throw you around.'},
+   note:'Thunderstorm. Almost no visibility, the gusts will throw you around, and the lightning strikes for real — often at you.'},
   {id:'snow',  name:'SNOW',         fog:[.80,.83,.88], near:760,  far:4200,  tint:[.88,.91,.95],
    prec:'snow', gust:.25,
    note:'Snow. Everything is white and the horizon is gone.'},
@@ -938,7 +938,48 @@ function weatherFor(lv){
   // every kind is equally likely
   return WEATHERS[Math.min(WEATHERS.length-1,Math.floor(r*WEATHERS.length))];
 }
-const WX={w:WEATHERS[0], t:0, flash:0, thunder:0, gustX:0, gustY:0};
+const WX={w:WEATHERS[0], t:0, flash:0, thunder:0, gustX:0, gustY:0, bolts:[]};
+const BOLT_R=185, BOLT_DMG=46;
+/* Lightning that means it. A strike picks somewhere worth hitting — most often
+   the player, because being hunted by the weather as well is the point of a
+   storm — and everything inside the flash radius takes it. */
+function strikeLightning(){
+  let at=null;
+  const r=Math.random();
+  if(r<.45&&G.me&&G.me.alive){
+    // near you rather than exactly on you, so it is survivable and frightening
+    at=[G.me.pos[0]+rnd(-150,150), 0, G.me.pos[2]+rnd(-150,150)];
+  }else if(r<.72){
+    const air=[...G.planes.values()].filter(q=>q.alive);
+    if(air.length){ const q=air[rndi(0,air.length-1)]; at=[q.pos[0]+rnd(-70,70),0,q.pos[2]+rnd(-70,70)]; }
+  }else{
+    const st=G.structures.filter(x=>x.alive);
+    if(st.length){ const x=st[rndi(0,st.length-1)]; at=[x.pos[0]+rnd(-90,90),0,x.pos[2]+rnd(-90,90)]; }
+  }
+  if(!at) at=[rnd(-WORLD*.6,WORLD*.6),0,rnd(-WORLD*.6,WORLD*.6)];
+  at[1]=Math.max(terrainH(at[0],at[2]),SEA);
+  WX.bolts.push({pos:at,t:0,life:.42,seed:Math.random()*9});
+  WX.flash=1;
+  sfxAt('boom',at,1.0);
+  if(!authority()) return;
+  for(const q of [...G.planes.values()]){
+    if(!q.alive) continue;
+    if(!(q.isLocal||(q.isBot&&authority()))) continue;
+    const d=Math.hypot(q.pos[0]-at[0],q.pos[2]-at[2]);
+    if(d>BOLT_R) continue;
+    const amt=BOLT_DMG*clamp(1-d/BOLT_R,.25,1);
+    if(q.isLocal) toast('STRUCK BY LIGHTNING  −'+Math.round(amt)+' HULL','red',2.2);
+    q.crashLabel='STRUCK BY LIGHTNING';
+    damagePlane(q,amt,null);
+    explode(q.pos,14,.8);
+  }
+  for(const st of G.structures){
+    if(!st.alive) continue;
+    const d=Math.hypot(st.pos[0]-at[0],st.pos[2]-at[2]);
+    if(d>BOLT_R) continue;
+    damageStruct(st,BOLT_DMG*.8*clamp(1-d/BOLT_R,.25,1),null);
+  }
+}
 function applyWeather(){
   // multiplayer, training and the menus all stay clear
   const solo=net.mode==='solo';
@@ -957,14 +998,17 @@ function stepWeather(dt){
     WX.gustY=Math.sin(WX.t*.9+2.1)*Math.sin(WX.t*.31)*w.gust;
   }else{ WX.gustX=WX.gustY=0; }
   WX.flash=Math.max(0,WX.flash-dt*3.2);
-  if(w.lightning){
+  for(let i=WX.bolts.length-1;i>=0;i--){
+    WX.bolts[i].t+=dt;
+    if(WX.bolts[i].t>=WX.bolts[i].life) WX.bolts.splice(i,1);
+  }
+  if(w.lightning&&G.started&&!G.over){
     WX.thunder-=dt;
     if(WX.thunder<=0){
-      WX.thunder=rnd(5,14);
-      WX.flash=1;
-      sfx('boom',.55);                 // the thunder, a beat after the flash
+      WX.thunder=rnd(5,11);
+      strikeLightning();
     }
-  }
+  }else if(!w.lightning) WX.bolts.length=0;
   const el=$('wxflash');
   if(el) el.style.opacity=(WX.flash*WX.flash*.55).toFixed(3);
 }
@@ -3280,11 +3324,9 @@ function stepBot(p,dt){
     // not waiting for a perfect firing solution.
     if(tl[2] < (gAir?-0.955:-0.92)){
       c.fire=1;
-      // an ace shoots sooner and more often; it is here for one aeroplane
-      // Guns hose the sky; missiles stay a punctuation mark. A missile every
-      // second and a half from every aircraft is not a fight, it is a firing squad.
-      const mslRate=(p.role==='ace'&&gt===G.me)?.10:.16;
-      if(p.have.missile&&gAir&&td>260&&td<1900&&Math.random()<dt*mslRate){ p.lock=gt; c.fire2=1; }
+      // Aircraft-launched homing missiles are the player's alone — the AI flies
+      // guns only. SAM sites are a separate thing and still fire theirs.
+      if(!p.isBot&&p.have.missile&&gAir&&td>260&&td<1900&&Math.random()<dt*.5){ p.lock=gt; c.fire2=1; }
     }
   }
   if(p.hp<p.maxHp*.28&&Math.random()<dt*.4&&p.flares>0){
@@ -3537,6 +3579,29 @@ function render(){
   gl.disable(gl.CULL_FACE);
   M4.ident(model); draw(MESH.water,model,{alpha:.80,tint:[1,1,1]});
   gl.enable(gl.CULL_FACE); gl.disable(gl.BLEND);
+
+  // --- lightning ---
+  if(WX.bolts.length){
+    gl.enable(gl.BLEND); gl.depthMask(false); gl.disable(gl.CULL_FACE);
+    for(const B of WX.bolts){
+      const k=clamp(B.t/B.life,0,1), a=(1-k)*(1-k);
+      // a ragged column: a stack of offset boxes rather than a straight line
+      const H=CEILING+400, SEG=9;
+      let px=B.pos[0], pz=B.pos[2];
+      for(let i=0;i<SEG;i++){
+        const y0=B.pos[1]+H*i/SEG, h=H/SEG;
+        const jx=Math.sin((i+B.seed)*2.7)*26*(i/SEG), jz=Math.cos((i+B.seed)*3.1)*26*(i/SEG);
+        M4.trans(model,px+jx,y0+h*.5,pz+jz);
+        M4.mul(model,model,M4.scl(tmpM,7+i*1.6,h*.52,7+i*1.6));
+        draw(MESH.cube,model,{unlit:true,alpha:a*.9,tint:[1,1,1]});
+      }
+      // the flash where it lands
+      M4.trans(model,B.pos[0],B.pos[1]+12,B.pos[2]);
+      M4.mul(model,model,M4.scl(tmpM,BOLT_R*(.3+k*.9),BOLT_R*.34,BOLT_R*(.3+k*.9)));
+      draw(MESH.dome,model,{unlit:true,alpha:a*.5,tint:[.85,.92,1]});
+    }
+    gl.depthMask(true); gl.disable(gl.BLEND); gl.enable(gl.CULL_FACE);
+  }
 
   // --- EMP shockwaves, in the colours of whoever fired them ---
   if(G.pulses.length){
@@ -3932,16 +3997,16 @@ function renderShop(){
           <button data-struct="${i.struct}" data-cost="${cost}" ${can?'':'disabled'}>${built>=4?'MAX':'BUILD'}</button></div></div>`;
     }
     const lvl=(p.upg[i.id]||0);
-    const maxed=!i.repeat&&lvl>=i.max;
+    // nothing caps out any more — the price is what limits you
     const cost=i.cost(lvl);
-    const can=!maxed&&G.credits>=cost;
-    const pips=i.repeat?'':`<div class="pips">${Array.from({length:i.max},(_,k)=>`<i class="${k<lvl?'f':''}"></i>`).join('')}</div>`;
+    const can=G.credits>=cost;
+    const pips=i.repeat?'':`<div class="pips">${Array.from({length:i.max},(_,k)=>`<i class="${k<Math.min(lvl,i.max)?'f':''}"></i>`).join('')}</div>`;
     return `<div class="item">
-      <h3>${i.name}${i.repeat?'':` <span class="tagm">LV ${lvl}/${i.max}</span>`}</h3>
+      <h3>${i.name}${i.repeat?'':` <span class="tagm">LV ${lvl}${lvl>=i.max?'':' / '+i.max}</span>`}</h3>
       <p>${i.desc}<br/><span style="color:#7fe6c0">${i.eff(i.repeat?0:lvl+1<=i.max?lvl+1:lvl)}</span></p>
       ${pips}
-      <div class="buy"><span class="cost">${maxed?'—':cost+' ¢'}</span>
-        <button data-buy="${i.id}" data-cost="${cost}" ${can?'':'disabled'}>${maxed?'MAXED':lvl===0&&i.unlock?'UNLOCK':'UPGRADE'}</button></div></div>`;
+      <div class="buy"><span class="cost">${cost} ¢</span>
+        <button data-buy="${i.id}" data-cost="${cost}" ${can?'':'disabled'}>${lvl===0&&i.unlock?'UNLOCK':'UPGRADE'}</button></div></div>`;
   }).join('');
   [...document.querySelectorAll('[data-buy]')].forEach(b=>b.onclick=()=>buy(b.dataset.buy,+b.dataset.cost));
   [...document.querySelectorAll('[data-struct]')].forEach(b=>b.onclick=()=>buyStruct(b.dataset.struct,+b.dataset.cost));
@@ -3953,7 +4018,6 @@ function buy(id,cost){
   else if(id==='emp'){ G.credits-=cost; G.emp=(G.emp||0)+1;
     toast('EMP CHARGE LOADED — PRESS ENTER TO FIRE','grn',3); }
   else{
-    if((p.upg[id]||0)>=item.max) return;
     G.credits-=cost; p.upg[id]=(p.upg[id]||0)+1;
     applyUpgrades(p);
     if(!p.ammo[id]&&p.ammoMax[id]) p.ammo[id]=p.ammoMax[id];
@@ -4570,7 +4634,7 @@ const MISSIONS=[
      for(let i=0;i<n;i++){
        const a=i/n*Math.PI*2, R=rnd(1500,2300);
        const q=newPlane({name:botName(),team:'red',isBot:true,role:'ace',noRespawn:true});
-       q.upg={mg:2,engine:1,flare:1};
+       q.upg={mg:2,engine:1,flare:1};   // guns only, like every other bot
        applyUpgrades(q); rearm(q);
        q.pos=[Math.cos(a)*R, me.pos[1]+rnd(-160,220), Math.sin(a)*R];
        const to=[me.pos[0]-q.pos[0],0,me.pos[2]-q.pos[2]], l=Math.hypot(to[0],to[2])||1;
@@ -4587,14 +4651,90 @@ const MISSIONS=[
    },
    progress(){ return clamp(G.mission.killed/G.mission.goal,0,1) },
    won(){ return G.mission.killed>=G.mission.goal },
-   label(){ return G.mission.killed+' / '+G.mission.goal+' shot down' }}
+   label(){ return G.mission.killed+' / '+G.mission.goal+' shot down' }},
+
+  {id:'airfield', name:'Airfield Raid', tokens:11, map:'hills', time:0,
+   desc(){ return `Level all ${G.mission.goal} hangars on their forward field. It is defended.` },
+   setup(){
+     const M=G.mission, me=G.me;
+     const n=rndi(3,5);
+     M.goal=n; M.killed=0; M.sheds=[];
+     const foe=foeBaseOf(G.team);
+     for(let i=0;i<n;i++) M.sheds.push(addStruct('spawner',foe,null));
+     // a real defensive ring, so it is a raid and not a demolition job
+     for(const kind of ['flak','flak','sam','sniper','flak']) addStruct(kind,foe,null);
+     me.upg={mg:2,rocket:2,missile:1,flare:2,engine:1,armor:1};
+     applyUpgrades(me); rearm(me); me.wep='rocket';
+     M.time=105+n*26;
+     ringAt(M.sheds[0].pos,[0,0,1]);
+     updateWeps();
+   },
+   tick(){
+     const M=G.mission;
+     M.killed=M.sheds.filter(s=>!s.alive).length;
+     const next=M.sheds.find(s=>s.alive);
+     if(next&&(!G.rings[0]||dist(G.rings[0].pos,next.pos)>5)){ G.rings.length=0; ringAt(next.pos,[0,0,1]); }
+   },
+   progress(){ return clamp(G.mission.killed/G.mission.goal,0,1) },
+   won(){ return G.mission.killed>=G.mission.goal },
+   label(){ return G.mission.killed+' / '+G.mission.goal+' hangars levelled' }},
+
+  {id:'standoff', name:'Last Stand', tokens:12, map:'plains', time:0,
+   desc(){ return `Hold the sky over your own base for ${Math.round(G.mission.time)} seconds. They keep coming.` },
+   setup(){
+     const M=G.mission, me=G.me;
+     M.time=120+rndi(0,60);
+     M.waveT=0; M.wave=0; M.leaked=0;
+     M.hq=G.structures.find(s=>s.alive&&s.type==='hq'&&s.team===G.team);
+     me.upg={mg:2,cannon:1,missile:2,flare:2,armor:1};
+     applyUpgrades(me); rearm(me); me.wep='mg';
+     me.pos=[M.hq.pos[0],M.hq.pos[1]+620,M.hq.pos[2]+300]; me.speed=240; me.thr=1;
+     qLookDir(me.quat,[0,0,-1],[0,1,0]);
+     ringAt([M.hq.pos[0],M.hq.pos[1]+120,M.hq.pos[2]],[0,0,1]);
+   },
+   tick(dt){
+     const M=G.mission;
+     M.waveT-=dt;
+     const up=[...G.planes.values()].filter(q=>q.isBot&&q.alive&&q.team!==G.team).length;
+     if(M.waveT<=0&&up<8){
+       M.waveT=rnd(9,15); M.wave++;
+       const n=2+Math.min(4,Math.floor(M.t/45));
+       for(let i=0;i<n;i++){
+         const a=rnd(0,Math.PI*2), R=rnd(2400,3200);
+         const q=newPlane({name:botName(),team:foeBaseOf(G.team),isBot:true,role:'ace',noRespawn:true});
+         q.upg={mg:2,engine:1};
+         applyUpgrades(q); rearm(q);
+         q.pos=[M.hq.pos[0]+Math.cos(a)*R, M.hq.pos[1]+rnd(420,760), M.hq.pos[2]+Math.sin(a)*R];
+         const to=[M.hq.pos[0]-q.pos[0],0,M.hq.pos[2]-q.pos[2]], l=Math.hypot(to[0],to[2])||1;
+         qLookDir(q.quat,[to[0]/l,0,to[2]/l],[0,1,0]);
+         q.speed=215; q.thr=1; q.cruiseY=q.pos[1]; q.alive=true;
+         G.planes.set(q.id,q);
+       }
+     }
+   },
+   progress(){ return clamp(G.mission.t/G.mission.time,0,1) },
+   won(){ const M=G.mission; return M.t>=M.time&&M.hq&&M.hq.alive },
+   fail(){ const M=G.mission; return !!(M.hq&&!M.hq.alive) },
+   label(){
+     const M=G.mission;
+     const left=Math.max(0,Math.ceil(M.time-M.t));
+     return M.hq&&M.hq.alive ? left+' s to hold · wave '+M.wave : 'HQ LOST';
+   }}
 ];
-let lastMission=-1;
+/* Drawn from a shuffled bag, so over any run of four you fly each one once
+   rather than trusting the dice. */
+let missionBag=[];
+function nextMissionIdx(){
+  if(!missionBag.length){
+    missionBag=MISSIONS.map((_,i)=>i);
+    for(let i=missionBag.length-1;i>0;i--){
+      const j=rndi(0,i); const t=missionBag[i]; missionBag[i]=missionBag[j]; missionBag[j]=t;
+    }
+  }
+  return missionBag.pop();
+}
 function startMission(){
-  // drawn evenly, and never the same one twice running
-  let i=rndi(0,MISSIONS.length-1);
-  if(MISSIONS.length>1&&i===lastMission) i=(i+1)%MISSIONS.length;
-  lastMission=i;
+  const i=nextMissionIdx();
   const def=MISSIONS[i];
   net.mode='solo';
   G.mission={def,t:0,time:def.time,goal:1,done:false,ring:0,start:0};
@@ -4619,9 +4759,10 @@ function stepMission(dt){
   const M=G.mission; if(!M||M.done) return;
   M.t+=dt;
   if(M.def.tick) M.def.tick(dt);
+  if(M.def.fail&&M.def.fail()) return endMission(false);
   if(!G.me.alive) return endMission(false);
   if(M.def.won&&M.def.won()) return endMission(true);
-  if(M.t>=M.time) return endMission(false);
+  if(M.t>=M.time) return endMission(!!(M.def.won&&M.def.won()));
 }
 function endMission(won){
   const M=G.mission; if(!M||M.done) return;
@@ -5142,8 +5283,8 @@ function addBots(n){
     const role=roleFor(team);
     const p=newPlane({name:botName(),team,isBot:true,role});
     p.upg = role==='ace'
-      ? {mg:2,engine:2,wings:1,flare:1,missile:1}
-      : {mg:rndi(1,2),engine:rndi(0,1),flare:0,missile:Math.random()<.25?1:0};
+      ? {mg:2,engine:2,wings:1,flare:1}
+      : {mg:rndi(1,2),engine:rndi(0,1),flare:0};
     applyUpgrades(p); rearm(p); doRespawn(p);
     G.planes.set(p.id,p);
   }
@@ -5155,7 +5296,7 @@ function spawnBotFrom(s){
   const p=newPlane({name:(drone?'UCAV-':'')+botName(),team:s.team,isBot:true,drone,role});
   // the ones sent after the player fly the better aircraft and carry a missile
   p.upg = role==='ace'
-    ? {mg:2,engine:2,wings:1,flare:1,missile:1}
+    ? {mg:2,engine:2,wings:1,flare:1}
     : {mg:rndi(1,2),engine:rndi(0,1)};
   applyUpgrades(p); rearm(p);
   p.pos=[s.pos[0]+rnd(-50,50), s.pos[1]+rnd(200,330), s.pos[2]+rnd(-50,50)];
