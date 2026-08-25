@@ -1674,11 +1674,12 @@ const SHOP=[
    desc:'A recharging shield on your aircraft <b>and every friendly plane in the air</b>. Soaks damage, then rebuilds a few seconds after you stop being hit.',
    eff:l=>`${l*45} shield · recharges after 4s`},
   {id:'emp',   cat:'Defenses', name:'EMP Charge',      max:99, cost:()=>2800, repeat:true,
-   desc:'A single-shot pulse fired from your Command HQ. Press <kbd>Enter</kbd> to trigger it. '+
-        'Every enemy aircraft inside the blast comes down and their installations go dark — '+
-        'except SAM sites, which are hardened and keep firing. A force dome standing in the '+
-        'blast soaks a good deal of it, so the pulse covers less ground and wears off sooner.',
-   eff:()=>`one charge · ${EMP_R} m · installations dark for ${EMP_T} s`},
+   desc:'A shockwave fired from your Command HQ — press <kbd>Enter</kbd>. The front travels '+
+        'outward and brings down <b>every aircraft it reaches, yours included</b>, so get your '+
+        'own people clear first. Enemy installations go dark behind it; SAM sites are hardened '+
+        'and keep firing, and nothing on your own side is affected. A force dome standing in the '+
+        'blast takes the edge off it.',
+   eff:()=>`one charge · ${(EMP_R/1000).toFixed(1)} km · installations dark for ${EMP_T} s`},
   {id:'repairk',cat:'Airframe', name:'Field Repair Kit',max:99,cost:()=>320, repeat:true,
    desc:'Instantly patch your hull back to full, right now, mid-flight.', eff:()=>'Restores hull to 100%'},
 
@@ -1730,10 +1731,10 @@ function domeHp(l){ return l<=0?0:2200+1600*(l-1) }
 const DIFFS=[
   {name:'RECRUIT',k:.55,botHp:.7, botDmg:.65,note:'A gentle enemy. Good for learning the map.'},
   {name:'REGULAR',k:1,  botHp:1,  botDmg:1,  note:'The intended fight.'},
-  {name:'VETERAN',k:1.5,botHp:1.3,botDmg:1.3,note:'Tougher installations, sturdier aircraft, faster reinforcement.'},
-  {name:'ACE',    k:2.1,botHp:1.7,botDmg:1.6,note:'Everything the enemy has, doubled. You will need the permanent upgrades.'},
+  {name:'VETERAN',k:1.5,botHp:1.3,botDmg:1.3,note:'Tougher installations, sturdier aircraft, faster reinforcement. They carry an EMP of their own.'},
+  {name:'ACE',    k:2.1,botHp:1.7,botDmg:1.6,note:'Everything the enemy has, doubled, and an EMP in their pocket. You will need the permanent upgrades.'},
   {name:'JOSE',   k:6.0,botHp:3.0,botDmg:2.6,
-   note:'Not intended to be winnable. The HQ is effectively indestructible, the sky is full, and they rebuild faster than you can level it.'}
+   note:'Not intended to be winnable. The HQ is effectively indestructible, the sky is full, they rebuild faster than you can level it, and they hold two EMPs a round.'}
 ];
 const PROFILE={tokens:0,perks:{},muted:false,level:1,wins:0,losses:0,
                kills:0,deaths:0,missions:0,callsign:'',difficulty:1,sens:1,
@@ -1806,7 +1807,7 @@ try{ localStorage.removeItem('ironskies.board'); }catch(e){}   // retired featur
 const G={
   mode:'menu', started:false, t:0, dt:0,
   planes:new Map(), bullets:[], missiles:[], parts:[], structures:[],
-  me:null, myId:uid(), team:'blue', emp:0, empFx:null, eliminated:{}, netLevel:null, netMap:null, hangarT:{}, hangarSaid:{},
+  me:null, myId:uid(), team:'blue', emp:0, pulses:[], foeEmp:{}, foeEmpT:0, eliminated:{}, netLevel:null, netMap:null, hangarT:{}, hangarSaid:{},
   credits:600, kills:0, deaths:0, score:0,
   camMode:0, camPos:[0,120,300], camLook:[0,60,0],
   round:null, botFill:5, economyT:0, fires:[], roster:[],
@@ -3522,14 +3523,21 @@ function render(){
   M4.ident(model); draw(MESH.water,model,{alpha:.80,tint:[1,1,1]});
   gl.enable(gl.CULL_FACE); gl.disable(gl.BLEND);
 
-  // --- EMP shell ---
-  if(G.empFx){
-    const k=clamp(G.empFx.t/G.empFx.max,0,1);
+  // --- EMP shockwaves, in the colours of whoever fired them ---
+  if(G.pulses.length){
     gl.enable(gl.BLEND); gl.depthMask(false); gl.disable(gl.CULL_FACE);
-    const rr=G.empFx.r*(0.12+k*0.98);
-    M4.trans(model,G.empFx.pos[0],G.empFx.pos[1]+8,G.empFx.pos[2]);
-    M4.mul(model,model,M4.scl(tmpM,rr,rr*.62,rr));
-    draw(MESH.dome,model,{unlit:true,alpha:(1-k)*.55,tint:[.62,.92,1]});
+    for(const P of G.pulses){
+      const k=clamp(P.r/P.R,0,1);
+      const col=TEAMCOL[P.team]||[.62,.92,1];
+      const hot=[Math.min(1,col[0]*.55+.45),Math.min(1,col[1]*.55+.45),Math.min(1,col[2]*.55+.45)];
+      // the front itself, and a fainter shell just behind it
+      for(const [scale,a] of [[1,.62],[.88,.30],[.74,.14]]){
+        const rr=Math.max(6,P.r*scale);
+        M4.trans(model,P.pos[0],P.pos[1]+8,P.pos[2]);
+        M4.mul(model,model,M4.scl(tmpM,rr,rr*.58,rr));
+        draw(MESH.dome,model,{unlit:true,alpha:a*(1-k*.82),tint:hot});
+      }
+    }
     gl.depthMask(true); gl.disable(gl.BLEND); gl.enable(gl.CULL_FACE);
   }
 
@@ -3948,26 +3956,47 @@ function buyStruct(type,cost){
    inside it comes down and every hostile installation goes dark — except SAM
    sites, which are hardened. A force dome standing in the blast soaks a good
    part of it. */
-const EMP_R=1900, EMP_T=14;
-function applyEMP(origin,R,D,team){
-  let downed=0, dark=0;
-  for(const q of [...G.planes.values()]){
-    if(!q.alive||q.team===team) continue;
-    if(!(q.isLocal||(q.isBot&&authority()))) continue;   // only what this client owns
-    if(dist(q.pos,origin)>R) continue;
-    q.crashLabel='CAUGHT IN AN EMP';
-    explode(q.pos,26,1.2);
-    killPlane(q,null,true); downed++;
+const EMP_R=2800, EMP_T=14, EMP_SPEED=1450;
+/* A real shockwave rather than an instant effect: the front travels outward at
+   1.45 km/s and takes things out as it reaches them, so you can watch it coming
+   and, at the edge, outrun it. It wears the colours of whoever fired it.
+   Aircraft are aircraft — it brings down every one it touches, including the
+   side that fired it. Installations are hardened against their own side's
+   pulse, and SAM sites against anyone's. */
+function firePulse(origin,R,D,team){
+  const P={pos:origin.slice(),r:0,R,D,team,t:0,planes:new Set(),structs:new Set(),
+           downed:0,dark:0};
+  G.pulses.push(P);
+  sfx('boom',1.15); sfxAt('boom',origin,1.1);
+  return P;
+}
+function stepPulses(dt){
+  for(let i=G.pulses.length-1;i>=0;i--){
+    const P=G.pulses[i];
+    P.t+=dt;
+    P.r=Math.min(P.R,P.r+EMP_SPEED*dt);
+    for(const q of [...G.planes.values()]){
+      if(!q.alive||P.planes.has(q.id)) continue;
+      if(!(q.isLocal||(q.isBot&&authority()))) continue;   // only what this client owns
+      if(dist(q.pos,P.pos)>P.r) continue;
+      P.planes.add(q.id);
+      q.crashLabel='CAUGHT IN AN EMP';
+      explode(q.pos,26,1.2);
+      killPlane(q,null,true); P.downed++;
+    }
+    if(authority()) for(const st of G.structures){
+      if(!st.alive||st.team===P.team||P.structs.has(st.id)) continue;   // never its own side's
+      if(st.type==='sam'||st.type==='hq') continue;        // SAMs are hardened
+      if(dist(st.pos,P.pos)>P.r) continue;
+      P.structs.add(st.id); st.emp=P.D; P.dark++;
+    }
+    if(P.r>=P.R&&P.t>P.R/EMP_SPEED+.55) G.pulses.splice(i,1);
   }
-  if(authority()) for(const st of G.structures){
-    if(!st.alive||st.team===team) continue;
-    if(st.type==='sam'||st.type==='hq') continue;        // SAMs are hardened; the HQ is a building
-    if(dist(st.pos,origin)>R) continue;
-    st.emp=D; dark++;
-  }
-  G.empFx={t:0,max:1.25,pos:origin.slice(),r:R};
-  sfx('boom',1.1);
-  return {downed,dark};
+}
+/** how much of a pulse a force dome standing in it soaks */
+function domeSoak(origin,R){
+  const dome=G.structures.find(s=>s.alive&&s.type==='dome'&&dist(s.pos,origin)<R+DOME_R);
+  return dome?{R:Math.round(R*.82),D:.8}:null;   // a dent, not a wall
 }
 function fireEMP(){
   if(!G.started||G.over||G.paused) return;
@@ -3976,14 +4005,45 @@ function fireEMP(){
   if(!hq){ toast('YOUR COMMAND HQ IS GONE — NOTHING TO FIRE FROM','red',2.4); return; }
   G.emp--;
   let R=EMP_R, D=EMP_T;
-  // any force dome standing in the blast absorbs a good part of it
-  const dome=G.structures.find(s=>s.alive&&s.type==='dome'&&dist(s.pos,hq.pos)<R+DOME_R);
-  if(dome){ R=Math.round(R*.58); D=Math.round(D*.5); }
-  const r=applyEMP(hq.pos,R,D,G.team);
+  const soak=domeSoak(hq.pos,R);
+  if(soak){ R=soak.R; D=Math.round(D*soak.D); }
+  firePulse(hq.pos,R,D,G.team);
   net.send({t:'emp',p:hq.pos.map(v=>+v.toFixed(1)),r:R,d:D,team:G.team});
-  toast('EMP DETONATED — '+r.downed+' AIRCRAFT DOWN, '+r.dark+' INSTALLATIONS DARK'+
-        (dome?' · A FORCE DOME ABSORBED PART OF IT':''),'gold',5);
-  feed(`<span class="${G.team}">EMP</span> — ${r.downed} aircraft down, ${r.dark} installations dark`);
+  toast('EMP AWAY — EVERY AIRCRAFT IN '+(R/1000).toFixed(1)+' km GOES DOWN, YOURS TOO'+
+        (soak?' · A FORCE DOME TOOK SOME OF IT':''),'gold',5);
+  feed(`<span class="${G.team}">EMP</span> fired from the ${G.team.toUpperCase()} HQ`);
+}
+/** how many charges a side gets — only above Regular, and only later on */
+function empCharges(){
+  const i=clamp(PROFILE.difficulty|0,0,DIFFS.length-1);
+  if(i<=1) return 0;                       // Recruit and Regular: none
+  if(!campaign()||net.mode!=='solo') return i>=4?2:1;
+  return PROFILE.level>=6 ? (i>=4?2:1) : 0;   // and not on the early levels
+}
+/** the enemy holds its charge until enough of your aircraft are over its base */
+function stepFoeEMP(dt){
+  if(!authority()||G.tut||G.mission) return;
+  G.foeEmpT=Math.max(0,(G.foeEmpT||0)-dt);
+  if(G.foeEmpT>0) return;
+  for(const k of teamList()){
+    if(k===G.team||(G.eliminated&&G.eliminated[k])) continue;
+    if(!(G.foeEmp&&G.foeEmp[k]>0)) continue;
+    const hq=G.structures.find(s=>s.alive&&s.type==='hq'&&s.team===k);
+    if(!hq) continue;
+    let over=0;
+    for(const q of G.planes.values())
+      if(q.alive&&q.team!==k&&dist(q.pos,hq.pos)<EMP_R*.72) over++;
+    if(over<4) continue;
+    G.foeEmp[k]--; G.foeEmpT=40;
+    let R=EMP_R, D=EMP_T;
+    const soak=domeSoak(hq.pos,R);
+    if(soak){ R=soak.R; D=Math.round(D*soak.D); }
+    firePulse(hq.pos,R,D,k);
+    net.send({t:'emp',p:hq.pos.map(v=>+v.toFixed(1)),r:R,d:D,team:k});
+    toast(k.toUpperCase()+' FIRED AN EMP — GET CLEAR','red',5);
+    feed(`<span class="${k}">EMP</span> fired from the ${k.toUpperCase()} HQ`);
+    return;
+  }
 }
 
 /* ------------------------- round management ------------------------------ */
@@ -4059,7 +4119,7 @@ function quitToMenu(){
   for(let i=0;i<3;i++) FOG[i]=WEATHERS[0].fog[i];
   if(gl&&U&&U.uFogCol) gl.uniform3fv(U.uFogCol,FOG);
   { const el=$('wxflash'); if(el) el.style.opacity=0; }
-  G.me=null; G.crew=null; G.roster=[]; G.emp=0; G.empFx=null; G.netLevel=null; G.netMap=null; G.hangarT={}; G.hangarSaid={}; G.credits=600; G.kills=0; G.deaths=0; G.score=0; G.camMode=0;
+  G.me=null; G.crew=null; G.roster=[]; G.emp=0; G.pulses.length=0; G.foeEmp={}; G.foeEmpT=0; G.netLevel=null; G.netMap=null; G.hangarT={}; G.hangarSaid={}; G.credits=600; G.kills=0; G.deaths=0; G.score=0; G.camMode=0;
   baseBarEls.forEach(el=>el.classList.remove('on'));
   tagEls.forEach(el=>el.remove()); tagEls.clear();
   for(const id of ['pause','over','shop','dead','tut','mission']) $(id).classList.remove('on');
@@ -4258,8 +4318,8 @@ function onNet(raw,conn){
       break;
     }
     case 'emp': {
-      const r=applyEMP(m.p,m.r,m.d,m.team);
-      if(m.team!==G.team) toast('ENEMY EMP — '+r.downed+' OF OUR AIRCRAFT DOWN','red',4);
+      firePulse(m.p,m.r,m.d,m.team);
+      if(m.team!==G.team) toast(String(m.team).toUpperCase()+' FIRED AN EMP — GET CLEAR','red',4);
       break;
     }
     case 'hello': {
@@ -5011,6 +5071,10 @@ function spawnBotFrom(s){
    = an identical compound for every pilot, plus whatever permanent upgrades
    that particular pilot brought with them. */
 function buildCompounds(){
+  // Above Regular the enemy carries an EMP of their own — two on Jose.
+  G.foeEmp={}; G.foeEmpT=25;
+  const charges=empCharges();
+  if(charges>0) for(const k of teamList()) if(k!==G.team) G.foeEmp[k]=charges;
   TEAMPERK={};
   for(const pl of G.planes.values()){
     if(pl.isBot) continue;
@@ -5204,7 +5268,7 @@ function frame(now){
     }
     stepMission(dt);
     stepWeather(dt);
-    if(G.empFx){ G.empFx.t+=dt; if(G.empFx.t>=G.empFx.max) G.empFx=null; }
+    stepPulses(dt); stepFoeEMP(dt);
     musicTick();
     netTick(dt);
     if(G.crew) stepCrew(dt); else updateCamera(dt);
