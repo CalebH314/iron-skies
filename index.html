@@ -314,6 +314,8 @@ td{padding:6px 8px;border-bottom:1px solid rgba(255,255,255,.045)}
     <div class="bar"><i id="flBar" style="width:0%;background:linear-gradient(90deg,#d4952a,#ffd451)"></i></div>
     <div class="lbl"><span>Home Base</span><span id="hbTxt">—</span></div>
     <div class="bar"><i id="hbBar" style="width:100%;background:linear-gradient(90deg,#2a7fd4,#5fb2ff)"></i></div>
+    <div class="lbl" id="dmLbl" style="display:none"><span>Force Dome</span><span id="dmTxt">—</span></div>
+    <div class="bar" id="dmBarWrap" style="display:none"><i id="dmBar" style="width:100%;background:linear-gradient(90deg,#2f9fd0,#8fe4ff)"></i></div>
     <div id="credits">0 <small>CREDITS · press B for HANGAR</small></div>
   </div>
 
@@ -3660,6 +3662,24 @@ function updateHUD(dt){
     const hb=$('hbBar'); hb.style.width=(hf*100)+'%';
     hb.style.background=hf>.5?'linear-gradient(90deg,#2a7fd4,#5fb2ff)'
       :hf>.25?'linear-gradient(90deg,#d4a02a,#ffd451)':'linear-gradient(90deg,#c0392b,#ff7a6b)';
+  }
+
+  // your force dome, if one is standing over the base
+  const dome=G.structures.find(s=>s.type==='dome'&&s.team===G.team);
+  const showDome=!!dome;
+  $('dmLbl').style.display=showDome?'flex':'none';
+  $('dmBarWrap').style.display=showDome?'block':'none';
+  if(showDome){
+    const df=clamp(dome.hp/dome.maxHp,0,1);
+    // it regenerates once nothing has hit it for a few seconds — say which it is
+    const cooling=(dome.cool||0)>0;
+    $('dmTxt').textContent=dome.alive
+      ? Math.max(0,Math.round(dome.hp))+' / '+dome.maxHp+(cooling?' ⚠':(df<1?' ↑':''))
+      : 'DOWN';
+    const db=$('dmBar');
+    db.style.width=(dome.alive?df*100:0)+'%';
+    db.style.background=df>.5?'linear-gradient(90deg,#2f9fd0,#8fe4ff)'
+      :df>.25?'linear-gradient(90deg,#d4a02a,#ffd451)':'linear-gradient(90deg,#c0392b,#ff7a6b)';
   }
 
   if(!p.alive) $('deadTxt').textContent=(G.deadBy?G.deadBy+' — RESPAWN IN ':'RESPAWN IN ')+Math.ceil(p.respawn);
