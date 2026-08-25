@@ -1729,8 +1729,8 @@ function infernoDefMul(l){ return l<=0?0:1+(l-1)*.30 }
 /** the dome is meant to be a late, expensive wall — not a small buff */
 function domeHp(l){ return l<=0?0:2200+1600*(l-1) }
 const DIFFS=[
-  {name:'RECRUIT',k:.55,botHp:.7, botDmg:.65,note:'A gentle enemy. Good for learning the map.'},
-  {name:'REGULAR',k:1,  botHp:1,  botDmg:1,  note:'The intended fight.'},
+  {name:'RECRUIT',k:.55,botHp:.7, botDmg:.65,note:'A gentle enemy, and the only one that never fires an EMP at you. Good for learning the map.'},
+  {name:'REGULAR',k:1,  botHp:1,  botDmg:1,  note:'The intended fight. They hold one EMP a round from level 6 on.'},
   {name:'VETERAN',k:1.5,botHp:1.3,botDmg:1.3,note:'Tougher installations, sturdier aircraft, faster reinforcement. They carry an EMP of their own.'},
   {name:'ACE',    k:2.1,botHp:1.7,botDmg:1.6,note:'Everything the enemy has, doubled, and an EMP in their pocket. You will need the permanent upgrades.'},
   {name:'JOSE',   k:6.0,botHp:3.0,botDmg:2.6,
@@ -4016,7 +4016,7 @@ function fireEMP(){
 /** how many charges a side gets — only above Regular, and only later on */
 function empCharges(){
   const i=clamp(PROFILE.difficulty|0,0,DIFFS.length-1);
-  if(i<=1) return 0;                       // Recruit and Regular: none
+  if(i<=0) return 0;                       // Recruit is the only side without one
   if(!campaign()||net.mode!=='solo') return i>=4?2:1;
   return PROFILE.level>=6 ? (i>=4?2:1) : 0;   // and not on the early levels
 }
