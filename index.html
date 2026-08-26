@@ -407,7 +407,7 @@ td{padding:6px 8px;border-bottom:1px solid rgba(255,255,255,.045)}
 
     <div class="srow">
       <h4>MAP</h4>
-      <p id="mapDesc">Which ground you fight over. Applies to solo, and to any room you host.</p>
+      <p id="mapDesc">Which ground you fight over. Applies to solo, and to any room you host. The weather is drawn fresh every round, in a room as well as on your own.</p>
       <div class="seg" id="mapSeg"></div>
     </div>
 
@@ -930,13 +930,12 @@ const WEATHERS=[
   {id:'mist',  name:'FOG BANK',     fog:[.71,.73,.76], near:260,  far:1900,  tint:[.82,.84,.86],
    note:'Thick fog. You will be on top of things before you see them.'}
 ];
-/** Stable per level: the same level always brings the same weather. */
-function weatherFor(lv){
-  if(lv<=1) return WEATHERS[0];                 // the first level stays clear
-  const h=Math.abs(Math.sin(lv*97.13)*43758.5453);
-  const r=h-Math.floor(h);
-  // every kind is equally likely
-  return WEATHERS[Math.min(WEATHERS.length-1,Math.floor(r*WEATHERS.length))];
+/** A fresh draw every round, every kind equally likely. */
+function pickWeather(){ return WEATHERS[rndi(0,WEATHERS.length-1)] }
+/** Which ground an AUTO map lands on — canyon most of the time, as before. */
+function pickMapKind(){
+  const r=Math.random();
+  return r<.55?'canyon':r<.80?'hills':'plains';
 }
 const WX={w:WEATHERS[0], t:0, flash:0, thunder:0, gustX:0, gustY:0, bolts:[]};
 const BOLT_R=185, BOLT_DMG=46;
@@ -981,9 +980,12 @@ function strikeLightning(){
   }
 }
 function applyWeather(){
-  // multiplayer, training and the menus all stay clear
-  const solo=net.mode==='solo';
-  WX.w=(solo&&!G.tut) ? (G.mission?WEATHERS[1+rndi(0,4)]:weatherFor(TERRAIN.level)) : WEATHERS[0];
+  // Training stays clear so it can teach. Everything else gets weather, rooms
+  // included — a client takes the host's so everyone is in the same sky.
+  if(G.tut) WX.w=WEATHERS[0];
+  else if(net.mode==='client'&&G.netWx) WX.w=WEATHERS.find(w=>w.id===G.netWx)||pickWeather();
+  else WX.w=pickWeather();
+  G.wxId=WX.w.id;
   WX.t=0; WX.flash=0; WX.thunder=rnd(4,11); WX.gustX=0; WX.gustY=0;
   for(let i=0;i<3;i++) FOG[i]=WX.w.fog[i];
   if(typeof gl!=='undefined'&&gl&&U&&U.uFogCol) gl.uniform3fv(U.uFogCol,FOG);
@@ -1018,7 +1020,7 @@ function isTrenchLevel(lv){ return lv>=2 && lv%4!==0 }
 
 /* Map kinds you can pick in Settings. 'auto' follows the campaign. */
 const MAPS=[
-  {id:'auto',  name:'AUTO',       note:'Follows the campaign — open ground most levels, a canyon run every fourth.'},
+  {id:'auto',  name:'AUTO',       note:'A fresh draw every round — mostly canyon, sometimes hills or open plains.'},
   {id:'plains',name:'PLAINS',     note:'Flat and fast, with nothing to hide behind and nothing to hit.'},
   {id:'hills', name:'HILLS',      note:'Rolling ground with ridgelines across the middle; you have to find the gaps.'},
   {id:'canyon',name:'CANYON RUN', note:'A winding trench between the bases. Fast and covered, but you can climb over the mesa if you would rather take the long way.'}
@@ -1152,7 +1154,9 @@ function applyTerrain(){
   else {
     const lv=(G.netLevel!=null)?G.netLevel:PROFILE.level;   // clients follow the host's map
     let kind=(G.netMap!=null)?G.netMap:(PROFILE.map||'auto');
-    if(kind==='auto') kind=isTrenchLevel(lv)?'canyon':'hills';
+    // AUTO is a fresh draw each round, so leaving and starting again gives
+    // you different ground
+    if(kind==='auto') kind=pickMapKind();
     if(kind==='canyon'&&teamList().length>2) kind='hills';  // a canyon has two mouths
     setTerrain(lv,kind);
   }
@@ -1244,6 +1248,19 @@ function buildWorld(){
     dm.quad(P(a0,q0),P(a1,q0),P(a1,q1),P(a0,q1),band);
   }
   MESH.dome=dm.build();
+
+  /* The same hemisphere in plain white. The force dome's own mesh has blue baked
+     into its vertices and the shader multiplies vertex colour by the tint, so a
+     red pulse drawn with it came out blue. This one takes the colour it is given. */
+  const sh=new Builder();
+  for(let i=0;i<dseg;i++)for(let j=0;j<drings;j++){
+    const a0=i/dseg*Math.PI*2,a1=(i+1)/dseg*Math.PI*2;
+    const q0=j/drings*Math.PI/2,q1=(j+1)/drings*Math.PI/2;
+    const P=(a,q)=>[Math.cos(q)*Math.cos(a)*DR,Math.sin(q)*DR,Math.cos(q)*Math.sin(a)*DR];
+    const band=(j%2===0)?[1,1,1]:[.74,.74,.74];
+    sh.quad(P(a0,q0),P(a1,q0),P(a1,q1),P(a0,q1),band);
+  }
+  MESH.shell=sh.build();
 
   // an actual rocket: body, nose cone and tail fins, nose along -Z
   const rk=new Builder();
@@ -1841,6 +1858,11 @@ const diff={
   // your side grows too, a little behind theirs
   myHangars(){ return 2+Math.floor((PROFILE.level-1)/3) },
   myCap(){ return Math.min(26,Math.round(12+PROFILE.level*1.2)) },
+  /** the rank of force dome the enemy fields — nothing before level 7 */
+  foeDome(){
+    if(!campaign()||net.mode!=='solo'||PROFILE.level<7) return 0;
+    return 1+Math.floor((PROFILE.level-7)/4)+(DK().k>=2?1:0);
+  },
   cap(){ return Math.round((22+Math.floor((PROFILE.level-1)/2))*clamp(DK().k,.6,2.5)) },
   extraDefences(){ const k=DK().k;
     return Math.round((Math.min(PROFILE.level-1,7)+(k>=3?6:0))*Math.min(k,2.2)) },
@@ -1863,7 +1885,8 @@ try{ localStorage.removeItem('ironskies.board'); }catch(e){}   // retired featur
 const G={
   mode:'menu', started:false, t:0, dt:0,
   planes:new Map(), bullets:[], missiles:[], parts:[], structures:[],
-  me:null, myId:uid(), team:'blue', emp:0, pulses:[], foeEmp:{}, foeEmpT:0, eliminated:{}, netLevel:null, netMap:null, hangarT:{}, hangarSaid:{},
+  me:null, myId:uid(), team:'blue', emp:0, pulses:[], foeEmp:{}, foeEmpT:0, empWarn:null,
+  wxId:'clear', netWx:null, eliminated:{}, netLevel:null, netMap:null, hangarT:{}, hangarSaid:{},
   credits:600, kills:0, deaths:0, score:0,
   camMode:0, camPos:[0,120,300], camLook:[0,60,0],
   round:null, botFill:5, economyT:0, fires:[], roster:[],
@@ -3598,8 +3621,21 @@ function render(){
       // the flash where it lands
       M4.trans(model,B.pos[0],B.pos[1]+12,B.pos[2]);
       M4.mul(model,model,M4.scl(tmpM,BOLT_R*(.3+k*.9),BOLT_R*.34,BOLT_R*(.3+k*.9)));
-      draw(MESH.dome,model,{unlit:true,alpha:a*.5,tint:[.85,.92,1]});
+      draw(MESH.shell,model,{unlit:true,alpha:a*.5,tint:[.85,.92,1]});
     }
+    gl.depthMask(true); gl.disable(gl.BLEND); gl.enable(gl.CULL_FACE);
+  }
+
+  // --- an EMP spooling up: a swelling glow over the HQ that is about to fire ---
+  if(G.empWarn&&G.empWarn.hq){
+    const w=G.empWarn, k=clamp(1-w.t/5,0,1);
+    const col=TEAMCOL[w.team]||[1,.4,.3];
+    gl.enable(gl.BLEND); gl.depthMask(false); gl.disable(gl.CULL_FACE);
+    const rr=70+k*k*260+Math.sin(WX.t*22)*14;
+    M4.trans(model,w.hq.pos[0],w.hq.pos[1]+30,w.hq.pos[2]);
+    M4.mul(model,model,M4.scl(tmpM,rr,rr*.8,rr));
+    draw(MESH.shell,model,{unlit:true,alpha:.22+k*.5,
+      tint:[Math.min(1,col[0]*.7+.3),Math.min(1,col[1]*.7+.3),Math.min(1,col[2]*.7+.3)]});
     gl.depthMask(true); gl.disable(gl.BLEND); gl.enable(gl.CULL_FACE);
   }
 
@@ -3609,13 +3645,17 @@ function render(){
     for(const P of G.pulses){
       const k=clamp(P.r/P.R,0,1);
       const col=TEAMCOL[P.team]||[.62,.92,1];
-      const hot=[Math.min(1,col[0]*.55+.45),Math.min(1,col[1]*.55+.45),Math.min(1,col[2]*.55+.45)];
-      // the front itself, and a fainter shell just behind it
-      for(const [scale,a] of [[1,.62],[.88,.30],[.74,.14]]){
-        const rr=Math.max(6,P.r*scale);
+      // lift it toward white without washing the hue out, so red reads as red
+      const hot=[Math.min(1,col[0]*.72+.28),Math.min(1,col[1]*.72+.28),Math.min(1,col[2]*.72+.28)];
+      // A thick wall rather than a soap bubble: nine shells stacked back from
+      // the front, so you can see how deep it is and how fast it is coming.
+      const LAYERS=9;
+      for(let i=0;i<LAYERS;i++){
+        const rr=Math.max(6,P.r*(1-i*.035));
+        const a=(i===0?.80:.46*(1-i/LAYERS));
         M4.trans(model,P.pos[0],P.pos[1]+8,P.pos[2]);
         M4.mul(model,model,M4.scl(tmpM,rr,rr*.58,rr));
-        draw(MESH.dome,model,{unlit:true,alpha:a*(1-k*.82),tint:hot});
+        draw(MESH.shell,model,{unlit:true,alpha:a*(1-k*.55),tint:i?hot:[1,1,1]});
       }
     }
     gl.depthMask(true); gl.disable(gl.BLEND); gl.enable(gl.CULL_FACE);
@@ -3758,7 +3798,7 @@ function updateHUD(dt){
 /* Threat callouts. Each has its own cooldown so they announce a change in the
    situation rather than nagging every frame. */
 const warns=[];
-let warnCd={six:0,msl:0,base:0};
+let warnCd={six:0,msl:0,base:0,emp:0};
 function pushWarn(key,txt,cls,hold,cool){
   if(warnCd[key]>0) return;
   warnCd[key]=cool;
@@ -4119,6 +4159,26 @@ function empCharges(){
 }
 /** the enemy holds its charge until enough of your aircraft are over its base */
 function stepFoeEMP(dt){
+  // a charge already spooling up: count it down, then let it go
+  if(G.empWarn){
+    G.empWarn.t-=dt;
+    if(Math.ceil(G.empWarn.t)!==G.empWarn.said&&G.empWarn.t>0){
+      G.empWarn.said=Math.ceil(G.empWarn.t);
+      pushWarn('emp','⚠ EMP INBOUND IN '+G.empWarn.said,'crit',1.0,0);
+    }
+    if(G.empWarn.t<=0){
+      const w=G.empWarn; G.empWarn=null;
+      if(authority()&&w.hq&&w.hq.alive){
+        let R=EMP_R, D=EMP_T;
+        const soak=domeSoak(w.hq.pos,R);
+        if(soak){ R=soak.R; D=Math.round(D*soak.D); }
+        firePulse(w.hq.pos,R,D,w.team);
+        net.send({t:'emp',p:w.hq.pos.map(v=>+v.toFixed(1)),r:R,d:D,team:w.team});
+        toast(String(w.team).toUpperCase()+' EMP AWAY','red',3);
+      }
+    }
+    return;
+  }
   if(!authority()||G.tut||G.mission) return;
   G.foeEmpT=Math.max(0,(G.foeEmpT||0)-dt);
   if(G.foeEmpT>0) return;
@@ -4131,14 +4191,15 @@ function stepFoeEMP(dt){
     for(const q of G.planes.values())
       if(q.alive&&q.team!==k&&dist(q.pos,hq.pos)<EMP_R*.72) over++;
     if(over<4) continue;
+    // Spool it up in the open first. Five seconds of warning, a countdown and a
+    // charging glow over their HQ, so being caught is a decision rather than an
+    // ambush.
     G.foeEmp[k]--; G.foeEmpT=40;
-    let R=EMP_R, D=EMP_T;
-    const soak=domeSoak(hq.pos,R);
-    if(soak){ R=soak.R; D=Math.round(D*soak.D); }
-    firePulse(hq.pos,R,D,k);
-    net.send({t:'emp',p:hq.pos.map(v=>+v.toFixed(1)),r:R,d:D,team:k});
-    toast(k.toUpperCase()+' FIRED AN EMP — GET CLEAR','red',5);
-    feed(`<span class="${k}">EMP</span> fired from the ${k.toUpperCase()} HQ`);
+    G.empWarn={team:k,t:5,hq};
+    net.send({t:'empwarn',team:k,p:hq.pos.map(v=>+v.toFixed(1))});
+    toast(k.toUpperCase()+' IS CHARGING AN EMP — BREAK OFF AND GET CLEAR','red',5.5);
+    feed(`<span class="${k}">EMP</span> charging at the ${k.toUpperCase()} HQ`);
+    sfx('lock',.9);
     return;
   }
 }
@@ -4216,7 +4277,7 @@ function quitToMenu(){
   for(let i=0;i<3;i++) FOG[i]=WEATHERS[0].fog[i];
   if(gl&&U&&U.uFogCol) gl.uniform3fv(U.uFogCol,FOG);
   { const el=$('wxflash'); if(el) el.style.opacity=0; }
-  G.me=null; G.crew=null; G.roster=[]; G.emp=0; G.pulses.length=0; G.foeEmp={}; G.foeEmpT=0; G.netLevel=null; G.netMap=null; G.hangarT={}; G.hangarSaid={}; G.credits=600; G.kills=0; G.deaths=0; G.score=0; G.camMode=0;
+  G.me=null; G.crew=null; G.roster=[]; G.emp=0; G.pulses.length=0; G.foeEmp={}; G.foeEmpT=0; G.empWarn=null; G.netLevel=null; G.netMap=null; G.netWx=null; G.hangarT={}; G.hangarSaid={}; G.credits=600; G.kills=0; G.deaths=0; G.score=0; G.camMode=0;
   baseBarEls.forEach(el=>el.classList.remove('on'));
   tagEls.forEach(el=>el.remove()); tagEls.clear();
   for(const id of ['pause','over','shop','dead','tut','mission']) $(id).classList.remove('on');
@@ -4360,7 +4421,8 @@ function netmsg(s){$('netmsg').innerHTML=s}
 function sendWelcome(c){
   const p=c._pid?G.planes.get(c._pid):null;
   try{ c.send(JSON.stringify({t:'welcome',
-    teams:teamList().length, you:p?p.team:teamList()[0], level:PROFILE.level, map:TERRAIN.kind,
+    teams:teamList().length, you:p?p.team:teamList()[0], level:PROFILE.level,
+    map:TERRAIN.kind, wx:G.wxId,
     world:G.structures.map(packStruct),
     players:[...G.planes.values()].map(packPlayer)})); }catch(e){}
 }
@@ -4408,10 +4470,18 @@ function onNet(raw,conn){
       break;
     }
     case 'welcome': {
-      if(!G.started){ G.netLevel=m.level; G.netMap=m.map||null; startGame(m.you,m.teams||2); }
+      if(!G.started){ G.netLevel=m.level; G.netMap=m.map||null; G.netWx=m.wx||null;
+                      startGame(m.you,m.teams||2); }
       G.structures.length=0;
       for(const s of m.world){ const st={...s,cd:0,yaw:0,pitch:0,spin:0,maxHp:STRUCTS[s.type].hp}; G.structures.push(st); }
       for(const p of m.players) if(p.id!==G.myId) unpackPlayer(p);
+      break;
+    }
+    case 'empwarn': {
+      if(!G.empWarn){
+        G.empWarn={team:m.team,t:5,hq:{pos:m.p,alive:true}};
+        if(m.team!==G.team) toast(String(m.team).toUpperCase()+' IS CHARGING AN EMP — GET CLEAR','red',5.5);
+      }
       break;
     }
     case 'emp': {
@@ -5336,6 +5406,13 @@ function buildCompounds(){
   const foe=foeBaseOf(G.team);
   addStruct('hq',G.team); addStruct('hq',foe);
   if(teamPerk(G.team,'dome')>0) addStruct('dome',G.team);
+  // From level 7 the enemy fields a dome of their own, and it thickens as the
+  // campaign goes on. You will need something that can beat a shield down.
+  const foeDome=diff.foeDome();
+  if(foeDome>0){
+    TEAMPERK[foe]=Object.assign({},TEAMPERK[foe],{dome:foeDome});
+    addStruct('dome',foe);
+  }
   for(let i=0;i<teamPerk(G.team,'infernodef');i++) addStruct('infernodef',G.team);
   addStruct('spawner',foe);
   for(let i=1;i<diff.hangars();i++) addStruct('spawner',foe);   // a bigger enemy air force each level
@@ -5371,6 +5448,8 @@ function startGame(team,nteams){
   updateWeps();
   if(crewMode()){ G.me.alive=false; G.me.respawn=1e9; takeEmplacement(); }
   toast('CLICK TO CAPTURE MOUSE · <kbd>B</kbd> OPENS THE HANGAR','grn',5);
+  if(diff.foeDome()>0)
+    toast('THEIR COMMAND HQ IS UNDER A FORCE DOME — BEAT THE SHELL DOWN FIRST','red',7);
   if(WX.w.id!=='clear') toast(WX.w.name+' — '+WX.w.note, WX.w.lightning?'red':'gold', 6);
   if(TERRAIN.trench)
     toast('CANYON RUN — the trench is the fast way through, but you can climb over the mesa.','gold',7);
