@@ -2440,7 +2440,9 @@ function fireWeapon(p,dt){
 
   // missiles are just weapon 4: the trigger fires them like any other gun,
   // and the dedicated button stays as a shortcut from any weapon
-  const wantMissile=c.fire2||(c.fire&&p.wep==='missile');
+  // Homing missiles are the player's alone. Bots have none in their loadout,
+  // and this makes it impossible regardless of what a loadout ever says.
+  const wantMissile=!p.isBot&&(c.fire2||(c.fire&&p.wep==='missile'));
   const wantPrimary=c.fire&&p.wep!=='missile';
   // ---- primary ----
   const w=WEAPONS[p.wep], id=p.wep;
@@ -2467,7 +2469,10 @@ function fireWeapon(p,dt){
           rocket:id==='rocket',
           // 0.55 was tuned when every bot gunned the HQ. Now only the raiders
           // do, so they hit properly and the rest stay incidental.
-          antiStruct:p.isBot?(p.role==='hq'?2.3:0.8):1, life:id==='laser'?1.4:id==='inferno'?.38:3.0,
+          antiStruct:p.isBot?(p.role==='hq'?2.3:0.8):1,
+          // a bot's round that has flown two kilometres is not going to hit
+          // anything, and eight hundred of them in the air is the frame budget
+          life:id==='laser'?1.4:id==='inferno'?.38:(p.isBot?1.8:3.0),
           fire:id==='inferno', grow:id==='inferno'?1:0, kind:id});
       }
       if(id==='inferno'){          // embers streaming off the flame
@@ -2691,8 +2696,33 @@ function stepCollisions(dt){
 }
 
 /* ------------------------- projectile stepping --------------------------- */
+/* A coarse bucket grid over the aircraft, rebuilt once a frame. Without it every
+   round in the air tests every aeroplane, and with the sky as full as it is now
+   — eight hundred rounds against seventy aircraft — that alone is the frame. */
+const GRID_C=520, _grid=new Map(), _near=[];
+const gkey=(x,z)=>(Math.floor(x/GRID_C)*100003)+Math.floor(z/GRID_C);
+function buildPlaneGrid(list){
+  _grid.clear();
+  for(let i=0;i<list.length;i++){
+    const p=list[i], k=gkey(p.pos[0],p.pos[2]);
+    const a=_grid.get(k);
+    if(a) a.push(p); else _grid.set(k,[p]);
+  }
+}
+function nearPlanes(x,z){
+  _near.length=0;
+  const cx=Math.floor(x/GRID_C), cz=Math.floor(z/GRID_C);
+  for(let i=-1;i<=1;i++) for(let j=-1;j<=1;j++){
+    const a=_grid.get((cx+i)*100003+(cz+j));
+    if(a) for(let k=0;k<a.length;k++) _near.push(a[k]);
+  }
+  return _near;
+}
 function stepBullets(dt){
   const myPlanes=ownedPlanes(), myStructs=ownedStructs();
+  buildPlaneGrid(myPlanes);
+  // a hard ceiling, oldest first, so a pathological burst cannot run away
+  if(G.bullets.length>1100) G.bullets.splice(0,G.bullets.length-1100);
   for(let i=G.bullets.length-1;i>=0;i--){
     const b=G.bullets[i];
     const px=b.pos[0],py=b.pos[1],pz=b.pos[2];
@@ -2717,7 +2747,7 @@ function stepBullets(dt){
         }
       }
     }
-    if(!hit) for(const p of myPlanes){
+    if(!hit) for(const p of nearPlanes(b.pos[0],b.pos[2])){
       if(p.team===b.team||p.id===b.owner) continue;
       if(segSphere(px,py,pz,b.pos,p.pos,8.5+beamR(b))){ damagePlane(p,dmg,b.owner); hit=true; hitPos=p.pos.slice(); break; }
     }
@@ -2852,7 +2882,7 @@ function stepFires(dt){
   }
 }
 function addPart(pos,vel,col,size,life){
-  if(G.parts.length>520) G.parts.shift();
+  if(G.parts.length>300) G.parts.shift();
   G.parts.push({pos:pos.slice(),vel:vel.slice(),col,size,life,max:life});
 }
 function explode(pos,n,scale){
@@ -3566,6 +3596,11 @@ function render(){
 
   // --- bullets ---
   for(const b of G.bullets){
+    // same again: a tracer four kilometres away is not worth a draw call
+    {
+      const dx=b.pos[0]-G.camPos[0], dy=b.pos[1]-G.camPos[1], dz=b.pos[2]-G.camPos[2];
+      if(dx*dx+dy*dy+dz*dz>3600*3600) continue;
+    }
     const l=Math.hypot(...b.vel)||1;
     const q=qLookDir([0,0,0,1],[b.vel[0]/l,b.vel[1]/l,b.vel[2]/l],[0,1,0]);
     M4.fromRTS(model,q,b.pos,1);
@@ -3633,8 +3668,13 @@ function render(){
   gl.depthMask(true); gl.disable(gl.BLEND);
 
   // --- particles ---
+  // Each one is a draw call, so anything too far to read is skipped. At a
+  // kilometre a two-metre cube is a sub-pixel speck and costs the same as one
+  // filling the screen.
   gl.enable(gl.BLEND); gl.depthMask(false);
   for(const p of G.parts){
+    const dx=p.pos[0]-G.camPos[0], dy=p.pos[1]-G.camPos[1], dz=p.pos[2]-G.camPos[2];
+    if(dx*dx+dy*dy+dz*dz>1300*1300) continue;
     const k=p.life/p.max, s=p.size*(1+(1-k)*1.6);
     M4.trans(model,p.pos[0],p.pos[1],p.pos[2]);
     M4.mul(model,model,M4.scl(tmpM,s,s,s));
