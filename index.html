@@ -148,6 +148,27 @@ kbd{background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.16);bord
 .pane{display:none;padding-top:16px}
 .pane.on{display:block;animation:panefade .16s ease-out}
 @keyframes panefade{from{opacity:0;transform:translateY(-3px)}to{opacity:1;transform:none}}
+#roomList{margin:10px 0 2px;display:flex;flex-direction:column;gap:6px}
+#roomList .rm{display:flex;align-items:center;gap:12px;padding:9px 12px;border-radius:9px;
+  background:rgba(10,20,34,.6);border:1px solid rgba(140,175,215,.22)}
+#roomList .rm b{font-size:14px;letter-spacing:3px;color:#7fe6c0;min-width:74px}
+#roomList .rm span{font-size:11px;color:#8fa8c4;flex:1}
+#roomList .rm button{padding:7px 14px;font-size:11px}
+#roomList .none{font-size:11px;color:#6f88a3;letter-spacing:1px;padding:4px 2px}
+#askJoin{position:absolute;left:50%;top:16%;transform:translateX(-50%);display:none;z-index:12;
+  padding:14px 18px;border-radius:11px;background:rgba(8,16,28,.94);
+  border:1px solid rgba(140,175,215,.45);box-shadow:0 10px 40px rgba(0,0,0,.6);text-align:center}
+#askJoin.on{display:block}
+#askJoin p{font-size:13px;color:#e6f2ff;margin-bottom:10px;letter-spacing:1px}
+#askJoin .btns{display:flex;gap:10px;justify-content:center}
+#orders{position:absolute;left:50%;bottom:24%;transform:translateX(-50%);display:none;
+  align-items:center;gap:10px;padding:10px 14px;border-radius:10px;z-index:9;
+  background:rgba(6,14,24,.86);border:1px solid rgba(140,175,215,.38);
+  box-shadow:0 8px 30px rgba(0,0,0,.55)}
+#orders.on{display:flex}
+#orders span{font-size:11px;letter-spacing:3px;color:#7fe6c0;font-weight:700}
+#orders input{background:rgba(2,6,12,.7);border:1px solid rgba(140,175,215,.3);border-radius:7px;
+  color:#e6f2ff;font:inherit;font-size:13px;padding:8px 11px;width:430px;outline:none}
 #empHud{position:absolute;left:50%;top:calc(34% - 34px);transform:translateX(-50%);display:none;
   font-size:14px;font-weight:700;letter-spacing:3px;color:#8fe8ff;pointer-events:none;
   text-shadow:0 2px 10px #000,0 0 18px rgba(60,180,255,.7)}
@@ -347,6 +368,8 @@ td{padding:6px 8px;border-bottom:1px solid rgba(255,255,255,.045)}
     <div class="skip">PRESS <kbd>N</kbd> TO SKIP THIS STEP</div>
   </div>
 
+  <div id="orders"><span>ORDER</span><input id="orderIn" maxlength="60"
+    placeholder="attack the HQ · on me · their fighters · the hangars · pull back" /></div>
   <div id="empHud"></div>
   <div id="weps"></div>
   <div id="feed"></div>
@@ -358,6 +381,10 @@ td{padding:6px 8px;border-bottom:1px solid rgba(255,255,255,.045)}
   <table><thead><tr><th>Pilot</th><th>Team</th><th>Kills</th><th>Deaths</th><th>Score</th></tr></thead>
   <tbody id="boardBody"></tbody></table>
 </div>
+
+<div id="askJoin"><p id="askTxt"></p><div class="btns">
+  <button class="primary" id="btnAllow">ALLOW</button><button class="danger" id="btnDeny">DECLINE</button>
+</div></div>
 
 <div id="dead"><div><h2 id="deadTitle">SHOT DOWN</h2><p id="deadTxt">RESPAWN IN 5</p></div></div>
 
@@ -403,6 +430,12 @@ td{padding:6px 8px;border-bottom:1px solid rgba(255,255,255,.045)}
       <p id="crewDesc">Take an aircraft, or man an emplacement at your own base and hold the line
       from the ground. Gun crews cannot move, but they see everything and hit hard.</p>
       <div class="seg" id="crewSeg"></div>
+    </div>
+
+    <div class="srow">
+      <h4>ADVANCED MODE</h4>
+      <p id="advDesc">Everything plays the same, but you can give your own squadron orders.</p>
+      <div class="seg" id="advSeg"></div>
     </div>
 
     <div class="srow">
@@ -502,6 +535,11 @@ td{padding:6px 8px;border-bottom:1px solid rgba(255,255,255,.045)}
       <input id="joinIn" placeholder="ROOM CODE" maxlength="5" style="width:150px;text-transform:uppercase" />
       <button id="btnJoin">JOIN GAME</button>
     </div>
+    <div class="row" style="margin-top:4px">
+      <button id="btnRooms">REFRESH ROOM LIST</button>
+      <span class="hint" id="dirState" style="align-self:center">—</span>
+    </div>
+    <div id="roomList"></div>
     <div class="hint" style="margin-top:12px">
       Every pilot gets their own Command HQ, hangars and defences — last compound
       standing wins. Up to six separate compounds; past that pilots pair up.
@@ -535,8 +573,9 @@ td{padding:6px 8px;border-bottom:1px solid rgba(255,255,255,.045)}
       <b>FLY</b> mouse aims · <kbd>A</kbd><kbd>D</kbd> roll · mouse wheel throttle · <kbd>Shift</kbd> afterburner<br/>
       <b>FIGHT</b> <kbd>LMB</kbd>/<kbd>Space</kbd> fire · <kbd>1</kbd>–<kbd>5</kbd> weapon (<kbd>4</kbd> = missiles) · <kbd>RMB</kbd>/<kbd>F</kbd> quick missile · <kbd>X</kbd> flares · <kbd>R</kbd> resupply<br/>
       <b>BUILD</b> <kbd>B</kbd> hangar &amp; shop — buy weapons, armor, <b>Sniper Towers</b> and <b>Surface-to-Air Missile sites</b><br/>
-      <b>VIEW</b> you fly from the <b>cockpit</b> — <kbd>C</kbd> cycles cockpit / chase / cinematic · <kbd>Tab</kbd> scoreboard<br/>
-      <b>GAME</b> <kbd>Esc</kbd> or <kbd>P</kbd> pause &amp; exit · <kbd>M</kbd> mute sound<br/><br/>
+      <b>VIEW</b> you fly from the <b>cockpit</b> — <kbd>C</kbd> cycles cockpit / chase / cinematic<br/>
+      <b>GAME</b> <kbd>Esc</kbd> or <kbd>P</kbd> pause &amp; exit · <kbd>M</kbd> mute sound<br/>
+      <b>SQUADRON</b> turn on <b>Advanced Mode</b> in settings, then <kbd>T</kbd> to tell your own aircraft what to do<br/><br/>
       Destroy the enemy <b>Command HQ</b> to win the round. Credits come from kills, structure hits and passive income.
     </div>
     </div>
@@ -790,6 +829,72 @@ Builder.prototype.prism=function(r0,r1,h,sides,col,cap){
   }
   return this;
 };
+/* A batch for the tracers. Every plain round used to be its own draw call —
+   four buffer binds, three attribute pointers and five uniforms apiece — and
+   with three hundred rounds up that is most of the frame. They all go into one
+   buffer instead, rewritten each frame and drawn once. */
+const TRACER_MAX=620, PART_MAX=260;
+const TRACER_CORNERS=[[-1,-1,-1],[1,-1,-1],[1,1,-1],[-1,1,-1],[-1,-1,1],[1,-1,1],[1,1,1],[-1,1,1]];
+let TBATCH=null, PBATCH=null;
+function makeBatch(MAX){
+  const V=MAX*8, I=MAX*36;
+  const B={
+    pos:new Float32Array(V*3), nrm:new Float32Array(V*3), col:new Float32Array(V*3),
+    idx:new Uint16Array(I), n:0, max:MAX,
+    mesh:{pos:gl.createBuffer(),nrm:gl.createBuffer(),col:gl.createBuffer(),idx:gl.createBuffer(),count:0}
+  };
+  // the index pattern never changes: a box per slot
+  const BOX=[0,1,2,0,2,3, 5,4,7,5,7,6, 1,5,6,1,6,2, 4,0,3,4,3,7, 3,2,6,3,6,7, 4,5,1,4,1,0];
+  for(let k=0;k<MAX;k++) for(let j=0;j<36;j++) B.idx[k*36+j]=k*8+BOX[j];
+  for(let i=0;i<V*3;i+=3){ B.nrm[i]=0; B.nrm[i+1]=1; B.nrm[i+2]=0; }
+  gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER,B.mesh.idx);
+  gl.bufferData(gl.ELEMENT_ARRAY_BUFFER,B.idx,gl.STATIC_DRAW);
+  gl.bindBuffer(gl.ARRAY_BUFFER,B.mesh.nrm);
+  gl.bufferData(gl.ARRAY_BUFFER,B.nrm,gl.STATIC_DRAW);
+  return B;
+}
+function tracerBatchInit(){ return TBATCH||(TBATCH=makeBatch(TRACER_MAX)) }
+function partBatchInit(){ return PBATCH||(PBATCH=makeBatch(PART_MAX)) }
+function tracerBatchReset(){ tracerBatchInit().n=0; }
+function partBatchReset(){ partBatchInit().n=0; }
+/** one round: a box of half-extents (w,w,len/2) pointing down its own velocity */
+function batchAdd(B,pos,dir,w,half,col){
+  if(!B||B.n>=B.max) return;
+  // build an orthonormal frame around the direction
+  let ux=dir[0],uy=dir[1],uz=dir[2];
+  let ax=0,ay=1,az=0;
+  if(Math.abs(uy)>.94){ ax=1; ay=0; }
+  let rx=ay*uz-az*uy, ry=az*ux-ax*uz, rz=ax*uy-ay*ux;
+  const rl=Math.hypot(rx,ry,rz)||1; rx/=rl; ry/=rl; rz/=rl;
+  const vx=uy*rz-uz*ry, vy=uz*rx-ux*rz, vz=ux*ry-uy*rx;
+  // corner order must match the index pattern: 0-3 back face, 4-7 front face
+  let k=B.n*8*3;
+  const C=TRACER_CORNERS;
+  for(let c=0;c<8;c++){
+    const sx=C[c][0]*w, sy=C[c][1]*w, sz=C[c][2]*half;
+    B.pos[k]  =pos[0]+rx*sx+vx*sy+ux*sz;
+    B.pos[k+1]=pos[1]+ry*sx+vy*sy+uy*sz;
+    B.pos[k+2]=pos[2]+rz*sx+vz*sy+uz*sz;
+    B.col[k]=col[0]; B.col[k+1]=col[1]; B.col[k+2]=col[2];
+    k+=3;
+  }
+  B.n++;
+}
+const tracerBatchAdd=(pos,dir,w,half,col)=>batchAdd(TBATCH,pos,dir,w,half,col);
+/** an axis-aligned fleck, for particles */
+const partBatchAdd=(pos,sz,col)=>batchAdd(PBATCH,pos,[0,0,1],sz,sz,col);
+function batchDraw(B,alpha){
+  if(!B||!B.n) return;
+  gl.bindBuffer(gl.ARRAY_BUFFER,B.mesh.pos);
+  gl.bufferData(gl.ARRAY_BUFFER,B.pos.subarray(0,B.n*24),gl.DYNAMIC_DRAW);
+  gl.bindBuffer(gl.ARRAY_BUFFER,B.mesh.col);
+  gl.bufferData(gl.ARRAY_BUFFER,B.col.subarray(0,B.n*24),gl.DYNAMIC_DRAW);
+  B.mesh.count=B.n*36;
+  M4.ident(model);
+  draw(B.mesh,model,{unlit:true,alpha,tint:[1,1,1]});
+}
+const tracerBatchDraw=a=>batchDraw(TBATCH,a);
+const partBatchDraw=a=>batchDraw(PBATCH,a);
 Builder.prototype.build=function(){
   const mesh={
     pos:gl.createBuffer(),nrm:gl.createBuffer(),col:gl.createBuffer(),idx:gl.createBuffer(),
@@ -943,7 +1048,7 @@ function pickMapKind(){
   return bag[rndi(0,bag.length-1)];
 }
 const WX={w:WEATHERS[0], t:0, flash:0, thunder:0, gustX:0, gustY:0, bolts:[]};
-const BOLT_R=185, BOLT_DMG=46;
+const BOLT_R=260, BOLT_DMG=210;
 /* Lightning that means it. A strike picks somewhere worth hitting — most often
    the player, because being hunted by the weather as well is the point of a
    storm — and everything inside the flash radius takes it. */
@@ -962,7 +1067,7 @@ function strikeLightning(){
   }
   if(!at) at=[rnd(-WORLD*.6,WORLD*.6),0,rnd(-WORLD*.6,WORLD*.6)];
   at[1]=Math.max(terrainH(at[0],at[2]),SEA);
-  WX.bolts.push({pos:at,t:0,life:.42,seed:Math.random()*9});
+  WX.bolts.push({pos:at,t:0,life:.62,seed:Math.random()*9});
   WX.flash=1;
   sfxAt('boom',at,1.0);
   if(!authority()) return;
@@ -971,17 +1076,24 @@ function strikeLightning(){
     if(!(q.isLocal||(q.isBot&&authority()))) continue;
     const d=Math.hypot(q.pos[0]-at[0],q.pos[2]-at[2]);
     if(d>BOLT_R) continue;
-    const amt=BOLT_DMG*clamp(1-d/BOLT_R,.25,1);
-    if(q.isLocal) toast('STRUCK BY LIGHTNING  −'+Math.round(amt)+' HULL','red',2.2);
+    const amt=BOLT_DMG*clamp(1-d/BOLT_R,.30,1);
+    if(q.isLocal){ toast('STRUCK BY LIGHTNING  −'+Math.round(amt)+' HULL','red',2.4); flashHurt(amt); }
     q.crashLabel='STRUCK BY LIGHTNING';
+    const wasAlive=q.alive;
     damagePlane(q,amt,null);
-    explode(q.pos,14,.8);
+    explode(q.pos,22,1.1);
+    if(wasAlive&&!q.alive)
+      feed(`<span class="gold">⚡</span> <span class="${q.team}">${esc(q.name)}</span> was struck by lightning`);
+    else feed(`<span class="gold">⚡</span> struck <span class="${q.team}">${esc(q.name)}</span> — ${Math.round(amt)} hull`);
   }
   for(const st of G.structures){
     if(!st.alive) continue;
     const d=Math.hypot(st.pos[0]-at[0],st.pos[2]-at[2]);
     if(d>BOLT_R) continue;
-    damageStruct(st,BOLT_DMG*.8*clamp(1-d/BOLT_R,.25,1),null);
+    const amt=BOLT_DMG*.9*clamp(1-d/BOLT_R,.30,1);
+    damageStruct(st,amt,null);
+    feed(`<span class="gold">⚡</span> struck the <span class="${st.team}">${STRUCTS[st.type].short||STRUCTS[st.type].name}</span>`+
+         (st.alive?` — ${Math.round(amt)} damage`:' and destroyed it'));
   }
 }
 function applyWeather(){
@@ -1191,9 +1303,19 @@ function applyTerrain(){
 function buildWorld(){
   buildTerrainMesh();
 
-  /* --- water --- */
-  const w=new Builder();
-  w.quad([-WORLD*1.6,SEA,-WORLD*1.6],[WORLD*1.6,SEA,-WORLD*1.6],[WORLD*1.6,SEA,WORLD*1.6],[-WORLD*1.6,SEA,WORLD*1.6],[.10,.30,.50]);
+  /* --- water ---
+     A single flat quad reads as nothing at all once you are over open sea, so
+     this is a coarse grid with a rolling swell baked in and the facets shaded
+     against each other. It is what tells you where the surface is. */
+  const w=new Builder(), WN=46, WS=WORLD*1.7*2/WN;
+  const wh=(i,j)=>Math.sin(i*.7)*2.6+Math.sin(j*.53+1.7)*2.2+Math.sin((i+j)*.31)*1.5;
+  for(let i=0;i<WN;i++) for(let j=0;j<WN;j++){
+    const x0=-WORLD*1.7+i*WS, z0=-WORLD*1.7+j*WS;
+    const P=(a,b)=>[x0+a*WS,SEA+wh(i+a,j+b),z0+b*WS];
+    const t=(Math.sin(i*.9)+Math.sin(j*1.3))*.5;
+    const col=[.07+t*.02,.26+t*.05,.46+t*.07];
+    w.quad(P(0,0),P(1,0),P(1,1),P(0,1),col);
+  }
   MESH.water=w.build();
 
   /* --- sky dome (drawn around camera, unlit) --- */
@@ -1794,8 +1916,9 @@ const SHOP=[
         'outward and brings down <b>every aircraft it reaches, yours included</b>, so get your '+
         'own people clear first. Enemy installations go dark behind it; SAM sites are hardened '+
         'and keep firing, and nothing on your own side is affected. A force dome standing in the '+
-        'blast takes the edge off it.',
-   eff:()=>`one charge · ${(EMP_R/1000).toFixed(1)} km · installations dark for ${EMP_T} s`},
+        'blast takes the edge off it. It reaches far enough to scratch their Command HQ, '+
+        'which means there is very little of the map outside it — get low and get moving.',
+   eff:()=>`one charge · ${(EMP_R/1000).toFixed(1)} km — the whole field · dark for ${EMP_T} s`},
   {id:'repairk',cat:'Airframe', name:'Field Repair Kit',max:99,cost:()=>320, repeat:true,
    desc:'Instantly patch your hull back to full, right now, mid-flight.', eff:()=>'Restores hull to 100%'},
 
@@ -1854,7 +1977,8 @@ const DIFFS=[
 ];
 const PROFILE={tokens:0,perks:{},muted:false,level:1,wins:0,losses:0,
                kills:0,deaths:0,missions:0,callsign:'',difficulty:1,sens:1,
-               plane:{frame:0,paint:0,frames:[0],paints:[0]},gTol:7,playAs:'plane',map:'auto'};
+               plane:{frame:0,paint:0,frames:[0],paints:[0]},gTol:7,playAs:'plane',map:'auto',
+               advanced:false};
 const DK=()=>DIFFS[clamp(PROFILE.difficulty|0,0,DIFFS.length-1)];
 function loadProfile(){
   try{
@@ -1868,7 +1992,8 @@ function loadProfile(){
       PROFILE.sens=d.sens||1;
       if(d.plane) PROFILE.plane=d.plane;
       PROFILE.gTol=d.gTol||7; PROFILE.playAs=d.playAs||'plane';
-      PROFILE.map=MAPS.some(m=>m.id===d.map)?d.map:'auto'; }
+      PROFILE.map=MAPS.some(m=>m.id===d.map)?d.map:'auto';
+      PROFILE.advanced=!!d.advanced; }
   }catch(e){}
   // Auto-Tracker was retired: give back what was spent on it rather than
   // quietly pocketing the tokens.
@@ -1947,7 +2072,7 @@ function newPlane(o){
     ctrl:{pitch:0,yaw:0,roll:0,lift:0,strafe:0,fire:0,fire2:0,ab:0},
     shield:0, maxShield:0, shieldT:0, drone:false,
     wep:'mg', cool:{}, ammo:{}, flares:0, maxFlares:0,
-    upg:{}, kills:0, deaths:0, score:0, lock:null, lockT:0, lastHitBy:null, aiT:0, aiTarget:null, safeT:0
+    upg:{}, kills:0, deaths:0, score:0, lock:null, lockT:0, lastHitBy:null, aiT:0, aiTarget:null, safeT:0, under:0
   },o);
 }
 
@@ -2176,7 +2301,14 @@ function sfxAt(type,pos,vol){
 const keys={}, stick={x:0,y:0};
 let mouseLocked=false;
 addEventListener('keydown',e=>{
-  if(e.code==='Tab'){e.preventDefault();$('board').classList.add('on');updateBoard()}
+  // Advanced mode: the order bar swallows the keyboard while it is open, so
+  // typing an order does not also fly the aeroplane.
+  if(orderBarOpen()){
+    if(e.code==='Escape'){ e.preventDefault(); closeOrderBar(false); }
+    else if(e.code==='Enter'){ e.preventDefault(); closeOrderBar(true); }
+    return;
+  }
+  if(e.code==='KeyT'&&PROFILE.advanced&&G.started&&!G.over){ e.preventDefault(); openOrderBar(); return; }
   keys[e.code]=true;
   if(e.code==='KeyM'){ setMuted(!PROFILE.muted); }
   if(!G.started) return;
@@ -2194,7 +2326,6 @@ addEventListener('keydown',e=>{
 });
 addEventListener('keyup',e=>{
   keys[e.code]=false;
-  if(e.code==='Tab')$('board').classList.remove('on');
 });
 canvas.addEventListener('mousedown',e=>{
   if(customOpen&&!G.started){ previewDrag=e.clientX; return; }
@@ -2367,8 +2498,27 @@ function simPlane(p,dt){
     }
   }
 
+  // Underwater. You do not bounce off the surface — you go in, and then almost
+  // nothing works: the water drags you down to a crawl, no weapon will fire, and
+  // you drown if you stay. The seabed still kills you, so it is not a refuge.
+  const wasUnder=p.under>0;
+  if(p.pos[1]<SEA&&terrainH(p.pos[0],p.pos[2])<SEA){
+    p.under=(p.under||0)+dt;
+    p.speed*=Math.pow(.03,dt);                  // heavy drag, near a standstill
+    p.thr=Math.min(p.thr,.25);                  // the engine is drowning too
+    if(p.under>3.5) damagePlane(p,26*dt,null);  // and then it starts to tell
+    if(p.isLocal){
+      if(!wasUnder) toast('IN THE WATER — NO WEAPONS, GET OUT','red',3);
+      else if(p.under>3.5) flashHurt(14);
+    }
+  }else if(p.under){
+    if(p.isLocal&&wasUnder) toast('CLEAR OF THE WATER','grn',1.4);
+    p.under=0;
+  }
+
   // terrain / sea collision
-  const gh=Math.max(terrainH(p.pos[0],p.pos[2]),SEA);
+  const bed=terrainH(p.pos[0],p.pos[2]);
+  const gh=bed<SEA?bed:Math.max(bed,SEA);
   if(p.pos[1]<gh+4){
     // a graze at low speed is survivable; a dive at full throttle is not
     p.pos[1]=gh+4;
@@ -2422,7 +2572,7 @@ function doRespawn(p){
   else  p.pos=[b[0]+Math.cos(a)*420, BASE_Y+rnd(320,460), b[2]+Math.sin(a)*420];
   const toC=[-p.pos[0],0,-p.pos[2]]; const l=Math.hypot(toC[0],toC[2])||1;
   qLookDir(p.quat,[toC[0]/l,0.06,toC[2]/l],[0,1,0]);
-  p.speed=h?120:190; p.thr=.9; p.alive=true; p.safeT=3.0; applyUpgrades(p); rearm(p);
+  p.speed=h?120:190; p.thr=.9; p.alive=true; p.safeT=3.0; p.under=0; applyUpgrades(p); rearm(p);
   if(p.isBot) p.cruiseY=p.pos[1];
   if(p.isLocal){ $('dead').classList.remove('on'); toast('AIRBORNE','grn',1.2); }
 }
@@ -2434,6 +2584,7 @@ function spawnBullet(o){
 }
 function fireWeapon(p,dt){
   if(!p.alive) return;          // a wreck held whatever trigger it died with
+  if(p.under>0) return;         // nothing fires underwater
   const c=p.ctrl;
   p.cool.t=(p.cool.t||0);
   for(const k in p.cool) if(k!=='t') p.cool[k]=Math.max(0,p.cool[k]-dt);
@@ -2449,7 +2600,9 @@ function fireWeapon(p,dt){
   if(wantPrimary && (p.cool[id]||0)<=0 && p.have[id]){
     if(w.ammo>0 && (p.ammo[id]||0)<1){ if(p.isLocal) toast('OUT OF AMMO — <kbd>R</kbd> AT BASE','red',.6); }
     else{
-      const rate=60/(w.rpm*(p.rateMul&&p.rateMul[id]?p.rateMul[id]:1));
+      // A bot's cyclic rate is trimmed: the sky still fills up, but with a third
+      // fewer rounds in it, and every round is collision work and a draw call.
+      const rate=60/(w.rpm*(p.rateMul&&p.rateMul[id]?p.rateMul[id]:1)*(p.isBot?.62:1));
       p.cool[id]=rate;
       if(w.ammo>0) p.ammo[id]=(p.ammo[id]||0)-1;
       const f=fwdOf(p,[0,0,0]), r=rightOf(p,[0,0,0]), u=upOf(p,[0,0,0]);
@@ -2614,6 +2767,17 @@ function killerName(byId){
   const q=G.planes.get(byId);
   return q?q.name.toUpperCase()+(q.isBot?'':' (PILOT)'):null;
 }
+/* Wreckage is worth looking at for a moment and then it is only a draw call.
+   A side that keeps rebuilding hangars would otherwise leave a growing field of
+   rubble behind it for the whole round. */
+function sweepWrecks(dt){
+  for(let i=G.structures.length-1;i>=0;i--){
+    const s=G.structures[i];
+    if(s.alive){ s.gone=0; continue; }
+    s.gone=(s.gone||0)+dt;
+    if(s.gone>45) G.structures.splice(i,1);
+  }
+}
 function damageStruct(s,amt,byId){
   if(!s.alive) return;
   s.hp-=amt;
@@ -2718,9 +2882,24 @@ function nearPlanes(x,z){
   }
   return _near;
 }
+/* Buildings all sit on the two or six compounds, so a round out over the middle
+   of the map cannot possibly hit one. Two distance checks stand in for thirty. */
+let _baseC=[];
+function baseCentres(){
+  _baseC.length=0;
+  for(const k in BASES) _baseC.push(BASES[k]);
+  return _baseC;
+}
+function nearAnyBase(x,z,pad){
+  for(let i=0;i<_baseC.length;i++){
+    const b=_baseC[i], dx=x-b[0], dz=z-b[2];
+    if(dx*dx+dz*dz<pad*pad) return true;
+  }
+  return false;
+}
 function stepBullets(dt){
   const myPlanes=ownedPlanes(), myStructs=ownedStructs();
-  buildPlaneGrid(myPlanes);
+  baseCentres();
   // a hard ceiling, oldest first, so a pathological burst cannot run away
   if(G.bullets.length>1100) G.bullets.splice(0,G.bullets.length-1100);
   for(let i=G.bullets.length-1;i>=0;i--){
@@ -2736,7 +2915,7 @@ function stepBullets(dt){
     const dmg=b.dmg*(b.fire?beamPower(b):1);
 
     // the dome soaks anything shot at the base it covers
-    if(authority()){
+    if(authority()&&nearAnyBase(b.pos[0],b.pos[2],DOME_R+200)){
       for(const d of G.structures){
         if(!d.alive||d.type!=='dome'||d.team===b.team) continue;
         if(segSphere(px,py,pz,b.pos,d.pos,DOME_R)){
@@ -2751,7 +2930,7 @@ function stepBullets(dt){
       if(p.team===b.team||p.id===b.owner) continue;
       if(segSphere(px,py,pz,b.pos,p.pos,8.5+beamR(b))){ damagePlane(p,dmg,b.owner); hit=true; hitPos=p.pos.slice(); break; }
     }
-    if(!hit) for(const s of myStructs){
+    if(!hit&&nearAnyBase(b.pos[0],b.pos[2],1500)) for(const s of myStructs){
       if(s.team===b.team) continue;
       const R=STRUCTS[s.type].r+4, cy=s.pos[1]+(STRUCTS[s.type].y||8);
       if(segSphere(px,py,pz,b.pos,[s.pos[0],cy,s.pos[2]],R+beamR(b))){
@@ -2882,7 +3061,7 @@ function stepFires(dt){
   }
 }
 function addPart(pos,vel,col,size,life){
-  if(G.parts.length>300) G.parts.shift();
+  if(G.parts.length>190) G.parts.shift();
   G.parts.push({pos:pos.slice(),vel:vel.slice(),col,size,life,max:life});
 }
 function explode(pos,n,scale){
@@ -3124,6 +3303,26 @@ function stepBot(p,dt){
         tgt=near||anyGround()||hqT;
         break;
       }
+      case 'escort':   // ordered to stay with you: fight whatever is near you
+        tgt=(G.me&&G.me.alive)
+          ? (()=>{ let b=null,bd=1400;
+                   for(const q of G.planes.values()){
+                     if(q.team===p.team||!q.alive) continue;
+                     const d=dist(q.pos,G.me.pos); if(d<bd){ bd=d; b=q; }
+                   }
+                   return b; })()||G.me
+          : nearestFoe(CHASE,true)||hqT;
+        break;
+      case 'defend': { // ordered home: kill whatever is over your own base
+        const home=G.structures.find(x=>x.alive&&x.type==='hq'&&x.team===p.team);
+        let b=null,bd=2600;
+        if(home) for(const q of G.planes.values()){
+          if(q.team===p.team||!q.alive) continue;
+          const d=dist(q.pos,home.pos); if(d<bd){ bd=d; b=q; }
+        }
+        tgt=b||home||nearestFoe(CHASE,true);
+        break;
+      }
       case 'ace':    // the player, and nothing else while they are alive
         tgt=(G.me&&G.me.alive&&G.me.team!==p.team)
             ? G.me
@@ -3263,29 +3462,45 @@ function stepBot(p,dt){
   if(TERRAIN.trench)
     aim=[aim[0],Math.min(aim[1],(nearBowl?BASE_Y:TERRAIN.floor)+560),aim[2]];
 
+  // An escort with nothing to fight tucks in beside you rather than orbiting
+  if(p.role==='escort'&&t===G.me&&G.me&&G.me.alive){
+    const rt=rightOf(G.me,[0,0,0]), fw=fwdOf(G.me,[0,0,0]);
+    const sd=((p.id.charCodeAt(0)%2)?1:-1)*rnd(90,140);
+    aim=[G.me.pos[0]+rt[0]*sd-fw[0]*160, G.me.pos[1]+40, G.me.pos[2]+rt[2]*sd-fw[2]*160];
+  }
+
   // Keep them out of each other. With this many aircraft up, a head-on at
   // combined closing speed is otherwise a routine way to die.
   // On short final at a building they are committed; jinking there is what
   // turned every attack run into another orbit.
   const committed=p.aiStruct&&t&&t.pos&&
     Math.hypot(t.pos[0]-p.pos[0],t.pos[2]-p.pos[2])<520;
-  let dodge=null, dodgeD=1e9;
-  if(!committed) for(const q of G.planes.values()){
-    // Friendlies pass straight through each other, so they are not a hazard —
-    // dodging them was firing constantly and turning every attack run into an
-    // orbit. Only an enemy aircraft can actually be hit.
-    if(q===p||!q.alive||q.team===p.team) continue;
-    const dx=q.pos[0]-p.pos[0], dy=q.pos[1]-p.pos[1], dz=q.pos[2]-p.pos[2];
-    const d=Math.hypot(dx,dy,dz);
-    if(d>620||d<1) continue;
-    if((dx*f[0]+dy*f[1]+dz*f[2])/d < .70) continue;    // dead ahead only
-    // A head-on merge closes at both aircraft's speed at once, so it has to
-    // break far earlier than a tail chase — which can press right in.
-    const qf=fwdOf(q,[0,0,0]);
-    const headOn=(qf[0]*f[0]+qf[1]*f[1]+qf[2]*f[2]) < -.25;
-    const lim = (q===t) ? (headOn?300:165) : (headOn?520:300);
-    if(d>lim) continue;
-    if(d<dodgeD){ dodgeD=d; dodge=q; }
+  // Scanning every aeroplane for every aeroplane is the most expensive thing the
+  // AI does. Each aircraft re-scans a few times a second — through the same
+  // bucket grid the rounds use — and flies the last answer in between.
+  p.scanT=(p.scanT||0)-dt;
+  let dodge=(p.dodgeC&&p.dodgeC.alive)?p.dodgeC:null, dodgeD=1e9;
+  if(p.scanT<=0){
+    p.scanT=.06+Math.random()*.04;
+    dodge=null;
+    if(!committed) for(const q of nearPlanes(p.pos[0],p.pos[2])){
+      // Friendlies pass straight through each other, so they are not a hazard —
+      // dodging them was firing constantly and turning every attack run into an
+      // orbit. Only an enemy aircraft can actually be hit.
+      if(q===p||!q.alive||q.team===p.team) continue;
+      const dx=q.pos[0]-p.pos[0], dy=q.pos[1]-p.pos[1], dz=q.pos[2]-p.pos[2];
+      const d=Math.hypot(dx,dy,dz);
+      if(d>620||d<1) continue;
+      if((dx*f[0]+dy*f[1]+dz*f[2])/d < .70) continue;    // dead ahead only
+      // A head-on merge closes at both aircraft's speed at once, so it has to
+      // break far earlier than a tail chase — which can press right in.
+      const qf=fwdOf(q,[0,0,0]);
+      const headOn=(qf[0]*f[0]+qf[1]*f[1]+qf[2]*f[2]) < -.25;
+      const lim = (q===t) ? (headOn?300:165) : (headOn?520:300);
+      if(d>lim) continue;
+      if(d<dodgeD){ dodgeD=d; dodge=q; }
+    }
+    p.dodgeC=dodge;
   }
   if(dodge){
     // break both up and to one side — a pure climb is too slow to clear a
@@ -3595,6 +3810,7 @@ function render(){
   }
 
   // --- bullets ---
+  tracerBatchInit(); partBatchInit(); tracerBatchReset();
   for(const b of G.bullets){
     // same again: a tracer four kilometres away is not worth a draw call
     {
@@ -3629,10 +3845,11 @@ function render(){
       M4.mul(model,model,M4.scl(tmpM,rs,rs,rs));
       draw(MESH.rocket,model,{});
     }else{
-      M4.mul(model,model,M4.scl(tmpM,gw,gw,b.len/3.4));
-      draw(MESH.tracer,model,{unlit:true,tint:b.col});
+      // the ordinary case, and by far the most common: into the batch
+      tracerBatchAdd(b.pos,[b.vel[0]/l,b.vel[1]/l,b.vel[2]/l], gw*.31, b.len*.5, b.col);
     }
   }
+  tracerBatchDraw(1);
   // --- missiles ---
   for(const m of G.missiles){
     const l=Math.hypot(...m.vel)||1;
@@ -3668,18 +3885,20 @@ function render(){
   gl.depthMask(true); gl.disable(gl.BLEND);
 
   // --- particles ---
-  // Each one is a draw call, so anything too far to read is skipped. At a
-  // kilometre a two-metre cube is a sub-pixel speck and costs the same as one
-  // filling the screen.
+  // Each fleck used to be its own draw call. They all go into one buffer now,
+  // with the fade folded into the colour instead of a per-draw alpha, and
+  // anything too far to read is skipped before that.
   gl.enable(gl.BLEND); gl.depthMask(false);
+  partBatchReset();
+  const _pc=[0,0,0];
   for(const p of G.parts){
     const dx=p.pos[0]-G.camPos[0], dy=p.pos[1]-G.camPos[1], dz=p.pos[2]-G.camPos[2];
-    if(dx*dx+dy*dy+dz*dz>1300*1300) continue;
-    const k=p.life/p.max, s=p.size*(1+(1-k)*1.6);
-    M4.trans(model,p.pos[0],p.pos[1],p.pos[2]);
-    M4.mul(model,model,M4.scl(tmpM,s,s,s));
-    draw(MESH.cube,model,{unlit:true,tint:p.col,alpha:clamp(k*1.2,0,1)});
+    if(dx*dx+dy*dy+dz*dz>900*900) continue;
+    const k=p.life/p.max, s=p.size*(1+(1-k)*1.6), f=clamp(k*1.2,0,1);
+    _pc[0]=p.col[0]*f; _pc[1]=p.col[1]*f; _pc[2]=p.col[2]*f;
+    partBatchAdd(p.pos,s*.5,_pc);
   }
+  partBatchDraw(.92);
   gl.depthMask(true);
   // --- water last (transparent) ---
   gl.disable(gl.CULL_FACE);
@@ -3692,18 +3911,23 @@ function render(){
     for(const B of WX.bolts){
       const k=clamp(B.t/B.life,0,1), a=(1-k)*(1-k);
       // a ragged column: a stack of offset boxes rather than a straight line
-      const H=CEILING+400, SEG=9;
-      let px=B.pos[0], pz=B.pos[2];
+      const H=CEILING+400, SEG=14;
+      const px=B.pos[0], pz=B.pos[2];
       for(let i=0;i<SEG;i++){
         const y0=B.pos[1]+H*i/SEG, h=H/SEG;
-        const jx=Math.sin((i+B.seed)*2.7)*26*(i/SEG), jz=Math.cos((i+B.seed)*3.1)*26*(i/SEG);
+        const jx=Math.sin((i+B.seed)*2.7)*34*(i/SEG), jz=Math.cos((i+B.seed)*3.1)*34*(i/SEG);
+        const w=16+i*3.4;
+        // a hot white core inside a wider blue-white sheath
         M4.trans(model,px+jx,y0+h*.5,pz+jz);
-        M4.mul(model,model,M4.scl(tmpM,7+i*1.6,h*.52,7+i*1.6));
-        draw(MESH.cube,model,{unlit:true,alpha:a*.9,tint:[1,1,1]});
+        M4.mul(model,model,M4.scl(tmpM,w*1.9,h*.54,w*1.9));
+        draw(MESH.cube,model,{unlit:true,alpha:a*.45,tint:[.62,.78,1]});
+        M4.trans(model,px+jx,y0+h*.5,pz+jz);
+        M4.mul(model,model,M4.scl(tmpM,w,h*.54,w));
+        draw(MESH.cube,model,{unlit:true,alpha:a,tint:[1,1,1]});
       }
       // the flash where it lands
       M4.trans(model,B.pos[0],B.pos[1]+12,B.pos[2]);
-      M4.mul(model,model,M4.scl(tmpM,BOLT_R*(.3+k*.9),BOLT_R*.34,BOLT_R*(.3+k*.9)));
+      M4.mul(model,model,M4.scl(tmpM,BOLT_R*(.35+k*1.1),BOLT_R*.42,BOLT_R*(.35+k*1.1)));
       draw(MESH.shell,model,{unlit:true,alpha:a*.5,tint:[.85,.92,1]});
     }
     gl.depthMask(true); gl.disable(gl.BLEND); gl.enable(gl.CULL_FACE);
@@ -3720,7 +3944,7 @@ function render(){
 
   // --- an EMP spooling up: a swelling glow over the HQ that is about to fire ---
   if(G.empWarn&&G.empWarn.hq){
-    const w=G.empWarn, k=clamp(1-w.t/5,0,1);
+    const w=G.empWarn, k=clamp(1-w.t/EMP_CHARGE,0,1);
     const col=TEAMCOL[w.team]||[1,.4,.3];
     gl.enable(gl.BLEND); gl.depthMask(false); gl.disable(gl.CULL_FACE);
     const rr=70+k*k*260+Math.sin(WX.t*22)*14;
@@ -4035,7 +4259,7 @@ function updateNameTags(){
 const mc=$('mini').getContext('2d');
 function drawMini(){
   const p=G.me; if(!p) return;
-  const S=190,R=S/2, RANGE=2600;
+  const S=190,R=S/2, RANGE=WORLD;   // the whole play field, not a bubble around you
   mc.clearRect(0,0,S,S);
   mc.save(); mc.beginPath(); mc.arc(R,R,R-2,0,7); mc.clip();
   mc.fillStyle='rgba(4,12,22,.55)'; mc.fillRect(0,0,S,S);
@@ -4183,12 +4407,74 @@ function buyStruct(type,cost){
   renderShop();
 }
 
+/* ---------------------------- squadron orders ----------------------------- */
+/* Advanced mode. You type in plain words and your own aircraft take the order
+   and hold it until you say otherwise. Matching is deliberately loose — people
+   type "get the hangars", not a command name. */
+const ORDERS=[
+  {id:'hq',     words:['hq','headquarters','command','their base','the base'],
+   role:'hq',     say:'GOING FOR THEIR COMMAND HQ'},
+  {id:'air',    words:['fighter','fighters','plane','planes','aircraft','dogfight','air'],
+   role:'hunter', say:'ENGAGING THEIR FIGHTERS'},
+  {id:'ground', words:['hangar','hangars','shed','sheds','building','buildings','defence','defences',
+                       'defense','defenses','guns','tower','towers','airfield','ground'],
+   role:'bomber', say:'HITTING THEIR HANGARS AND GUNS'},
+  {id:'escort', words:['on me','escort','with me','cover me','follow','stay with me','protect me','wing'],
+   role:'escort', say:'FORMING ON YOU'},
+  {id:'home',   words:['pull back','defend','home','regroup','retreat','fall back','our base'],
+   role:'defend', say:'PULLING BACK TO DEFEND'},
+  {id:'free',   words:['free','loose','as you were','your own','do what you like'],
+   role:null,     say:'WEAPONS FREE — BACK TO YOUR OWN JUDGEMENT'}
+];
+function parseOrder(txt){
+  const t=(txt||'').toLowerCase().trim();
+  if(!t) return null;
+  let best=null, bestLen=0;
+  for(const o of ORDERS) for(const w of o.words)
+    if(t.indexOf(w)>=0 && w.length>bestLen){ best=o; bestLen=w.length; }
+  return best;
+}
+function issueOrder(txt){
+  const o=parseOrder(txt);
+  if(!o){ toast('SAY AGAIN? TRY "THE HQ", "THEIR FIGHTERS", "THE HANGARS", "ON ME" OR "PULL BACK"','gold',3.5); return null; }
+  G.order=o.role||null;
+  let n=0;
+  for(const q of G.planes.values()){
+    if(!q.isBot||q.team!==G.team) continue;
+    n++;
+    q.role=G.order||roleFor(q.team);
+    q.aiTarget=null; q.aiT=0; q.aiStuck=0; q.aiBest=undefined;
+  }
+  toast(o.say+'  ('+n+' AIRCRAFT)','grn',3);
+  feed(`<span class="grn">${esc(myName())}</span> → squadron: ${esc(o.say.toLowerCase())}`);
+  sfx('lock',.5);
+  return o;
+}
+function orderBarOpen(){ const e=$('orders'); return !!e&&e.classList.contains('on') }
+function openOrderBar(){
+  if(!PROFILE.advanced||!G.started||G.over) return;
+  $('orders').classList.add('on');
+  const el=$('orderIn'); el.value=''; if(el.focus) el.focus();
+  if(mouseLocked) document.exitPointerLock();
+}
+function closeOrderBar(send){
+  if(!orderBarOpen()) return;
+  const el=$('orderIn');
+  if(send) issueOrder(el.value);
+  el.value=''; $('orders').classList.remove('on');
+  if(el.blur) el.blur();
+  canvas.requestPointerLock();
+}
+
 /* ------------------------------- EMP -------------------------------------- */
 /* A single-shot pulse from your own Command HQ. Everything hostile in the air
    inside it comes down and every hostile installation goes dark — except SAM
    sites, which are hardened. A force dome standing in the blast soaks a good
    part of it. */
-const EMP_R=2800, EMP_T=14, EMP_SPEED=1450;
+/* Reach: just far enough to touch the other side's Command HQ. The bases are
+   7.6 km apart, so there is very little of the map outside a pulse — running is
+   a matter of seconds and direction, not distance. */
+const EMP_R=7900, EMP_T=14, EMP_SPEED=1500, EMP_CHARGE=10;
 /* A real shockwave rather than an instant effect: the front travels outward at
    1.45 km/s and takes things out as it reaches them, so you can watch it coming
    and, at the edge, outrun it. It wears the colours of whoever fired it.
@@ -4218,9 +4504,16 @@ function stepPulses(dt){
     }
     if(authority()) for(const st of G.structures){
       if(!st.alive||st.team===P.team||P.structs.has(st.id)) continue;   // never its own side's
-      if(st.type==='sam'||st.type==='hq') continue;        // SAMs are hardened
-      if(dist(st.pos,P.pos)>P.r) continue;
-      P.structs.add(st.id); st.emp=P.D; P.dark++;
+      if(st.type==='sam') continue;                        // SAM sites are hardened
+      const d=dist(st.pos,P.pos);
+      if(d>P.r) continue;
+      P.structs.add(st.id);
+      if(st.type==='hq'){
+        // it only just reaches their HQ, so it only just scratches it
+        const amt=260*clamp(1-d/P.R,.12,1);
+        damageStruct(st,amt,null);
+        P.hqHit=(P.hqHit||0)+1;
+      }else{ st.emp=P.D; P.dark++; }
     }
     if(P.r>=P.R&&P.t>P.R/EMP_SPEED+.55) G.pulses.splice(i,1);
   }
@@ -4232,16 +4525,22 @@ function domeSoak(origin,R){
 }
 function fireEMP(){
   if(!G.started||G.over||G.paused) return;
+  // pressing it again while your own is spooling up lets go early
+  if(G.empWarn){
+    if(G.empWarn.mine){ G.empWarn.t=0; toast('FIRING NOW','gold',1.4); }
+    else toast('A PULSE IS ALREADY SPOOLING UP','gold',1.6);
+    return;
+  }
   if((G.emp||0)<1){ toast('NO EMP CHARGE — BUY ONE IN THE HANGAR (B)','red',2.2); return; }
   const hq=G.structures.find(s=>s.alive&&s.type==='hq'&&s.team===G.team);
   if(!hq){ toast('YOUR COMMAND HQ IS GONE — NOTHING TO FIRE FROM','red',2.4); return; }
-  if(G.empWarn){ toast('A PULSE IS ALREADY SPOOLING UP','gold',1.6); return; }
   G.emp--;
   // Yours spools up the same five seconds theirs does. It brings down every
   // aircraft it touches including your own, so you need the time to clear it.
-  G.empWarn={team:G.team,t:5,hq,mine:true};
+  G.empWarn={team:G.team,t:EMP_CHARGE,hq,mine:true};
   net.send({t:'empwarn',team:G.team,p:hq.pos.map(v=>+v.toFixed(1))});
-  toast('EMP CHARGING — 5 SECONDS. GET OUT OF THE BLAST, IT TAKES YOURS TOO','gold',5.5);
+  toast('EMP CHARGING — '+EMP_CHARGE+' SECONDS. IT TAKES YOUR OWN AIRCRAFT TOO. '+
+        'PRESS ENTER AGAIN TO FIRE NOW','gold',6);
   feed(`<span class="${G.team}">EMP</span> charging at your HQ`);
   sfx('lock',.9);
 }
@@ -4259,7 +4558,8 @@ function stepEMPCharge(dt){
     G.empWarn.t-=dt;
     if(Math.ceil(G.empWarn.t)!==G.empWarn.said&&G.empWarn.t>0){
       G.empWarn.said=Math.ceil(G.empWarn.t);
-      pushWarn('emp',(G.empWarn.mine?'⚠ YOUR EMP FIRES IN ':'⚠ EMP INBOUND IN ')+G.empWarn.said,'crit',1.0,0);
+      pushWarn('emp',(G.empWarn.mine?'⚠ YOUR EMP FIRES IN '+G.empWarn.said+' — ENTER TO FIRE NOW'
+                                     :'⚠ EMP INBOUND IN '+G.empWarn.said),'crit',1.0,0);
     }
     if(G.empWarn.t<=0){
       const w=G.empWarn; G.empWarn=null;
@@ -4270,6 +4570,7 @@ function stepEMPCharge(dt){
         firePulse(w.hq.pos,R,D,w.team);
         net.send({t:'emp',p:w.hq.pos.map(v=>+v.toFixed(1)),r:R,d:D,team:w.team});
         toast(w.mine?'EMP AWAY':String(w.team).toUpperCase()+' EMP AWAY',w.mine?'gold':'red',3);
+        feed(`<span class="${w.team}">EMP</span> detonated from the ${String(w.team).toUpperCase()} HQ`);
       }
     }
     return;
@@ -4290,9 +4591,9 @@ function stepEMPCharge(dt){
     // charging glow over their HQ, so being caught is a decision rather than an
     // ambush.
     G.foeEmp[k]--; G.foeEmpT=40;
-    G.empWarn={team:k,t:5,hq};
+    G.empWarn={team:k,t:EMP_CHARGE,hq};
     net.send({t:'empwarn',team:k,p:hq.pos.map(v=>+v.toFixed(1))});
-    toast(k.toUpperCase()+' IS CHARGING AN EMP — BREAK OFF AND GET CLEAR','red',5.5);
+    toast(k.toUpperCase()+' IS CHARGING AN EMP — IT REACHES THE WHOLE FIELD, GET LOW AND FAST','red',6);
     feed(`<span class="${k}">EMP</span> charging at the ${k.toUpperCase()} HQ`);
     sfx('lock',.9);
     return;
@@ -4366,6 +4667,9 @@ function resetRound(){
 function quitToMenu(){
   if(net.peer){ try{ net.peer.destroy() }catch(e){} }
   net.mode='solo'; net.isHost=false; net.ready=false; net.conns=[]; net.pending=[]; net.peer=null;
+  net.waiting=[]; net.askOpen=null; $('askJoin').classList.remove('on');
+  if(net._reg){ clearInterval(net._reg); net._reg=null; }
+  if(dir.conn&&dir.conn.open&&net.room) try{ dir.conn.send(JSON.stringify({t:'unreg',room:net.room})) }catch(e){}
   G.started=false; G.paused=false; G.over=false; G.round=null; G.tut=null; G.mission=null;
   G.planes.clear(); G.structures.length=0; G.bullets.length=0; G.missiles.length=0;
   G.parts.length=0; G.rings.length=0; G.fires.length=0;
@@ -4374,7 +4678,7 @@ function quitToMenu(){
   for(let i=0;i<3;i++) FOG[i]=WEATHERS[0].fog[i];
   if(gl&&U&&U.uFogCol) gl.uniform3fv(U.uFogCol,FOG);
   { const el=$('wxflash'); if(el) el.style.opacity=0; }
-  G.me=null; G.crew=null; G.roster=[]; G.emp=0; G.pulses.length=0; G.foeEmp={}; G.foeEmpT=0; G.empWarn=null; G.netLevel=null; G.netMap=null; G.netWx=null; G.hangarT={}; G.hangarSaid={}; G.credits=600; G.kills=0; G.deaths=0; G.score=0; G.camMode=0;
+  G.me=null; G.crew=null; G.roster=[]; G.order=null; G.emp=0; G.pulses.length=0; G.foeEmp={}; G.foeEmpT=0; G.empWarn=null; G.netLevel=null; G.netMap=null; G.netWx=null; G.hangarT={}; G.hangarSaid={}; G.credits=600; G.kills=0; G.deaths=0; G.score=0; G.camMode=0;
   baseBarEls.forEach(el=>el.classList.remove('on'));
   tagEls.forEach(el=>el.remove()); tagEls.clear();
   for(const id of ['pause','over','shop','dead','tut','mission']) $(id).classList.remove('on');
@@ -4394,7 +4698,8 @@ function quitToMenu(){
    A projectile only damages entities its own client owns, so damage never
    double-applies across the wire. */
 const net={
-  mode:'solo', isHost:false, peer:null, conns:[], pending:[], room:'', ready:false, lib:false,
+  mode:'solo', isHost:false, peer:null, conns:[], pending:[], waiting:[], askOpen:null,
+  room:'', ready:false, lib:false,
   send(msg){
     if(this.mode==='solo'||!this.ready) return;
     const s=JSON.stringify(msg);
@@ -4413,6 +4718,88 @@ function loadPeerJS(){
   });
 }
 const ROOM_PREFIX='ironskies-v1-';
+/* Room discovery without a server. One peer holds a well-known id and acts as
+   the directory; every host registers with it and every browser asks it for the
+   list. Whoever gets there first is the directory, and if it goes away the next
+   host to open a lobby takes the id over. */
+const DIR_ID='ironskies-v1-DIRECTORY';
+const dir={peer:null, isDir:false, conn:null, rooms:new Map(), listed:[]};
+function dirNote(t){ const e=$('dirState'); if(e) e.textContent=t; }
+function becomeDirectory(){
+  const p=new Peer(DIR_ID,{debug:0});
+  p.on('open',()=>{ dir.isDir=true; dir.peer=p; dirNote('you are holding the room list'); refreshRooms(); });
+  p.on('connection',c=>{
+    c.on('data',raw=>{
+      let m; try{ m=JSON.parse(raw) }catch(e){ return }
+      if(m.t==='reg'){
+        dir.rooms.set(m.room,{room:m.room,name:m.name,pilots:m.pilots|0,at:Date.now()});
+        c._room=m.room;
+      }else if(m.t==='unreg'){ dir.rooms.delete(m.room); }
+      else if(m.t==='list'){
+        const now=Date.now();
+        for(const [k,v] of [...dir.rooms]) if(now-v.at>75000) dir.rooms.delete(k);
+        try{ c.send(JSON.stringify({t:'rooms',rooms:[...dir.rooms.values()]})) }catch(e){}
+      }
+    });
+    c.on('close',()=>{ if(c._room) dir.rooms.delete(c._room); });
+  });
+  p.on('error',()=>{ dir.isDir=false; connectDirectory(); });
+}
+function connectDirectory(){
+  if(dir.conn&&dir.conn.open) return;
+  try{
+    if(!dir.peer){ dir.peer=new Peer(undefined,{debug:0}); }
+    const go=()=>{
+      const c=dir.peer.connect(DIR_ID,{reliable:true});
+      dir.conn=c;
+      c.on('open',()=>{ dirNote('connected to the room list'); pushRegistration(); askRooms(); });
+      c.on('data',raw=>{
+        let m; try{ m=JSON.parse(raw) }catch(e){ return }
+        if(m.t==='rooms'){ dir.listed=m.rooms||[]; renderRooms(); }
+      });
+      c.on('error',()=>dirNote('no room list available'));
+    };
+    if(dir.peer.open) go(); else dir.peer.on('open',go);
+    dir.peer.on('error',e=>{ if(e&&e.type==='peer-unavailable') dirNote('no room list available'); });
+  }catch(e){ dirNote('no room list available'); }
+}
+async function openDirectory(){
+  try{ await loadPeerJS() }catch(e){ dirNote('room list unavailable here'); return; }
+  if(dir.isDir||dir.conn) return;
+  // try to claim the directory; if it is taken, connect to whoever has it
+  const probe=new Peer(DIR_ID,{debug:0});
+  probe.on('open',()=>{ probe.destroy(); becomeDirectory(); });
+  probe.on('error',e=>{
+    probe.destroy();
+    if(e&&(e.type==='unavailable-id'||e.type==='invalid-id')) connectDirectory();
+    else connectDirectory();
+  });
+}
+function pushRegistration(){
+  if(!net.isHost||!net.room) return;
+  const rec={t:'reg',room:net.room,name:(PROFILE.callsign||'PILOT'),pilots:net.conns.length+1};
+  if(dir.isDir) dir.rooms.set(net.room,{room:rec.room,name:rec.name,pilots:rec.pilots,at:Date.now()});
+  else if(dir.conn&&dir.conn.open) try{ dir.conn.send(JSON.stringify(rec)) }catch(e){}
+}
+function askRooms(){
+  if(dir.isDir){ renderRooms(); return; }
+  if(dir.conn&&dir.conn.open) try{ dir.conn.send(JSON.stringify({t:'list'})) }catch(e){}
+}
+function refreshRooms(){
+  if(!dir.isDir&&!dir.conn) openDirectory(); else askRooms();
+  renderRooms();
+}
+function renderRooms(){
+  const host=$('roomList'); if(!host) return;
+  const rooms=(dir.isDir?[...dir.rooms.values()]:dir.listed).filter(r=>r.room!==net.room);
+  if(!rooms.length){ host.innerHTML='<div class="none">NO OPEN ROOMS FOUND — HOST ONE, OR TYPE A CODE ABOVE</div>'; return; }
+  host.innerHTML=rooms.map(r=>`<div class="rm"><b>${esc(r.room)}</b>`+
+    `<span>${esc(r.name||'PILOT')}'s room · ${r.pilots||1} pilot${(r.pilots||1)===1?'':'s'} waiting</span>`+
+    `<button data-room="${esc(r.room)}">ASK TO JOIN</button></div>`).join('');
+  [...document.querySelectorAll('[data-room]')].forEach(b=>b.onclick=()=>{
+    $('joinIn').value=b.dataset.room; joinGame(b.dataset.room);
+  });
+}
 function roomCode(){ let s='';const A='ABCDEFGHJKLMNPQRSTUVWXYZ23456789';for(let i=0;i<5;i++)s+=A[Math.floor(Math.random()*A.length)];return s }
 
 async function hostGame(){
@@ -4424,22 +4811,27 @@ async function hostGame(){
     net.ready=true;
     selectTab('net');
     $('codeRow').style.display='flex'; $('code').textContent=net.room;
-    netmsg('Lobby open. Share the code, then enter the room — everyone who is in by then gets their own base.');
+    netmsg('Lobby open. Your room is on the list for anyone browsing, and every join needs your say-so.');
     lobbyCount();
+    openDirectory();
+    if(!net._reg) net._reg=setInterval(pushRegistration,20000);
+    setTimeout(pushRegistration,900);
   });
   net.peer.on('error',e=>{
     if(!net.ready){ netmsg('Could not open lobby ('+e.type+'). Try again or play solo.'); unlockButtons(); }
   });
   net.peer.on('connection',c=>{
-    net.conns.push(c);
     c.on('open',()=>{
-      // Someone can join before the host has entered, in which case there is no
-      // world to describe yet — hold them until it exists.
-      if(G.started) sendWelcome(c); else net.pending.push(c);
+      // Nobody gets in without the host agreeing to it.
+      net.waiting.push(c);
       lobbyCount();
+      askToAdmit(c);
     });
     c.on('data',d=>onNet(d,c));
-    c.on('close',()=>{ dropConn(c); net.pending=net.pending.filter(x=>x!==c); lobbyCount(); });
+    c.on('close',()=>{ dropConn(c); net.pending=net.pending.filter(x=>x!==c);
+      net.waiting=net.waiting.filter(x=>x!==c);
+      if(net.askOpen===c){ net.askOpen=null; $('askJoin').classList.remove('on'); askToAdmit(); }
+      lobbyCount(); });
   });
 }
 async function joinGame(code){
@@ -4451,7 +4843,7 @@ async function joinGame(code){
     const c=net.peer.connect(ROOM_PREFIX+code,{reliable:true});
     net.conns=[c];
     c.on('open',()=>{ net.ready=true;
-      netmsg('Connected to '+code+' — waiting for the host to open the match.');
+      netmsg('Asked to join '+code+' — waiting for the host to let you in.');
       // the host decides how many compounds there are, so the world cannot be
       // built until the welcome arrives
       c.send(JSON.stringify({t:'hello',p:helloStub(),perks:myPerks()})); });
@@ -4508,6 +4900,35 @@ function lobbyWait(){
       : 'Waiting for pilots — you can enter now and they will join you.';
     if(btn) btn.disabled=false;
   }
+}
+/* A join has to be approved. They are held on the wire until the host says so,
+   and are only welcomed into the world afterwards. */
+function askToAdmit(c){
+  if(net.askOpen){ return; }             // one at a time; the rest queue
+  const next=net.waiting.find(x=>!x._asked);
+  if(!next) return;
+  next._asked=true; net.askOpen=next;
+  $('askTxt').innerHTML='A pilot wants to join your room.<br/>Let them in?';
+  $('askJoin').classList.add('on');
+  sfx('lock',.7);
+}
+function admit(ok){
+  const c=net.askOpen; net.askOpen=null;
+  $('askJoin').classList.remove('on');
+  if(c){
+    net.waiting=net.waiting.filter(x=>x!==c);
+    if(ok){
+      net.conns.push(c);
+      if(G.started) sendWelcome(c); else net.pending.push(c);
+      toast('PILOT ADMITTED','grn',2);
+    }else{
+      try{ c.send(JSON.stringify({t:'denied'})) }catch(e){}
+      setTimeout(()=>{ try{ c.close() }catch(e){} },250);
+      toast('JOIN DECLINED','gold',2);
+    }
+  }
+  lobbyCount();
+  askToAdmit();                          // whoever is next in the queue
 }
 function dropConn(c){
   net.conns=net.conns.filter(x=>x!==c);
@@ -4566,6 +4987,12 @@ function onNet(raw,conn){
       lobbyWait();
       break;
     }
+    case 'denied': {
+      netmsg('That host declined the request.');
+      net.ready=false; unlockButtons();
+      try{ net.peer.destroy() }catch(e){}
+      break;
+    }
     case 'welcome': {
       if(!G.started){ G.netLevel=m.level; G.netMap=m.map||null; G.netWx=m.wx||null;
                       startGame(m.you,m.teams||2); }
@@ -4576,7 +5003,7 @@ function onNet(raw,conn){
     }
     case 'empwarn': {
       if(!G.empWarn){
-        G.empWarn={team:m.team,t:5,hq:{pos:m.p,alive:true}};
+        G.empWarn={team:m.team,t:EMP_CHARGE,hq:{pos:m.p,alive:true}};
         if(m.team!==G.team) toast(String(m.team).toUpperCase()+' IS CHARGING AN EMP — GET CLEAR','red',5.5);
       }
       break;
@@ -5147,6 +5574,16 @@ function renderSettings(){
   const cur=CREWS.find(c=>c.id===(PROFILE.playAs||'plane'))||CREWS[0];
   $('crewDesc').textContent=cur.note+(cur.id==='plane'?'':
     '  You will man this emplacement at your base; destroyed, it rebuilds and you take it again.');
+  $('advSeg').innerHTML=[['off','OFF'],['on','ON']].map(([v,l])=>
+    `<button data-adv="${v}" class="${(!!PROFILE.advanced)===(v==='on')?'on':''}">${l}</button>`).join('');
+  [...document.querySelectorAll('[data-adv]')].forEach(b=>b.onclick=()=>{
+    PROFILE.advanced=b.dataset.adv==='on'; saveProfile(); renderSettings(); sfx('buy',.4);
+  });
+  $('advDesc').textContent=PROFILE.advanced
+    ? 'On. Press T in the air and tell your squadron what to do — "attack the HQ", "on me", '+
+      '"go after their fighters", "hit the hangars", "pull back". They hold the order until you change it.'
+    : 'Everything plays the same, but you can give your own squadron orders. Press T in the air, '+
+      'type what you want, and they will do it.';
   $('mapSeg').innerHTML=MAPS.map(m=>
     `<button data-map="${m.id}" class="${m.id===(PROFILE.map||'auto')?'on':''}">${m.name}</button>`).join('');
   [...document.querySelectorAll('[data-map]')].forEach(b=>b.onclick=()=>{
@@ -5181,6 +5618,7 @@ function selectTab(id){
     $('pane'+t).classList.toggle('on',t===id);
   if(id==='settings'){ confirmArm={level:0,all:0}; renderSettings(); }
   if(id==='perm') renderPerm();
+  if(id==='net'){ refreshRooms(); }
   if(id==='aircraft'){ customOpen=true; renderCustom(); }
   else if(!$('custom').classList.contains('on')) customOpen=false;
 }
@@ -5564,6 +6002,9 @@ $('btnEnterRoom').onclick=()=>{
   for(const c of net.pending) sendWelcome(c);   // release anyone who joined early
   net.pending=[];
 };
+$('btnRooms').onclick=()=>{ dirNote('looking…'); refreshRooms(); };
+$('btnAllow').onclick=()=>admit(true);
+$('btnDeny').onclick=()=>admit(false);
 $('btnSound').onclick=()=>setMuted(!PROFILE.muted);
 $('btnSound3').onclick=()=>setMuted(!PROFILE.muted);
 $('btnSettings2').onclick=()=>openSettings();
@@ -5602,6 +6043,8 @@ function frame(now){
   dt=Math.min(dt,.05); G.dt=dt; G.t+=dt;
 
   if(G.started&&!G.paused&&!G.over){
+    // one bucket grid for the whole frame — the AI and the gunnery both use it
+    buildPlaneGrid(ownedPlanes());
     const p=G.me;
     if(p){
       if(G.crew){ /* crewing a gun: the aircraft stays parked */ }
@@ -5683,12 +6126,11 @@ function frame(now){
     }
     stepMission(dt);
     stepWeather(dt);
-    stepPulses(dt); stepEMPCharge(dt);
+    stepPulses(dt); stepEMPCharge(dt); sweepWrecks(dt);
     musicTick();
     netTick(dt);
     if(G.crew) stepCrew(dt); else updateCamera(dt);
     updateHUD(dt);
-    if($('board').classList.contains('on')) updateBoard();
     if(shopOpen&&Math.floor(G.t*4)%2===0) $('shopCred').textContent=Math.floor(G.credits);
   }else if(!G.started){
     if(customOpen){            // close orbit of your aircraft, parked over the map
