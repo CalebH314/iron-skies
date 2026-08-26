@@ -822,6 +822,7 @@ function draw(mesh,model,opt){
 
 /* ------------------------------ world ----------------------------------- */
 const WORLD=5400, BASE_Y=42, SEA=0;
+const DECK_R=430;                 // a carrier flight deck, out to the last hardstand
 /* Sides are dealt per match, never fixed at two. A duel or a campaign keeps the
    classic north-versus-south layout; a free-for-all rings the map with one
    compound per pilot, so nobody ever shares an HQ with anyone else. */
@@ -930,12 +931,16 @@ const WEATHERS=[
   {id:'mist',  name:'FOG BANK',     fog:[.71,.73,.76], near:260,  far:1900,  tint:[.82,.84,.86],
    note:'Thick fog. You will be on top of things before you see them.'}
 ];
-/** A fresh draw every round, every kind equally likely. */
-function pickWeather(){ return WEATHERS[rndi(0,WEATHERS.length-1)] }
+/** A fresh draw every round. Storms come up rather more than the rest. */
+function pickWeather(){
+  const bag=['clear','cloud','rain','storm','storm','storm','snow','mist'];
+  const id=bag[rndi(0,bag.length-1)];
+  return WEATHERS.find(w=>w.id===id)||WEATHERS[0];
+}
 /** Which ground an AUTO map lands on — canyon most of the time, as before. */
 function pickMapKind(){
-  const r=Math.random();
-  return r<.55?'canyon':r<.80?'hills':'plains';
+  const bag=['canyon','canyon','canyon','canyon','hills','hills','plains','sea','mesas'];
+  return bag[rndi(0,bag.length-1)];
 }
 const WX={w:WEATHERS[0], t:0, flash:0, thunder:0, gustX:0, gustY:0, bolts:[]};
 const BOLT_R=185, BOLT_DMG=46;
@@ -1007,7 +1012,7 @@ function stepWeather(dt){
   if(w.lightning&&G.started&&!G.over){
     WX.thunder-=dt;
     if(WX.thunder<=0){
-      WX.thunder=rnd(5,11);
+      WX.thunder=rnd(2.4,5.5);
       strikeLightning();
     }
   }else if(!w.lightning) WX.bolts.length=0;
@@ -1023,7 +1028,9 @@ const MAPS=[
   {id:'auto',  name:'AUTO',       note:'A fresh draw every round — mostly canyon, sometimes hills or open plains.'},
   {id:'plains',name:'PLAINS',     note:'Flat and fast, with nothing to hide behind and nothing to hit.'},
   {id:'hills', name:'HILLS',      note:'Rolling ground with ridgelines across the middle; you have to find the gaps.'},
-  {id:'canyon',name:'CANYON RUN', note:'A winding trench between the bases. Fast and covered, but you can climb over the mesa if you would rather take the long way.'}
+  {id:'canyon',name:'CANYON RUN', note:'A winding trench between the bases. Fast and covered, but you can climb over the mesa if you would rather take the long way.'},
+  {id:'sea',   name:'OPEN SEA',   note:'Blue water from edge to edge. Each side flies off a carrier — the deck is the whole base, and there is nowhere else to put down.'},
+  {id:'mesas', name:'MESA COUNTRY',note:'Flat-topped buttes standing out of the desert. Cover if you fly low enough to use it, and hard edges if you do not.'}
 ];
 function setTerrain(lv,kind){
   if(kind===true) kind='canyon';
@@ -1032,6 +1039,8 @@ function setTerrain(lv,kind){
   TERRAIN.ox=lv*911.3; TERRAIN.oz=lv*677.1;   // ~0.7 of the longest wavelength per level
   TERRAIN.ph=lv*1.7; TERRAIN.ph2=lv*.83; TERRAIN.ph3=lv*2.31;
   TERRAIN.trench=kind==='canyon';
+  TERRAIN.sea=kind==='sea';
+  TERRAIN.mesas=kind==='mesas';
   TERRAIN.amp=kind==='plains'?.22:1;           // how much of the rolling ground survives
   // The mesa used to top the flight ceiling, which made the trench the only
   // way through at all. It now tops out well below it: climbing over is a real
@@ -1064,6 +1073,17 @@ function terrainH(x,z){
   // Plains keep the shape but flatten it toward a gentle floor, rather than
   // scaling it down into the sea.
   if(TERRAIN.amp!==undefined&&TERRAIN.amp<1) h=lerp(52,h,TERRAIN.amp);
+  if(TERRAIN.sea){
+    // open water: a seabed well below the surface, with the odd shoal
+    h=-200+(h-52)*.22+34*vnoise((x+ox)/900+3,(z+oz)/900+5);
+  }else if(TERRAIN.mesas){
+    // Flat-topped buttes standing out of a desert floor: quantise the smooth
+    // noise into four terraces and give each a sheer side and a level top.
+    const q=clamp((h+96)/430,0,1);
+    const f=q*4, idx=Math.floor(f), frac=f-idx;
+    const w=clamp(frac*9,0,1), ws=w*w*(3-2*w);        // sheer for the first ninth
+    h=30+120*(Math.min(idx,3)+ws*(idx<3?1:0));
+  }
   if(TERRAIN.trench){
     // raise the whole midfield into a plateau, then cut the trench back out
     // A mesa with a slot cut through it, not a pair of hills. The plateau
@@ -1101,10 +1121,15 @@ function terrainH(x,z){
       }
     }
   }
-  // flatten a plateau around each base so runways and structures sit level
+  // Flatten a plateau around each base so runways and structures sit level. At
+  // sea that plateau IS the flight deck: level right out to the deck edge, and
+  // then straight over the side, because a carrier has no beach.
   for(const k in BASES){
     const b=BASES[k], d=Math.hypot(x-b[0],z-b[2]);
-    if(d<620){ const t=1-clamp((d-300)/320,0,1); h=lerp(h,BASE_Y,t*t*(3-2*t)); }
+    if(TERRAIN.sea){
+      if(d<DECK_R) h=BASE_Y;
+      else if(d<DECK_R+90){ const t=clamp((d-DECK_R)/90,0,1); h=lerp(BASE_Y,h,t*t); }
+    }else if(d<620){ const t=1-clamp((d-300)/320,0,1); h=lerp(h,BASE_Y,t*t*(3-2*t)); }
   }
   return h;
 }
@@ -1157,7 +1182,7 @@ function applyTerrain(){
     // AUTO is a fresh draw each round, so leaving and starting again gives
     // you different ground
     if(kind==='auto') kind=pickMapKind();
-    if(kind==='canyon'&&teamList().length>2) kind='hills';  // a canyon has two mouths
+    if(kind==='canyon'&&teamList().length>2) kind='sea';    // a canyon has two mouths
     setTerrain(lv,kind);
   }
   buildTerrainMesh();
@@ -1261,6 +1286,24 @@ function buildWorld(){
     sh.quad(P(a0,q0),P(a1,q0),P(a1,q1),P(a0,q1),band);
   }
   MESH.shell=sh.build();
+
+  /* An aircraft carrier hull, drawn under each base on the open-sea map. The
+     flight deck itself is the flattened plateau the terrain already makes; this
+     is the ship beneath it, the island and the deck markings. */
+  const cv=new Builder(), DECK=DECK_R;
+  cv.push(); cv.tr(0,-26,0); cv.box(DECK*1.5,52,DECK*2.05,[.20,.22,.25]); cv.pop();      // hull
+  cv.push(); cv.tr(0,2,0);   cv.box(DECK*1.62,10,DECK*2.16,[.26,.27,.29]); cv.pop();     // deck overhang
+  cv.push(); cv.tr(0,7.6,0); cv.box(DECK*1.5,1.2,DECK*2.0,[.17,.18,.20]); cv.pop();      // deck surface
+  // centreline and landing stripes
+  for(let i=-6;i<=6;i++){ cv.push(); cv.tr(0,8.4,i*DECK*.15); cv.box(26,.4,7,[.86,.87,.88]); cv.pop(); }
+  cv.push(); cv.tr(-DECK*.42,8.4,0); cv.box(9,.4,DECK*1.7,[.86,.72,.20]); cv.pop();
+  // the island, starboard side
+  cv.push(); cv.tr(DECK*.60,26,-DECK*.20); cv.box(72,36,150,[.30,.32,.35]); cv.pop();
+  cv.push(); cv.tr(DECK*.60,50,-DECK*.20); cv.box(52,14,96,[.22,.24,.27]); cv.pop();
+  cv.push(); cv.tr(DECK*.60,74,-DECK*.20); cv.prism(1.6,.8,42,6,[.55,.57,.60]); cv.pop();
+  // bow and stern ramps so it reads as a ship rather than a slab
+  cv.push(); cv.tr(0,-8,-DECK*1.06); cv.prism(DECK*.55,10,60,4,[.20,.22,.25]); cv.pop();
+  MESH.carrier=cv.build();
 
   // an actual rocket: body, nose cone and tail fins, nose along -Z
   const rk=new Builder();
@@ -3626,6 +3669,15 @@ function render(){
     gl.depthMask(true); gl.disable(gl.BLEND); gl.enable(gl.CULL_FACE);
   }
 
+  // --- carriers, when the fight is at sea ---
+  if(TERRAIN.sea&&MESH.carrier){
+    for(const k in BASES){
+      const b=BASES[k];
+      M4.trans(model,b[0],BASE_Y-6,b[2]);
+      draw(MESH.carrier,model,{tint:TEAMCOL[k]?[.55+TEAMCOL[k][0]*.45,.55+TEAMCOL[k][1]*.45,.55+TEAMCOL[k][2]*.45]:[1,1,1]});
+    }
+  }
+
   // --- an EMP spooling up: a swelling glow over the HQ that is about to fire ---
   if(G.empWarn&&G.empWarn.hq){
     const w=G.empWarn, k=clamp(1-w.t/5,0,1);
@@ -3646,7 +3698,7 @@ function render(){
       const k=clamp(P.r/P.R,0,1);
       const col=TEAMCOL[P.team]||[.62,.92,1];
       // lift it toward white without washing the hue out, so red reads as red
-      const hot=[Math.min(1,col[0]*.72+.28),Math.min(1,col[1]*.72+.28),Math.min(1,col[2]*.72+.28)];
+      const hot=[Math.min(1,col[0]*.86+.14),Math.min(1,col[1]*.86+.14),Math.min(1,col[2]*.86+.14)];
       // A thick wall rather than a soap bubble: nine shells stacked back from
       // the front, so you can see how deep it is and how fast it is coming.
       const LAYERS=9;
@@ -3655,7 +3707,10 @@ function render(){
         const a=(i===0?.80:.46*(1-i/LAYERS));
         M4.trans(model,P.pos[0],P.pos[1]+8,P.pos[2]);
         M4.mul(model,model,M4.scl(tmpM,rr,rr*.58,rr));
-        draw(MESH.shell,model,{unlit:true,alpha:a*(1-k*.55),tint:i?hot:[1,1,1]});
+        // every shell wears the side's colour — a white leading edge washed the
+        // hue out and left people unsure whose pulse they were looking at
+        const t0=i?hot:[Math.min(1,hot[0]*1.15),Math.min(1,hot[1]*1.15),Math.min(1,hot[2]*1.15)];
+        draw(MESH.shell,model,{unlit:true,alpha:a*(1-k*.55),tint:t0});
       }
     }
     gl.depthMask(true); gl.disable(gl.BLEND); gl.enable(gl.CULL_FACE);
@@ -4140,15 +4195,15 @@ function fireEMP(){
   if((G.emp||0)<1){ toast('NO EMP CHARGE — BUY ONE IN THE HANGAR (B)','red',2.2); return; }
   const hq=G.structures.find(s=>s.alive&&s.type==='hq'&&s.team===G.team);
   if(!hq){ toast('YOUR COMMAND HQ IS GONE — NOTHING TO FIRE FROM','red',2.4); return; }
+  if(G.empWarn){ toast('A PULSE IS ALREADY SPOOLING UP','gold',1.6); return; }
   G.emp--;
-  let R=EMP_R, D=EMP_T;
-  const soak=domeSoak(hq.pos,R);
-  if(soak){ R=soak.R; D=Math.round(D*soak.D); }
-  firePulse(hq.pos,R,D,G.team);
-  net.send({t:'emp',p:hq.pos.map(v=>+v.toFixed(1)),r:R,d:D,team:G.team});
-  toast('EMP AWAY — EVERY AIRCRAFT IN '+(R/1000).toFixed(1)+' km GOES DOWN, YOURS TOO'+
-        (soak?' · A FORCE DOME TOOK SOME OF IT':''),'gold',5);
-  feed(`<span class="${G.team}">EMP</span> fired from the ${G.team.toUpperCase()} HQ`);
+  // Yours spools up the same five seconds theirs does. It brings down every
+  // aircraft it touches including your own, so you need the time to clear it.
+  G.empWarn={team:G.team,t:5,hq,mine:true};
+  net.send({t:'empwarn',team:G.team,p:hq.pos.map(v=>+v.toFixed(1))});
+  toast('EMP CHARGING — 5 SECONDS. GET OUT OF THE BLAST, IT TAKES YOURS TOO','gold',5.5);
+  feed(`<span class="${G.team}">EMP</span> charging at your HQ`);
+  sfx('lock',.9);
 }
 /** how many charges a side gets — only above Regular, and only later on */
 function empCharges(){
@@ -4158,13 +4213,13 @@ function empCharges(){
   return PROFILE.level>=6 ? (i>=4?2:1) : 0;   // and not on the early levels
 }
 /** the enemy holds its charge until enough of your aircraft are over its base */
-function stepFoeEMP(dt){
+function stepEMPCharge(dt){
   // a charge already spooling up: count it down, then let it go
   if(G.empWarn){
     G.empWarn.t-=dt;
     if(Math.ceil(G.empWarn.t)!==G.empWarn.said&&G.empWarn.t>0){
       G.empWarn.said=Math.ceil(G.empWarn.t);
-      pushWarn('emp','⚠ EMP INBOUND IN '+G.empWarn.said,'crit',1.0,0);
+      pushWarn('emp',(G.empWarn.mine?'⚠ YOUR EMP FIRES IN ':'⚠ EMP INBOUND IN ')+G.empWarn.said,'crit',1.0,0);
     }
     if(G.empWarn.t<=0){
       const w=G.empWarn; G.empWarn=null;
@@ -4174,7 +4229,7 @@ function stepFoeEMP(dt){
         if(soak){ R=soak.R; D=Math.round(D*soak.D); }
         firePulse(w.hq.pos,R,D,w.team);
         net.send({t:'emp',p:w.hq.pos.map(v=>+v.toFixed(1)),r:R,d:D,team:w.team});
-        toast(String(w.team).toUpperCase()+' EMP AWAY','red',3);
+        toast(w.mine?'EMP AWAY':String(w.team).toUpperCase()+' EMP AWAY',w.mine?'gold':'red',3);
       }
     }
     return;
@@ -4259,6 +4314,8 @@ function resetRound(){
   $('over').classList.remove('on');
   G.structures.length=0; structSlot=teamMap(0); hangarSlot=teamMap(0); G.eliminated={}; G.hangarSaid={};
   G.bullets.length=0; G.missiles.length=0; G.parts.length=0; G.fires.length=0;
+  G.pulses.length=0; G.empWarn=null; G.rings.length=0;
+  applyTerrain();          // a new round is new ground and a new sky
   buildCompounds();
   for(const p of G.planes.values()){ p.hp=p.maxHp; p.alive=true; doRespawn(p); }
   toast('NEW ROUND — GO','grn',3);
@@ -5586,7 +5643,7 @@ function frame(now){
     }
     stepMission(dt);
     stepWeather(dt);
-    stepPulses(dt); stepFoeEMP(dt);
+    stepPulses(dt); stepEMPCharge(dt);
     musicTick();
     netTick(dt);
     if(G.crew) stepCrew(dt); else updateCamera(dt);
