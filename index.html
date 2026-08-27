@@ -161,14 +161,6 @@ kbd{background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.16);bord
 #askJoin.on{display:block}
 #askJoin p{font-size:13px;color:#e6f2ff;margin-bottom:10px;letter-spacing:1px}
 #askJoin .btns{display:flex;gap:10px;justify-content:center}
-#orders{position:absolute;left:50%;bottom:24%;transform:translateX(-50%);display:none;
-  align-items:center;gap:10px;padding:10px 14px;border-radius:10px;z-index:9;
-  background:rgba(6,14,24,.86);border:1px solid rgba(140,175,215,.38);
-  box-shadow:0 8px 30px rgba(0,0,0,.55)}
-#orders.on{display:flex}
-#orders span{font-size:11px;letter-spacing:3px;color:#7fe6c0;font-weight:700}
-#orders input{background:rgba(2,6,12,.7);border:1px solid rgba(140,175,215,.3);border-radius:7px;
-  color:#e6f2ff;font:inherit;font-size:13px;padding:8px 11px;width:430px;outline:none}
 #empHud{position:absolute;left:50%;top:calc(34% - 34px);transform:translateX(-50%);display:none;
   font-size:14px;font-weight:700;letter-spacing:3px;color:#8fe8ff;pointer-events:none;
   text-shadow:0 2px 10px #000,0 0 18px rgba(60,180,255,.7)}
@@ -368,8 +360,6 @@ td{padding:6px 8px;border-bottom:1px solid rgba(255,255,255,.045)}
     <div class="skip">PRESS <kbd>N</kbd> TO SKIP THIS STEP</div>
   </div>
 
-  <div id="orders"><span>ORDER</span><input id="orderIn" maxlength="60"
-    placeholder="attack the HQ · on me · their fighters · the hangars · pull back" /></div>
   <div id="empHud"></div>
   <div id="weps"></div>
   <div id="feed"></div>
@@ -415,7 +405,7 @@ td{padding:6px 8px;border-bottom:1px solid rgba(255,255,255,.045)}
 <div id="settings" class="ovl">
   <div class="box panel">
     <h1 style="font-size:24px;letter-spacing:5px">SETTINGS</h1>
-    <div class="sub" style="margin:2px 0 16px">DIFFICULTY · MAP · CONTROLS · ACCOUNT</div>
+    <div class="sub" style="margin:2px 0 16px">DIFFICULTY · MAP · CONTROLS · SIGN-IN</div>
     <div id="settingsHost"></div>
     <div id="settingsBody">
 
@@ -430,12 +420,6 @@ td{padding:6px 8px;border-bottom:1px solid rgba(255,255,255,.045)}
       <p id="crewDesc">Take an aircraft, or man an emplacement at your own base and hold the line
       from the ground. Gun crews cannot move, but they see everything and hit hard.</p>
       <div class="seg" id="crewSeg"></div>
-    </div>
-
-    <div class="srow">
-      <h4>ADVANCED MODE</h4>
-      <p id="advDesc">Everything plays the same, but you can give your own squadron orders.</p>
-      <div class="seg" id="advSeg"></div>
     </div>
 
     <div class="srow">
@@ -454,6 +438,24 @@ td{padding:6px 8px;border-bottom:1px solid rgba(255,255,255,.045)}
       <h4>SOUND</h4>
       <p>Engine note, guns, explosions and the action score. The music follows the fight — it lifts when enemies close on you.</p>
       <div class="seg"><button id="btnSound3">SOUND: ON</button></div>
+    </div>
+
+    <div class="srow">
+      <h4>SIGN-IN</h4>
+      <p id="signLine"></p>
+      <div class="row" style="margin-top:6px">
+        <input id="cgUser" placeholder="NEW USERNAME" maxlength="16" style="flex:1" />
+        <button id="btnRename">CHANGE NAME</button>
+      </div>
+      <div class="row" style="margin-top:6px">
+        <input id="cgOld" type="password" placeholder="CURRENT PASSWORD" maxlength="40" style="flex:1" />
+        <input id="cgNew" type="password" placeholder="NEW PASSWORD" maxlength="40" style="flex:1" />
+        <button id="btnRepass">CHANGE PASSWORD</button>
+      </div>
+      <div id="cgMsg" class="hint" style="margin-top:8px;min-height:16px"></div>
+      <div class="seg" style="margin-top:8px">
+        <button id="btnSignOut">SIGN OUT</button>
+      </div>
     </div>
 
     <div class="srow">
@@ -494,6 +496,31 @@ td{padding:6px 8px;border-bottom:1px solid rgba(255,255,255,.045)}
       <button class="primary" id="btnAgain">PLAY AGAIN</button>
       <button id="btnMenu">EXIT TO MENU</button>
     </div>
+  </div>
+</div>
+
+<div id="signin" class="ovl">
+  <div class="box panel" style="max-width:520px">
+    <h1>AVIATORS</h1>
+    <div class="sub" style="margin:2px 0 16px">SIGN IN · YOUR PROGRESS IS KEPT UNDER YOUR NAME</div>
+    <div class="srow">
+      <h4 id="siMode">CREATE AN ACCOUNT</h4>
+      <p id="siNote">Pick a name and a password. Tokens, campaign level and your aircraft
+      are kept against that name on this device.</p>
+      <div class="row" style="margin-top:8px">
+        <input id="siUser" placeholder="USERNAME" maxlength="16" style="flex:1" />
+      </div>
+      <div class="row" style="margin-top:6px">
+        <input id="siPass" type="password" placeholder="PASSWORD" maxlength="40" style="flex:1" />
+      </div>
+      <div id="siMsg" class="hint" style="margin-top:8px;min-height:16px"></div>
+      <div class="seg" style="margin-top:10px">
+        <button class="primary" id="siGo">CREATE ACCOUNT</button>
+        <button id="siSwap">I ALREADY HAVE ONE</button>
+        <button id="siGuest">PLAY WITHOUT AN ACCOUNT</button>
+      </div>
+    </div>
+    <div class="hint" id="siWho"></div>
   </div>
 </div>
 
@@ -575,7 +602,7 @@ td{padding:6px 8px;border-bottom:1px solid rgba(255,255,255,.045)}
       <b>BUILD</b> <kbd>B</kbd> hangar &amp; shop — buy weapons, armor, <b>Sniper Towers</b> and <b>Surface-to-Air Missile sites</b><br/>
       <b>VIEW</b> you fly from the <b>cockpit</b> — <kbd>C</kbd> cycles cockpit / chase / cinematic<br/>
       <b>GAME</b> <kbd>Esc</kbd> or <kbd>P</kbd> pause &amp; exit · <kbd>M</kbd> mute sound<br/>
-      <b>SQUADRON</b> turn on <b>Advanced Mode</b> in settings, then <kbd>T</kbd> to tell your own aircraft what to do<br/><br/>
+<br/>
       Destroy the enemy <b>Command HQ</b> to win the round. Credits come from kills, structure hits and passive income.
     </div>
     </div>
@@ -1977,12 +2004,17 @@ const DIFFS=[
 ];
 const PROFILE={tokens:0,perks:{},muted:false,level:1,wins:0,losses:0,
                kills:0,deaths:0,missions:0,callsign:'',difficulty:1,sens:1,
-               plane:{frame:0,paint:0,frames:[0],paints:[0]},gTol:7,playAs:'plane',map:'auto',
-               advanced:false};
+               plane:{frame:0,paint:0,frames:[0],paints:[0]},gTol:7,playAs:'plane',map:'auto'};
 const DK=()=>DIFFS[clamp(PROFILE.difficulty|0,0,DIFFS.length-1)];
 function loadProfile(){
+  // start from defaults so signing in and out does not leak one account's
+  // progress into another
+  PROFILE.tokens=0; PROFILE.perks={}; PROFILE.level=1; PROFILE.wins=0; PROFILE.losses=0;
+  PROFILE.kills=0; PROFILE.deaths=0; PROFILE.missions=0; PROFILE.callsign='';
+  PROFILE.gTol=7; PROFILE.playAs='plane'; PROFILE.map='auto';
   try{
-    const raw=localStorage.getItem('ironskies.profile');
+    const raw=(ACC.name&&ACC.list[ACC.name]&&ACC.list[ACC.name].profile)
+      || (ACC.name?null:localStorage.getItem('ironskies.profile'));
     if(raw){ const d=JSON.parse(raw);
       PROFILE.tokens=d.tokens|0; PROFILE.perks=d.perks||{}; PROFILE.muted=!!d.muted;
       PROFILE.level=Math.max(1,d.level|0); PROFILE.wins=d.wins|0; PROFILE.losses=d.losses|0;
@@ -1992,8 +2024,7 @@ function loadProfile(){
       PROFILE.sens=d.sens||1;
       if(d.plane) PROFILE.plane=d.plane;
       PROFILE.gTol=d.gTol||7; PROFILE.playAs=d.playAs||'plane';
-      PROFILE.map=MAPS.some(m=>m.id===d.map)?d.map:'auto';
-      PROFILE.advanced=!!d.advanced; }
+      PROFILE.map=MAPS.some(m=>m.id===d.map)?d.map:'auto'; }
   }catch(e){}
   // Auto-Tracker was retired: give back what was spent on it rather than
   // quietly pocketing the tokens.
@@ -2042,10 +2073,113 @@ const diff={
 };
 /** is the enemy scaled right now? not during training or a mission */
 function campaign(){ return G.started&&!G.tut&&!G.mission }
+/* ------------------------------ accounts ---------------------------------- */
+/* Sign-in with a username and password. There is no server behind this game —
+   it is a single file on a static host — so accounts live in this browser's
+   own storage and a name being "taken" means taken on this machine. Passwords
+   are never stored: only a SHA-256 of the password and a random salt. */
+const ACC={ list:{}, name:null };
+function accLoad(){
+  try{ ACC.list=JSON.parse(localStorage.getItem('ironskies.accounts')||'{}')||{}; }catch(e){ ACC.list={}; }
+  try{ ACC.name=localStorage.getItem('ironskies.session')||null; }catch(e){ ACC.name=null; }
+  if(ACC.name&&!ACC.list[ACC.name]) ACC.name=null;
+}
+function accStore(){
+  try{ localStorage.setItem('ironskies.accounts',JSON.stringify(ACC.list)); }catch(e){}
+  try{
+    if(ACC.name) localStorage.setItem('ironskies.session',ACC.name);
+    else localStorage.removeItem('ironskies.session');
+  }catch(e){}
+}
+const accKey=nm=>String(nm||'').trim().toLowerCase();
+function accSalt(){
+  const a=new Uint8Array(16);
+  if(window.crypto&&crypto.getRandomValues) crypto.getRandomValues(a);
+  else for(let i=0;i<16;i++) a[i]=Math.floor(Math.random()*256);
+  return [...a].map(v=>v.toString(16).padStart(2,'0')).join('');
+}
+async function accHash(salt,pw){
+  const txt=salt+'\u0000'+pw;
+  if(window.crypto&&crypto.subtle&&crypto.subtle.digest){
+    try{
+      const buf=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(txt));
+      return [...new Uint8Array(buf)].map(v=>v.toString(16).padStart(2,'0')).join('');
+    }catch(e){}
+  }
+  // a plain page served over http has no subtle crypto; still never store the
+  // password itself
+  let h1=0x811c9dc5, h2=0x1000193;
+  for(let i=0;i<txt.length;i++){
+    h1=(h1^txt.charCodeAt(i))>>>0; h1=Math.imul(h1,16777619)>>>0;
+    h2=(h2+txt.charCodeAt(i)*(i+7))>>>0; h2=Math.imul(h2,2654435761)>>>0;
+  }
+  return ('00000000'+h1.toString(16)).slice(-8)+('00000000'+h2.toString(16)).slice(-8);
+}
+function accCheckName(nm){
+  const t=String(nm||'').trim();
+  if(t.length<3) return 'Pick a name of at least three characters.';
+  if(t.length>16) return 'Sixteen characters at most.';
+  if(!/^[A-Za-z0-9 _-]+$/.test(t)) return 'Letters, numbers, spaces, - and _ only.';
+  return null;
+}
+function accTaken(nm,exceptKey){
+  const k=accKey(nm);
+  return !!ACC.list[k] && k!==exceptKey;
+}
+async function accCreate(nm,pw){
+  const bad=accCheckName(nm); if(bad) return bad;
+  if(String(pw||'').length<4) return 'Pick a password of at least four characters.';
+  if(accTaken(nm)) return 'That name is already taken on this device. Pick another.';
+  const salt=accSalt();
+  ACC.list[accKey(nm)]={name:String(nm).trim(),salt,hash:await accHash(salt,pw),
+                        made:Date.now(),profile:null};
+  ACC.name=accKey(nm);
+  // the first account adopts whatever progress is already in this browser, so
+  // signing up does not throw away a campaign
+  const legacy=(()=>{ try{ return localStorage.getItem('ironskies.profile') }catch(e){ return null } })();
+  if(legacy&&Object.keys(ACC.list).length===1) ACC.list[ACC.name].profile=legacy;
+  accStore(); loadProfile();
+  if(!PROFILE.callsign) PROFILE.callsign=String(nm).trim().toUpperCase().slice(0,12);
+  saveProfile();
+  return null;
+}
+async function accSignIn(nm,pw){
+  const k=accKey(nm), a=ACC.list[k];
+  if(!a) return 'No account with that name on this device.';
+  if(await accHash(a.salt,pw)!==a.hash) return 'That password does not match.';
+  ACC.name=k; accStore(); loadProfile();
+  return null;
+}
+function accSignOut(){ ACC.name=null; accStore(); loadProfile(); }
+async function accRename(nm){
+  const bad=accCheckName(nm); if(bad) return bad;
+  if(!ACC.name) return 'You are playing without an account.';
+  if(accTaken(nm,ACC.name)) return 'That name is already taken on this device.';
+  const rec=ACC.list[ACC.name];
+  delete ACC.list[ACC.name];
+  rec.name=String(nm).trim();
+  ACC.name=accKey(nm); ACC.list[ACC.name]=rec;
+  accStore();
+  return null;
+}
+async function accRepass(oldPw,newPw){
+  if(!ACC.name) return 'You are playing without an account.';
+  const a=ACC.list[ACC.name];
+  if(await accHash(a.salt,oldPw)!==a.hash) return 'That is not your current password.';
+  if(String(newPw||'').length<4) return 'Pick a password of at least four characters.';
+  a.salt=accSalt(); a.hash=await accHash(a.salt,newPw);
+  accStore();
+  return null;
+}
 function saveProfile(){
-  try{ localStorage.setItem('ironskies.profile',JSON.stringify(PROFILE)); }catch(e){}
+  const raw=JSON.stringify(PROFILE);
+  try{
+    if(ACC.name&&ACC.list[ACC.name]){ ACC.list[ACC.name].profile=raw; accStore(); }
+    else localStorage.setItem('ironskies.profile',raw);
+  }catch(e){}
 }
 const perk=id=>PROFILE.perks[id]||0;
+accLoad();
 loadProfile();
 try{ localStorage.removeItem('ironskies.board'); }catch(e){}   // retired feature
 
@@ -2301,14 +2435,6 @@ function sfxAt(type,pos,vol){
 const keys={}, stick={x:0,y:0};
 let mouseLocked=false;
 addEventListener('keydown',e=>{
-  // Advanced mode: the order bar swallows the keyboard while it is open, so
-  // typing an order does not also fly the aeroplane.
-  if(orderBarOpen()){
-    if(e.code==='Escape'){ e.preventDefault(); closeOrderBar(false); }
-    else if(e.code==='Enter'){ e.preventDefault(); closeOrderBar(true); }
-    return;
-  }
-  if(e.code==='KeyT'&&PROFILE.advanced&&G.started&&!G.over){ e.preventDefault(); openOrderBar(); return; }
   keys[e.code]=true;
   if(e.code==='KeyM'){ setMuted(!PROFILE.muted); }
   if(!G.started) return;
@@ -3303,26 +3429,6 @@ function stepBot(p,dt){
         tgt=near||anyGround()||hqT;
         break;
       }
-      case 'escort':   // ordered to stay with you: fight whatever is near you
-        tgt=(G.me&&G.me.alive)
-          ? (()=>{ let b=null,bd=1400;
-                   for(const q of G.planes.values()){
-                     if(q.team===p.team||!q.alive) continue;
-                     const d=dist(q.pos,G.me.pos); if(d<bd){ bd=d; b=q; }
-                   }
-                   return b; })()||G.me
-          : nearestFoe(CHASE,true)||hqT;
-        break;
-      case 'defend': { // ordered home: kill whatever is over your own base
-        const home=G.structures.find(x=>x.alive&&x.type==='hq'&&x.team===p.team);
-        let b=null,bd=2600;
-        if(home) for(const q of G.planes.values()){
-          if(q.team===p.team||!q.alive) continue;
-          const d=dist(q.pos,home.pos); if(d<bd){ bd=d; b=q; }
-        }
-        tgt=b||home||nearestFoe(CHASE,true);
-        break;
-      }
       case 'ace':    // the player, and nothing else while they are alive
         tgt=(G.me&&G.me.alive&&G.me.team!==p.team)
             ? G.me
@@ -3461,13 +3567,6 @@ function stepBot(p,dt){
   // commanded altitude below the rim and let the trench follower do the work.
   if(TERRAIN.trench)
     aim=[aim[0],Math.min(aim[1],(nearBowl?BASE_Y:TERRAIN.floor)+560),aim[2]];
-
-  // An escort with nothing to fight tucks in beside you rather than orbiting
-  if(p.role==='escort'&&t===G.me&&G.me&&G.me.alive){
-    const rt=rightOf(G.me,[0,0,0]), fw=fwdOf(G.me,[0,0,0]);
-    const sd=((p.id.charCodeAt(0)%2)?1:-1)*rnd(90,140);
-    aim=[G.me.pos[0]+rt[0]*sd-fw[0]*160, G.me.pos[1]+40, G.me.pos[2]+rt[2]*sd-fw[2]*160];
-  }
 
   // Keep them out of each other. With this many aircraft up, a head-on at
   // combined closing speed is otherwise a routine way to die.
@@ -4407,65 +4506,6 @@ function buyStruct(type,cost){
   renderShop();
 }
 
-/* ---------------------------- squadron orders ----------------------------- */
-/* Advanced mode. You type in plain words and your own aircraft take the order
-   and hold it until you say otherwise. Matching is deliberately loose — people
-   type "get the hangars", not a command name. */
-const ORDERS=[
-  {id:'hq',     words:['hq','headquarters','command','their base','the base'],
-   role:'hq',     say:'GOING FOR THEIR COMMAND HQ'},
-  {id:'air',    words:['fighter','fighters','plane','planes','aircraft','dogfight','air'],
-   role:'hunter', say:'ENGAGING THEIR FIGHTERS'},
-  {id:'ground', words:['hangar','hangars','shed','sheds','building','buildings','defence','defences',
-                       'defense','defenses','guns','tower','towers','airfield','ground'],
-   role:'bomber', say:'HITTING THEIR HANGARS AND GUNS'},
-  {id:'escort', words:['on me','escort','with me','cover me','follow','stay with me','protect me','wing'],
-   role:'escort', say:'FORMING ON YOU'},
-  {id:'home',   words:['pull back','defend','home','regroup','retreat','fall back','our base'],
-   role:'defend', say:'PULLING BACK TO DEFEND'},
-  {id:'free',   words:['free','loose','as you were','your own','do what you like'],
-   role:null,     say:'WEAPONS FREE — BACK TO YOUR OWN JUDGEMENT'}
-];
-function parseOrder(txt){
-  const t=(txt||'').toLowerCase().trim();
-  if(!t) return null;
-  let best=null, bestLen=0;
-  for(const o of ORDERS) for(const w of o.words)
-    if(t.indexOf(w)>=0 && w.length>bestLen){ best=o; bestLen=w.length; }
-  return best;
-}
-function issueOrder(txt){
-  const o=parseOrder(txt);
-  if(!o){ toast('SAY AGAIN? TRY "THE HQ", "THEIR FIGHTERS", "THE HANGARS", "ON ME" OR "PULL BACK"','gold',3.5); return null; }
-  G.order=o.role||null;
-  let n=0;
-  for(const q of G.planes.values()){
-    if(!q.isBot||q.team!==G.team) continue;
-    n++;
-    q.role=G.order||roleFor(q.team);
-    q.aiTarget=null; q.aiT=0; q.aiStuck=0; q.aiBest=undefined;
-  }
-  toast(o.say+'  ('+n+' AIRCRAFT)','grn',3);
-  feed(`<span class="grn">${esc(myName())}</span> → squadron: ${esc(o.say.toLowerCase())}`);
-  sfx('lock',.5);
-  return o;
-}
-function orderBarOpen(){ const e=$('orders'); return !!e&&e.classList.contains('on') }
-function openOrderBar(){
-  if(!PROFILE.advanced||!G.started||G.over) return;
-  $('orders').classList.add('on');
-  const el=$('orderIn'); el.value=''; if(el.focus) el.focus();
-  if(mouseLocked) document.exitPointerLock();
-}
-function closeOrderBar(send){
-  if(!orderBarOpen()) return;
-  const el=$('orderIn');
-  if(send) issueOrder(el.value);
-  el.value=''; $('orders').classList.remove('on');
-  if(el.blur) el.blur();
-  canvas.requestPointerLock();
-}
-
 /* ------------------------------- EMP -------------------------------------- */
 /* A single-shot pulse from your own Command HQ. Everything hostile in the air
    inside it comes down and every hostile installation goes dark — except SAM
@@ -4678,7 +4718,7 @@ function quitToMenu(){
   for(let i=0;i<3;i++) FOG[i]=WEATHERS[0].fog[i];
   if(gl&&U&&U.uFogCol) gl.uniform3fv(U.uFogCol,FOG);
   { const el=$('wxflash'); if(el) el.style.opacity=0; }
-  G.me=null; G.crew=null; G.roster=[]; G.order=null; G.emp=0; G.pulses.length=0; G.foeEmp={}; G.foeEmpT=0; G.empWarn=null; G.netLevel=null; G.netMap=null; G.netWx=null; G.hangarT={}; G.hangarSaid={}; G.credits=600; G.kills=0; G.deaths=0; G.score=0; G.camMode=0;
+  G.me=null; G.crew=null; G.roster=[]; G.emp=0; G.pulses.length=0; G.foeEmp={}; G.foeEmpT=0; G.empWarn=null; G.netLevel=null; G.netMap=null; G.netWx=null; G.hangarT={}; G.hangarSaid={}; G.credits=600; G.kills=0; G.deaths=0; G.score=0; G.camMode=0;
   baseBarEls.forEach(el=>el.classList.remove('on'));
   tagEls.forEach(el=>el.remove()); tagEls.clear();
   for(const id of ['pause','over','shop','dead','tut','mission']) $(id).classList.remove('on');
@@ -5574,16 +5614,6 @@ function renderSettings(){
   const cur=CREWS.find(c=>c.id===(PROFILE.playAs||'plane'))||CREWS[0];
   $('crewDesc').textContent=cur.note+(cur.id==='plane'?'':
     '  You will man this emplacement at your base; destroyed, it rebuilds and you take it again.');
-  $('advSeg').innerHTML=[['off','OFF'],['on','ON']].map(([v,l])=>
-    `<button data-adv="${v}" class="${(!!PROFILE.advanced)===(v==='on')?'on':''}">${l}</button>`).join('');
-  [...document.querySelectorAll('[data-adv]')].forEach(b=>b.onclick=()=>{
-    PROFILE.advanced=b.dataset.adv==='on'; saveProfile(); renderSettings(); sfx('buy',.4);
-  });
-  $('advDesc').textContent=PROFILE.advanced
-    ? 'On. Press T in the air and tell your squadron what to do — "attack the HQ", "on me", '+
-      '"go after their fighters", "hit the hangars", "pull back". They hold the order until you change it.'
-    : 'Everything plays the same, but you can give your own squadron orders. Press T in the air, '+
-      'type what you want, and they will do it.';
   $('mapSeg').innerHTML=MAPS.map(m=>
     `<button data-map="${m.id}" class="${m.id===(PROFILE.map||'auto')?'on':''}">${m.name}</button>`).join('');
   [...document.querySelectorAll('[data-map]')].forEach(b=>b.onclick=()=>{
@@ -5601,6 +5631,12 @@ function renderSettings(){
     '  (enemy hull ×'+DK().k.toFixed(2)+', their aircraft ×'+DK().botHp.toFixed(2)+' hull)';
   $('sensRange').value=Math.round(PROFILE.sens*100);
   $('sensVal').textContent=PROFILE.sens.toFixed(2);
+  const acc=ACC.name&&ACC.list[ACC.name];
+  $('signLine').innerHTML=acc
+    ? `Signed in as <b style="color:#7fe6c0">${esc(acc.name)}</b>. Your progress is kept under that name.`
+    : `You are playing without an account — progress is kept in this browser only. `+
+      `Sign out is disabled; create an account from the title screen to keep it under a name.`;
+  $('btnRename').disabled=!acc; $('btnRepass').disabled=!acc; $('btnSignOut').disabled=!acc;
   $('acctLine').innerHTML=`Campaign level <b style="color:#c9a3ff">${PROFILE.level}</b> · `+
     `${PROFILE.tokens} tokens · ${PROFILE.wins}W/${PROFILE.losses}L · ${PROFILE.kills} career kills.`+
     ` Progress is stored in this browser.`;
@@ -5629,6 +5665,55 @@ function homePanels(){          // put both bodies back in their menu panes
 }
 homePanels();
 for(const b of document.querySelectorAll('#mtabs button')) b.onclick=()=>{ selectTab(b.dataset.tab); sfx('buy',.25); };
+/* ---------------------------- the sign-in screen -------------------------- */
+let siNew=true;
+function siRender(){
+  $('siMode').textContent=siNew?'CREATE AN ACCOUNT':'SIGN IN';
+  $('siGo').textContent=siNew?'CREATE ACCOUNT':'SIGN IN';
+  $('siSwap').textContent=siNew?'I ALREADY HAVE ONE':'CREATE ONE INSTEAD';
+  $('siNote').textContent=siNew
+    ? 'Pick a name and a password. Tokens, campaign level and your aircraft are kept against that name on this device.'
+    : 'Enter the name and password you signed up with.';
+  const names=Object.values(ACC.list).map(a=>a.name);
+  $('siWho').textContent=names.length
+    ? 'Accounts on this device: '+names.join(', ')
+    : 'No accounts on this device yet.';
+  $('siMsg').textContent='';
+}
+function showSignIn(){ siNew=Object.keys(ACC.list).length===0; siRender(); $('signin').classList.add('on'); }
+function finishSignIn(){
+  $('signin').classList.remove('on');
+  $('nameIn').value=PROFILE.callsign||'';
+  renderPerm(); selectTab('play');
+}
+$('siSwap').onclick=()=>{ siNew=!siNew; siRender(); };
+$('siGuest').onclick=()=>{ ACC.name=null; accStore(); loadProfile(); finishSignIn(); };
+$('siGo').onclick=async()=>{
+  const u=$('siUser').value, p=$('siPass').value;
+  $('siMsg').textContent='working…';
+  const err=siNew?await accCreate(u,p):await accSignIn(u,p);
+  if(err){ $('siMsg').innerHTML='<span style="color:#ff7a6b">'+esc(err)+'</span>'; return; }
+  sfx('buy',.5); finishSignIn();
+};
+$('siPass').addEventListener('keydown',e=>{ if(e.key==='Enter') $('siGo').click(); });
+$('btnRename').onclick=async()=>{
+  const err=await accRename($('cgUser').value);
+  $('cgMsg').innerHTML=err?'<span style="color:#ff7a6b">'+esc(err)+'</span>'
+                          :'<span style="color:#7fe6c0">Name changed.</span>';
+  if(!err){ $('cgUser').value=''; renderSettings(); }
+};
+$('btnRepass').onclick=async()=>{
+  const err=await accRepass($('cgOld').value,$('cgNew').value);
+  $('cgMsg').innerHTML=err?'<span style="color:#ff7a6b">'+esc(err)+'</span>'
+                          :'<span style="color:#7fe6c0">Password changed.</span>';
+  if(!err){ $('cgOld').value=''; $('cgNew').value=''; }
+};
+$('btnSignOut').onclick=()=>{
+  accSignOut();
+  $('settings').classList.remove('on'); homePanels();
+  if(G.started) quitToMenu();
+  showSignIn();
+};
 function openSettings(){
   confirmArm={level:0,all:0};
   if(!G.started){ selectTab('settings'); return; }        // it is a tab in the menu
@@ -6155,6 +6240,8 @@ function frame(now){
 
 buildTurrets();
 buildWorld();
+// the title screen is the sign-in screen until you are in
+if(!ACC.name) showSignIn(); else { $('nameIn').value=PROFILE.callsign||''; }
 buildCustomPlane();
 renderPerm();
 setMuted(PROFILE.muted);
