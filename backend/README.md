@@ -28,7 +28,12 @@ npx wrangler kv namespace create AVIATORS      # prints an id
 npx wrangler deploy                            # prints https://aviators-api.<you>.workers.dev
 ```
 
-Then in `index.html` find this line near the top of the script:
+Then set the URL in the game. **Edit `Planes.html`, not `index.html`.**
+`Planes.html` is the master; `index.html` is a copy made from it on every
+deploy, so a URL put only in `index.html` gets silently overwritten by the next
+change and you are quietly back on local accounts with no obvious reason why.
+
+In `Planes.html` find this line (near the top of the script):
 
 ```js
 const BACKEND='';
@@ -40,7 +45,15 @@ and put your URL in it:
 const BACKEND='https://aviators-api.<you>.workers.dev';
 ```
 
-Commit and push. The game URL does not change.
+Then copy it over and push:
+
+```bash
+cd ..
+cp ../Planes.html index.html
+git add -A && git commit -m "point the game at the backend" && git push
+```
+
+The game URL does not change.
 
 ## What it costs
 

@@ -1943,8 +1943,8 @@ const SHOP=[
         'outward and brings down <b>every aircraft it reaches, yours included</b>, so get your '+
         'own people clear first. Enemy installations go dark behind it; SAM sites are hardened '+
         'and keep firing, and nothing on your own side is affected. A force dome standing in the '+
-        'blast takes the edge off it. It reaches far enough to scratch their Command HQ, '+
-        'which means there is very little of the map outside it — get low and get moving.',
+        'blast takes the edge off it. It reaches far enough to scratch their Command HQ, so there '+
+        'is very little of the map outside it — though water stops it dead, if there is any to dive into.',
    eff:()=>`one charge · ${(EMP_R/1000).toFixed(1)} km — the whole field · dark for ${EMP_T} s`},
   {id:'repairk',cat:'Airframe', name:'Field Repair Kit',max:99,cost:()=>320, repeat:true,
    desc:'Instantly patch your hull back to full, right now, mid-flight.', eff:()=>'Restores hull to 100%'},
@@ -2720,7 +2720,7 @@ function simPlane(p,dt){
     p.thr=Math.min(p.thr,.25);                  // the engine is drowning too
     if(p.under>3.5) damagePlane(p,26*dt,null);  // and then it starts to tell
     if(p.isLocal){
-      if(!wasUnder) toast('IN THE WATER — NO WEAPONS, GET OUT','red',3);
+      if(!wasUnder) toast('IN THE WATER — NO WEAPONS, AND YOU DROWN, BUT AN EMP CANNOT REACH YOU','red',3.5);
       else if(p.under>3.5) flashHurt(14);
     }
   }else if(p.under){
@@ -4624,6 +4624,13 @@ function stepPulses(dt){
       if(!q.alive||P.planes.has(q.id)) continue;
       if(!(q.isLocal||(q.isBot&&authority()))) continue;   // only what this client owns
       if(dist(q.pos,P.pos)>P.r) continue;
+      // Water stops it. Get under the surface before the front reaches you and
+      // the pulse passes overhead — but it is not a one-frame dip: surface
+      // while the wave is still going out and it will still have you.
+      if(q.under>0){
+        if(q.isLocal) pushWarn('emp','UNDER THE SURFACE — THE PULSE CANNOT REACH YOU','ok',1.2,1.4);
+        continue;
+      }
       P.planes.add(q.id);
       q.crashLabel='CAUGHT IN AN EMP';
       explode(q.pos,26,1.2);
@@ -4720,7 +4727,8 @@ function stepEMPCharge(dt){
     G.foeEmp[k]--; G.foeEmpT=40;
     G.empWarn={team:k,t:EMP_CHARGE,hq};
     net.send({t:'empwarn',team:k,p:hq.pos.map(v=>+v.toFixed(1))});
-    toast(k.toUpperCase()+' IS CHARGING AN EMP — IT REACHES THE WHOLE FIELD, GET LOW AND FAST','red',6);
+    toast(k.toUpperCase()+' IS CHARGING AN EMP — IT REACHES THE WHOLE FIELD. '+
+          'GET CLEAR, OR GET UNDER WATER IF THERE IS ANY','red',6);
     feed(`<span class="${k}">EMP</span> charging at the ${k.toUpperCase()} HQ`);
     sfx('lock',.9);
     return;
