@@ -1073,12 +1073,12 @@ function trenchX(z){
    the pixels of a normal one, and every one of them pays for the rain, the water,
    the fog and the shockwaves. This is the dial for that. */
 const GFX=[
-  {id:'high', name:'HIGH',     dpr:2,    prec:1,   layers:9,
-   note:'Full resolution. On a Retina screen that is four times the pixels, and this game blends a lot of them.'},
-  {id:'bal',  name:'BALANCED', dpr:1.35, prec:.65, layers:6,
-   note:'Renders a little under full resolution and thins the weather. Hard to tell apart in the air, and much cheaper.'},
-  {id:'fast', name:'FAST',     dpr:1,    prec:.35, layers:4,
-   note:'One pixel per pixel and light weather. Pick this if the frame rate ever sags.'}
+  {id:'high', name:'HIGH',     dpr:2,    prec:1,   layers:9, air:1.35,
+   note:'Full resolution, heavy weather and a crowded sky. On a Retina screen that is four times the pixels, and this game blends a lot of them.'},
+  {id:'bal',  name:'BALANCED', dpr:1.35, prec:.65, layers:6, air:1,
+   note:'A little under full resolution, thinner weather and fewer aircraft. Hard to tell apart in the air, and much cheaper.'},
+  {id:'fast', name:'FAST',     dpr:1,    prec:.35, layers:4, air:.65,
+   note:'One pixel per pixel, light weather and a quiet sky. Pick this if the frame rate ever sags.'}
 ];
 function gfx(){ return GFX.find(g=>g.id===(PROFILE.gfx||'bal'))||GFX[1] }
 
@@ -1953,8 +1953,8 @@ const STRUCTS={
            short:'INFERNO', desc:'A ground mount for the Inferno Beam. Sprays a widening torrent of fire at anything that comes near your HQ, and what it touches keeps burning. Unlocked under permanent upgrades.'},
   bunker: {name:'Hardened Bunker',   hp:300,  cost:0,    range:0,    r:26, y:9,  turret:null,
            short:'BUNKER', desc:'A reinforced command bunker. Guns and rockets scratch the shell — only a missile strike will crack it.'},
-  spawner:{name:'Aircraft Hangar',  hp:520,  cost:1900, range:0,    r:28, y:10, turret:null, cd:7, cap:20,
-           short:'HANGAR', desc:'Sits beside the HQ and launches a fighter every 7&nbsp;seconds, up to twenty airborne. Buy <b>Hangar Crews</b> to go faster still. It is lightly built — destroy the enemy hangar and their reinforcements stop dead.'}
+  spawner:{name:'Aircraft Hangar',  hp:520,  cost:1900, range:0,    r:28, y:10, turret:null, cd:9, cap:12,
+           short:'HANGAR', desc:'Sits beside the HQ and launches a fighter every 9&nbsp;seconds, up to twelve airborne. Buy <b>Hangar Crews</b> to go faster still. It is lightly built — destroy the enemy hangar and their reinforcements stop dead.'}
 };
 const BOT_HP=55;        // deliberately fragile — a short burst downs one
 const BOT_SPEED=165;    // well under the player's 270+, so you can always disengage
@@ -2125,18 +2125,18 @@ const diff={
   hangars(){ return 1+Math.floor((PROFILE.level-1)/3) },        // more of them
   // your side grows too, a little behind theirs
   myHangars(){ return 2+Math.floor((PROFILE.level-1)/3) },
-  myCap(){ return Math.min(26,Math.round(12+PROFILE.level*1.2)) },
+  myCap(){ return Math.max(4,Math.round(Math.min(14,7+PROFILE.level*.6)*gfx().air)) },
   /** the rank of force dome the enemy fields — nothing before level 7 */
   foeDome(){
     if(!campaign()||net.mode!=='solo'||PROFILE.level<7) return 0;
     return 1+Math.floor((PROFILE.level-7)/4)+(DK().k>=2?1:0);
   },
-  cap(){ return Math.round((22+Math.floor((PROFILE.level-1)/2))*clamp(DK().k,.6,2.5)) },
+  // Halved. Every aircraft is an AI step, a draw call, a collision candidate and
+  // a source of gunfire, so this number costs more than any other in the game.
+  cap(){ return Math.max(4,Math.round((11+Math.floor((PROFILE.level-1)/3))*clamp(DK().k,.6,2.5)*gfx().air)) },
   extraDefences(){ const k=DK().k;
     return Math.round((Math.min(PROFILE.level-1,7)+(k>=3?6:0))*Math.min(k,2.2)) },
-  // only ~40% of a force presses the HQ now, so the group is a little larger
-  // to keep the pressure on it comparable
-  bots(){ return Math.round((16+Math.floor((PROFILE.level-1)/2))*clamp(DK().k,.6,2.5)) },
+  bots(){ return Math.max(3,Math.round((8+Math.floor((PROFILE.level-1)/3))*clamp(DK().k,.6,2.5)*gfx().air)) },
   economy(){ return 1/Math.max(1,DK().k*.6) },     // how fast they rebuild
   structCap(){ return Math.round(6*clamp(DK().k,1,2.5)) }
 };
@@ -3042,7 +3042,15 @@ function crashInto(p,vRel,otherMass,label){
 }
 /** true when this client simulates the bots and the ground war */
 function authority(){ return net.isHost||net.mode==='solo'; }
+/* These run every frame, often per aircraft, and each one was allocating a
+   throwaway array for its result. A frame was making 23 KB of rubbish, which is
+   1.4 MB a second for the collector to sweep and shows up as a stutter every
+   few seconds. Reused scratch vectors instead. */
+const _sf=[0,0,0], _sr=[0,0,0], _su=[0,0,0], _sf2=[0,0,0], _sv=[0,0,0], _sq=[0,0,0,1];
+const UPV=[0,1,0];
 function ownedPlanes(){
+  // deliberately a fresh array: three different steps hold this at once, and
+  // sharing one buffer between them would have them clearing it under each other
   const out=[], auth=authority();
   for(const p of G.planes.values()){
     if(!p.alive) continue;
@@ -3683,7 +3691,7 @@ function stepBot(p,dt){
   // speed and only samples the far end, so a ridge halfway there went unseen —
   // which is how nearly half of them were dying. Scale it with speed and sample
   // the whole path.
-  const f=fwdOf(p,[0,0,0]);
+  const f=fwdOf(p,_sf);
   const LOOK=clamp(p.speed*4.5,760,1600);
   const ahead=[p.pos[0]+f[0]*LOOK,p.pos[1]+f[1]*LOOK,p.pos[2]+f[2]*LOOK];
   let gh=SEA;
@@ -3822,7 +3830,7 @@ function stepBot(p,dt){
       if((dx*f[0]+dy*f[1]+dz*f[2])/d < .70) continue;    // dead ahead only
       // A head-on merge closes at both aircraft's speed at once, so it has to
       // break far earlier than a tail chase — which can press right in.
-      const qf=fwdOf(q,[0,0,0]);
+      const qf=fwdOf(q,_sf2);
       const headOn=(qf[0]*f[0]+qf[1]*f[1]+qf[2]*f[2]) < -.25;
       const lim = (q===t) ? (headOn?300:165) : (headOn?520:300);
       if(d>lim) continue;
@@ -3834,7 +3842,7 @@ function stepBot(p,dt){
     // break both up and to one side — a pure climb is too slow to clear a
     // head-on at combined closing speed
     const over=(dodge.pos[1]<p.pos[1])?1:-1;
-    const rt=rightOf(p,[0,0,0]);
+    const rt=rightOf(p,_sr);
     const side=((dodge.pos[0]-p.pos[0])*rt[0]+(dodge.pos[2]-p.pos[2])*rt[2])>0?-1:1;
     aim=[aim[0]+rt[0]*side*400, aim[1]+over*420, aim[2]+rt[2]*side*400];
   }
@@ -4150,13 +4158,20 @@ function render(){
       const dx=b.pos[0]-G.camPos[0], dy=b.pos[1]-G.camPos[1], dz=b.pos[2]-G.camPos[2];
       if(dx*dx+dy*dy+dz*dz>3600*3600) continue;
     }
-    const l=Math.hypot(...b.vel)||1;
-    const q=qLookDir([0,0,0,1],[b.vel[0]/l,b.vel[1]/l,b.vel[2]/l],[0,1,0]);
-    M4.fromRTS(model,q,b.pos,1);
+    const l=Math.hypot(b.vel[0],b.vel[1],b.vel[2])||1;
+    _sv[0]=b.vel[0]/l; _sv[1]=b.vel[1]/l; _sv[2]=b.vel[2]/l;
     // widen with range so a round holds a roughly constant on-screen size
     // instead of shrinking to a sub-pixel speck at the distances you fight at
     const bd=Math.hypot(b.pos[0]-G.camPos[0],b.pos[1]-G.camPos[1],b.pos[2]-G.camPos[2]);
     const gw=b.wid*clamp(bd/90,1,12);
+    // the ordinary tracer is batched and needs no orientation at all; only the
+    // handful of special rounds pay for a quaternion and a matrix
+    if(!b.fire&&!b.rocket){
+      tracerBatchAdd(b.pos,_sv, gw*.31, b.len*.5, b.col);
+      continue;
+    }
+    const q=qLookDir(_sq,_sv,UPV);
+    M4.fromRTS(model,q,b.pos,1);
     if(b.fire){
       // three nested, flickering sleeves read as a torrent of flame rather
       // than a tracer: dull red outside, orange body, white-hot core
@@ -4177,9 +4192,6 @@ function render(){
       const rs=clamp(bd/300,1,3.4);
       M4.mul(model,model,M4.scl(tmpM,rs,rs,rs));
       draw(MESH.rocket,model,{});
-    }else{
-      // the ordinary case, and by far the most common: into the batch
-      tracerBatchAdd(b.pos,[b.vel[0]/l,b.vel[1]/l,b.vel[2]/l], gw*.31, b.len*.5, b.col);
     }
   }
   tracerBatchDraw(1);
