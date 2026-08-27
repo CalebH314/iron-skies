@@ -6746,7 +6746,11 @@ function frame(now){
   }
   render();
   fpsN++; fpsT+=dt;
-  if(fpsT>.5){ $('fps').textContent=Math.round(fpsN/fpsT)+' FPS · '+G.planes.size+' aircraft'; fpsN=0;fpsT=0 }
+  if(fpsT>.5){
+    $('fps').textContent=Math.round(fpsN/fpsT)+' FPS · '+(fpsT/fpsN*1000).toFixed(1)+'ms · '
+      +G.planes.size+' aircraft · '+gfx().name;
+    fpsN=0;fpsT=0;
+  }
 }
 
 buildTurrets();
