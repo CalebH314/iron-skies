@@ -1078,7 +1078,7 @@ function pickWeather(){
 }
 /** Which ground an AUTO map lands on — canyon most of the time, as before. */
 function pickMapKind(){
-  const bag=['canyon','canyon','canyon','canyon','hills','hills','plains','sea','mesas'];
+  const bag=['canyon','canyon','canyon','hills','hills','plains','sea','mesas','isles','isles','basin'];
   return bag[rndi(0,bag.length-1)];
 }
 const WX={w:WEATHERS[0], t:0, flash:0, thunder:0, gustX:0, gustY:0, bolts:[]};
@@ -1176,7 +1176,9 @@ const MAPS=[
   {id:'hills', name:'HILLS',      note:'Rolling ground with ridgelines across the middle; you have to find the gaps.'},
   {id:'canyon',name:'CANYON RUN', note:'A winding trench between the bases. Fast and covered, but you can climb over the mesa if you would rather take the long way.'},
   {id:'sea',   name:'OPEN SEA',   note:'Blue water from edge to edge. Each side flies off a carrier — the deck is the whole base, and there is nowhere else to put down.'},
-  {id:'mesas', name:'MESA COUNTRY',note:'Flat-topped buttes standing out of the desert. Cover if you fly low enough to use it, and hard edges if you do not.'}
+  {id:'mesas', name:'MESA COUNTRY',note:'Flat-topped buttes standing out of the desert. Cover if you fly low enough to use it, and hard edges if you do not.'},
+  {id:'isles', name:'ISLAND CHAIN',note:'Scattered islands in deep water. Land where you can find it, sea everywhere else, and somewhere to dive if a pulse is coming.'},
+  {id:'basin', name:'GREAT BASIN', note:'A broad bowl ringed by high ground, with a lake in the bottom of it. Everything funnels toward the middle.'}
 ];
 function setTerrain(lv,kind){
   if(kind===true) kind='canyon';
@@ -1187,6 +1189,8 @@ function setTerrain(lv,kind){
   TERRAIN.trench=kind==='canyon';
   TERRAIN.sea=kind==='sea';
   TERRAIN.mesas=kind==='mesas';
+  TERRAIN.isles=kind==='isles';
+  TERRAIN.basin=kind==='basin';
   TERRAIN.amp=kind==='plains'?.22:1;           // how much of the rolling ground survives
   // The mesa used to top the flight ceiling, which made the trench the only
   // way through at all. It now tops out well below it: climbing over is a real
@@ -1222,6 +1226,19 @@ function terrainH(x,z){
   if(TERRAIN.sea){
     // open water: a seabed well below the surface, with the odd shoal
     h=-200+(h-52)*.22+34*vnoise((x+ox)/900+3,(z+oz)/900+5);
+  }else if(TERRAIN.isles){
+    // Deep water with land where the noise happens to pile up: a scatter of
+    // islands rather than one coastline, and plenty of sea between them.
+    const a=vnoise((x+ox)/1150+21,(z+oz)/1150+13);
+    const b2=vnoise((x+ox)/430+5,(z+oz)/430+9);
+    const land=a*.72+b2*.28;
+    const t=clamp((land-.54)/.30,0,1);
+    h=lerp(-170, 40+240*t*t, t*t*(3-2*t));
+  }else if(TERRAIN.basin){
+    // A ring of high ground with everything sloping into a lake in the middle
+    const r=Math.hypot(x,z)/ (WORLD*.88);
+    const ring=Math.pow(clamp(r,0,1),1.7);
+    h=lerp(-90, 40, clamp(r*2.4,0,1)) + ring*520 + (h-52)*.35;
   }else if(TERRAIN.mesas){
     // Flat-topped buttes standing out of a desert floor: quantise the smooth
     // noise into four terraces and give each a sheer side and a level top.
@@ -1272,7 +1289,12 @@ function terrainH(x,z){
   // then straight over the side, because a carrier has no beach.
   for(const k in BASES){
     const b=BASES[k], d=Math.hypot(x-b[0],z-b[2]);
-    if(TERRAIN.sea){
+    if(TERRAIN.isles||TERRAIN.basin){
+      // an island big enough to hold a base, cut out of whatever is there
+      if(d<520) h=Math.max(h,BASE_Y);
+      if(d<430) h=BASE_Y;
+      else if(d<640){ const t=clamp((d-430)/210,0,1); h=lerp(BASE_Y,Math.min(h,BASE_Y),t)+0; }
+    }else if(TERRAIN.sea){
       if(d<DECK_R) h=BASE_Y;
       else if(d<DECK_R+90){ const t=clamp((d-DECK_R)/90,0,1); h=lerp(BASE_Y,h,t*t); }
     }else if(d<620){ const t=1-clamp((d-300)/320,0,1); h=lerp(h,BASE_Y,t*t*(3-2*t)); }
@@ -2438,6 +2460,7 @@ function musTone(freq,at,dur,vol,type){
   g.gain.linearRampToValueAtTime(vol,at+.014);
   g.gain.exponentialRampToValueAtTime(.0008,at+dur);
   o.connect(g); g.connect(MUS.gain); o.start(at); o.stop(at+dur+.03);
+  autoFree(o,g);
 }
 function musDrum(kind,at,vol){
   if(kind==='kick'){
@@ -2445,7 +2468,7 @@ function musDrum(kind,at,vol){
     o.type='sine';
     o.frequency.setValueAtTime(152,at); o.frequency.exponentialRampToValueAtTime(44,at+.11);
     g.gain.setValueAtTime(vol,at); g.gain.exponentialRampToValueAtTime(.001,at+.19);
-    o.connect(g); g.connect(MUS.gain); o.start(at); o.stop(at+.21);
+    o.connect(g); g.connect(MUS.gain); o.start(at); o.stop(at+.21); autoFree(o,g);
     return;
   }
   const snare=kind==='snare';
@@ -2457,6 +2480,7 @@ function musDrum(kind,at,vol){
   g.gain.setValueAtTime(vol,at);
   g.gain.exponentialRampToValueAtTime(.0008,at+(snare?.17:.05));
   b.connect(f); f.connect(g); g.connect(MUS.gain); b.start(at); b.stop(at+(snare?.2:.07));
+  autoFree(b,f,g);
 }
 /** how busy the sky is right where you are — drives how hard the loop pushes */
 function musHeat(){
@@ -2505,6 +2529,18 @@ function noiseBuf(){
   for(let i=0;i<len;i++) d[i]=Math.random()*2-1;
   return NOISE;
 }
+/* Nothing was ever disconnected. A stopped oscillator is collected, but the gain
+   and the panner it fed stay wired into the graph, and Web Audio keeps summing
+   every connected node on every render quantum forever. At twenty voices a
+   second that is seventy thousand live nodes an hour, and it never recovers —
+   which is exactly what a slowdown that gets worse the longer you play looks
+   like. Every voice now takes its chain down with it when it finishes. */
+function autoFree(src){
+  // takes the whole chain at once: calling this twice on one source would
+  // replace the first handler and quietly leak whatever it was going to free
+  const chain=[].slice.call(arguments);
+  src.onended=()=>{ for(const nd of chain){ try{ if(nd) nd.disconnect(); }catch(e){} } };
+}
 let _vWin=0, _vN=0;
 function voiceOK(near){
   const now=(typeof performance!=='undefined'&&performance.now)?performance.now():Date.now();
@@ -2523,24 +2559,24 @@ function sfx(type,vol,pan,near){
     const f0=type==='gun'?260:120;
     o.frequency.setValueAtTime(f0,t); o.frequency.exponentialRampToValueAtTime(f0*.35,t+.08);
     g.gain.setValueAtTime(.16*vol,t); g.gain.exponentialRampToValueAtTime(.001,t+.09);
-    o.connect(g); o.start(t); o.stop(t+.1);
+    o.connect(g); o.start(t); o.stop(t+.1); autoFree(o,g,p);
   }else if(type==='boom'){
     // one shared noise buffer; the shape comes from the gain envelope instead
     const b=AC.createBufferSource(); b.buffer=noiseBuf(); b.playbackRate.value=.8+Math.random()*.4;
     const f=AC.createBiquadFilter(); f.type='lowpass'; f.frequency.value=700;
     g.gain.setValueAtTime(.5*vol,t); g.gain.exponentialRampToValueAtTime(.001,t+.55);
-    b.connect(f); f.connect(g); b.start(t); b.stop(t+.6);
+    b.connect(f); f.connect(g); b.start(t); b.stop(t+.6); autoFree(b,f,g,p);
   }else if(type==='launch'){
     const o=AC.createOscillator(); o.type='sawtooth';
     o.frequency.setValueAtTime(500,t); o.frequency.exponentialRampToValueAtTime(90,t+.4);
     g.gain.setValueAtTime(.20*vol,t); g.gain.exponentialRampToValueAtTime(.001,t+.45);
-    o.connect(g); o.start(t); o.stop(t+.5);
+    o.connect(g); o.start(t); o.stop(t+.5); autoFree(o,g,p);
   }else if(type==='hit'||type==='buy'||type==='lock'){
     const o=AC.createOscillator(); o.type='sine';
     const f0=type==='hit'?900:type==='buy'?660:1250;
     o.frequency.setValueAtTime(f0,t); o.frequency.exponentialRampToValueAtTime(f0*(type==='buy'?2:.6),t+.1);
     g.gain.setValueAtTime(.13*vol,t); g.gain.exponentialRampToValueAtTime(.001,t+.14);
-    o.connect(g); o.start(t); o.stop(t+.15);
+    o.connect(g); o.start(t); o.stop(t+.15); autoFree(o,g,p);
   }
 }
 function sfxAt(type,pos,vol){
@@ -5390,6 +5426,16 @@ function netTick(dt){
    only a missile will crack, then back out the way you came; or a lone
    interception where a flight of fighters is already up and hunting you. Every
    completed mission permanently raises your G tolerance. */
+/* Every mission flown makes the next one harder and worth more. The tier climbs
+   one step every three missions and stops at eight, so it keeps getting sharper
+   without ever becoming arithmetic nonsense. */
+function msTier(){ return Math.min(8,Math.floor((PROFILE.missions||0)/3)); }
+function msScale(){ return 1+msTier()*0.22; }          // enemies, hull, numbers
+function msPay(base){ return Math.round(base*(1+msTier()*0.35)); }
+function msLabel(){
+  const t=msTier();
+  return t===0?'':['','SEASONED','VETERAN','HARDENED','ELITE','LEGENDARY','MYTHIC','UNREAL','IMPOSSIBLE'][t];
+}
 function ringAt(pos,dir){
   const l=Math.hypot(dir[0],dir[2])||1;
   G.rings.push({pos:pos.slice(),quat:qLookDir([0,0,0,1],[dir[0]/l,0,dir[2]/l],[0,1,0]),
@@ -5403,7 +5449,8 @@ const MISSIONS=[
      // the bunker sits in the far bowl; you come in from your own end
      const zT=BASES.red[2]+BOWL_R*.45, xT=trenchX(zT);
      const b={id:uid(),type:'bunker',team:'red',owner:null,
-              pos:[xT,terrainH(xT,zT),zT],hp:STRUCTS.bunker.hp,maxHp:STRUCTS.bunker.hp,
+              pos:[xT,terrainH(xT,zT),zT],
+              hp:Math.round(STRUCTS.bunker.hp*msScale()),maxHp:Math.round(STRUCTS.bunker.hp*msScale()),
               cd:0,yaw:0,pitch:0,spin:0,alive:true,missileOnly:true};
      G.structures.push(b);
      M.target=b; M.phase='in';
@@ -5453,7 +5500,7 @@ const MISSIONS=[
    desc(){ return `A flight of ${G.mission.goal} fighters is already up and looking for you. Nobody is coming to help.` },
    setup(){
      const M=G.mission, me=G.me;
-     const n=rndi(5,8)+Math.min(4,Math.floor((PROFILE.missions||0)/3));
+     const n=Math.min(14,rndi(5,8)+msTier());
      M.goal=n; M.killed=0; M.foes=[];
      me.pos=[0,760,0]; me.speed=240; me.thr=1;
      qLookDir(me.quat,[0,0,1],[0,1,0]);
@@ -5484,7 +5531,7 @@ const MISSIONS=[
    desc(){ return `Level all ${G.mission.goal} hangars on their forward field. It is defended.` },
    setup(){
      const M=G.mission, me=G.me;
-     const n=rndi(3,5);
+     const n=Math.min(7,rndi(3,5)+Math.round(msTier()*.5));
      M.goal=n; M.killed=0; M.sheds=[];
      const foe=foeBaseOf(G.team);
      for(let i=0;i<n;i++) M.sheds.push(addStruct('spawner',foe,null));
@@ -5506,11 +5553,131 @@ const MISSIONS=[
    won(){ return G.mission.killed>=G.mission.goal },
    label(){ return G.mission.killed+' / '+G.mission.goal+' hangars levelled' }},
 
+  {id:'weasel', name:'Wild Weasel', tokens:13, map:'isles', time:0,
+   desc(){ return `Take out all ${G.mission.goal} SAM sites in the chain. They will see you coming.` },
+   setup(){
+     const M=G.mission, me=G.me;
+     const n=Math.min(9,3+Math.round(msTier()*.8)+rndi(0,1));
+     M.goal=n; M.killed=0; M.sams=[];
+     // strung out across the islands, so it is a tour rather than one strike
+     for(let i=0;i<n;i++){
+       const a=i/n*Math.PI*2+rnd(-.3,.3), r=rnd(1500,3600);
+       const sx=Math.cos(a)*r, sz=Math.sin(a)*r;
+       const st=addStruct('sam',foeBaseOf(G.team),null);
+       st.pos=[sx,Math.max(terrainH(sx,sz),SEA),sz];
+       st.hp=st.maxHp=Math.round(STRUCTS.sam.hp*msScale());
+       M.sams.push(st);
+     }
+     me.upg={mg:2,rocket:2,missile:2,flare:2,engine:1};
+     applyUpgrades(me); rearm(me); me.wep='rocket';
+     me.pos=[0,700,0]; me.speed=250; me.thr=1;
+     M.time=Math.round((120+n*26)/Math.max(1,msScale()*.75));
+     ringAt(M.sams[0].pos,[0,0,1]);
+     updateWeps();
+   },
+   tick(){
+     const M=G.mission;
+     M.killed=M.sams.filter(s=>!s.alive).length;
+     const next=M.sams.find(s=>s.alive);
+     if(next&&(!G.rings[0]||dist(G.rings[0].pos,next.pos)>5)){ G.rings.length=0; ringAt(next.pos,[0,0,1]); }
+   },
+   progress(){ return clamp(G.mission.killed/G.mission.goal,0,1) },
+   won(){ return G.mission.killed>=G.mission.goal },
+   label(){ return G.mission.killed+' / '+G.mission.goal+' SAM sites down' }},
+
+  {id:'escort', name:'Shepherd', tokens:14, map:'hills', time:0,
+   desc(){ return 'Bring the transport home. It is slow, it is unarmed, and they know it is coming.' },
+   setup(){
+     const M=G.mission, me=G.me;
+     const home=G.structures.find(s=>s.alive&&s.type==='hq'&&s.team===G.team);
+     M.home=home.pos.slice();
+     const start=[-home.pos[0]*.9, 620, -home.pos[2]*.9];
+     const t2=newPlane({name:'HEAVY',team:G.team,isBot:true,passive:true,noRespawn:true});
+     t2.upg={hull:6}; applyUpgrades(t2); rearm(t2);
+     t2.maxHp=Math.round(520*msScale()); t2.hp=t2.maxHp;
+     // the passive flight path reads turn and holdY; without them the controls
+     // go NaN and the aircraft leaves the world
+     t2.pos=start.slice(); t2.speed=130; t2.thr=.6; t2.holdY=620; t2.turn=0;
+     const to=[M.home[0]-start[0],0,M.home[2]-start[2]], l=Math.hypot(to[0],to[2])||1;
+     qLookDir(t2.quat,[to[0]/l,0,to[2]/l],[0,1,0]);
+     G.planes.set(t2.id,t2);
+     M.ward=t2; M.d0=dist(start,M.home);
+     const n=Math.min(10,3+Math.round(msTier()*.9));
+     M.foes=[];
+     for(let i=0;i<n;i++){
+       const q=newPlane({name:botName(),team:foeBaseOf(G.team),isBot:true,role:'hunter',noRespawn:true});
+       q.upg={mg:2,engine:1}; applyUpgrades(q); rearm(q);
+       const a=i/n*Math.PI*2;
+       q.pos=[start[0]+Math.cos(a)*2200, 700, start[2]+Math.sin(a)*2200];
+       q.speed=210; q.thr=1; q.alive=true; q.cruiseY=q.pos[1];
+       G.planes.set(q.id,q); M.foes.push(q);
+     }
+     me.upg={mg:2,missile:2,flare:2,engine:1}; applyUpgrades(me); rearm(me); me.wep='mg';
+     me.pos=[start[0]+180,700,start[2]+180]; me.speed=240; me.thr=1;
+     M.time=260;
+     ringAt(M.home,[0,0,1]);
+     updateWeps();
+   },
+   tick(dt){
+     const M=G.mission, w=M.ward;
+     if(!w||!w.alive) return;
+     // the transport plods home on its own; your job is that it gets there
+     const to=[M.home[0]-w.pos[0],0,M.home[2]-w.pos[2]], l=Math.hypot(to[0],to[2])||1;
+     qLookDir(w.quat,[to[0]/l,0,to[2]/l],[0,1,0]);
+     w.holdY=620; w.thr=.6;
+     // anything hunting you is welcome to hunt the transport instead
+     for(const q of M.foes) if(q.alive&&!q.aiTarget) q.aiTarget=w;
+   },
+   progress(){ const M=G.mission; return M.ward?clamp(1-dist(M.ward.pos,M.home)/M.d0,0,1):0 },
+   won(){ const M=G.mission; return !!(M.ward&&M.ward.alive&&dist(M.ward.pos,M.home)<420) },
+   fail(){ const M=G.mission; return !!(M.ward&&!M.ward.alive) },
+   label(){
+     const M=G.mission;
+     if(!M.ward||!M.ward.alive) return 'TRANSPORT LOST';
+     return Math.round(dist(M.ward.pos,M.home))+' m to go · transport '+
+            Math.max(0,Math.round(M.ward.hp))+' hull';
+   }},
+
+  {id:'duel', name:'Their Best Pilot', tokens:15, map:'mesas', time:0,
+   desc(){ return 'One of theirs, better than the rest, and a pair of wingmen. Kill all three.' },
+   setup(){
+     const M=G.mission, me=G.me;
+     M.foes=[]; M.goal=3; M.killed=0;
+     const mk=(nm,boss)=>{
+       const q=newPlane({name:nm,team:foeBaseOf(G.team),isBot:true,role:'ace',noRespawn:true});
+       q.upg={mg:boss?3:2,engine:boss?3:1,wings:boss?2:0,flare:2};
+       applyUpgrades(q); rearm(q);
+       q.maxHp=Math.round(q.maxHp*(boss?2.2:1)*msScale()); q.hp=q.maxHp;
+       if(boss){ q.topSpeed*=1.10; q.agility*=1.20; }
+       q.speed=230; q.thr=1; q.alive=true;
+       G.planes.set(q.id,q); M.foes.push(q); return q;
+     };
+     const boss=mk('THEIR BEST',true);
+     boss.pos=[1400,760,1400];
+     const w1=mk(botName(),false); w1.pos=[1600,720,1200];
+     const w2=mk(botName(),false); w2.pos=[1200,720,1600];
+     for(const q of M.foes) q.cruiseY=q.pos[1];
+     me.upg={mg:2,cannon:1,missile:2,flare:2,engine:1};
+     applyUpgrades(me); rearm(me); me.wep='mg';
+     me.pos=[-600,740,-600]; me.speed=250; me.thr=1;
+     qLookDir(me.quat,[1,0,1],[0,1,0]);
+     M.time=200;
+   },
+   tick(){ const M=G.mission; M.killed=M.foes.filter(q=>!q.alive).length; },
+   progress(){ return clamp(G.mission.killed/3,0,1) },
+   won(){ return G.mission.killed>=3 },
+   label(){
+     const M=G.mission;
+     const boss=M.foes[0];
+     return M.killed+' / 3 down'+(boss&&boss.alive?'  ·  their best: '+
+       Math.max(0,Math.round(boss.hp/boss.maxHp*100))+'%':'  ·  their best is down');
+   }},
+
   {id:'standoff', name:'Last Stand', tokens:12, map:'plains', time:0,
    desc(){ return `Hold the sky over your own base for ${Math.round(G.mission.time)} seconds. They keep coming.` },
    setup(){
      const M=G.mission, me=G.me;
-     M.time=120+rndi(0,60);
+     M.time=120+rndi(0,60)+msTier()*15;
      M.waveT=0; M.wave=0; M.leaked=0;
      M.hq=G.structures.find(s=>s.alive&&s.type==='hq'&&s.team===G.team);
      me.upg={mg:2,cannon:1,missile:2,flare:2,armor:1};
@@ -5525,7 +5692,7 @@ const MISSIONS=[
      const up=[...G.planes.values()].filter(q=>q.isBot&&q.alive&&q.team!==G.team).length;
      if(M.waveT<=0&&up<8){
        M.waveT=rnd(9,15); M.wave++;
-       const n=2+Math.min(4,Math.floor(M.t/45));
+       const n=2+Math.min(4,Math.floor(M.t/45))+Math.round(msTier()*.6);
        for(let i=0;i<n;i++){
          const a=rnd(0,Math.PI*2), R=rnd(2400,3200);
          const q=newPlane({name:botName(),team:foeBaseOf(G.team),isBot:true,role:'ace',noRespawn:true});
@@ -5572,7 +5739,8 @@ function startMission(){
   $('mission').classList.add('on');
   $('msTitle').textContent=def.name;
   $('msDesc').textContent=def.desc();
-  toast('MISSION: '+def.name.toUpperCase(),'gold',4);
+  toast('MISSION: '+def.name.toUpperCase()+(msLabel()?'  ·  '+msLabel():''),'gold',4);
+  if(msTier()>0) toast(PROFILE.missions+' MISSIONS FLOWN — THEY ARE HARDER NOW, AND THEY PAY MORE','grn',5);
 }
 function updateMissionHUD(){
   const M=G.mission; if(!M||M.done) return;
@@ -5597,7 +5765,7 @@ function endMission(won){
   if(mouseLocked) document.exitPointerLock();
   let tok=0, gGain=0, bonus=0;
   if(won){
-    tok=M.def.tokens;
+    tok=msPay(M.def.tokens);
     // finishing with time in hand pays up to half again on top
     bonus=Math.round(tok*.5*clamp(1-M.t/M.time,0,1));
     tok+=bonus;
@@ -5607,7 +5775,8 @@ function endMission(won){
   PROFILE.kills+=G.kills; PROFILE.deaths+=G.deaths; saveProfile();
   $('overTitle').textContent=won?'MISSION COMPLETE':'MISSION FAILED';
   $('overTitle').style.color=won?'#7fe6c0':'#ff7a6b';
-  $('overText').innerHTML=M.def.name+'<br/>'+M.def.label();
+  $('overText').innerHTML=M.def.name+(msLabel()?' · <span style="color:#c9a3ff">'+msLabel()+'</span>':'')+
+    '<br/>'+M.def.label();
   $('tokline').innerHTML=(tok?`+${tok} ⬢ TOKENS EARNED`+(bonus?` <span style="color:#8fa8c4">(${tok-bonus} + ${bonus} for the time left)</span>`:''):'No tokens awarded')+
     (gGain?`<br/><span style="color:#7fe6c0">G TOLERANCE NOW ${gTolerance().toFixed(1)} G</span>`:'');
   $('over').classList.add('on');
