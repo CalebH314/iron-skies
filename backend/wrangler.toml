@@ -1,0 +1,9 @@
+name = "aviators-api"
+main = "worker.js"
+compatibility_date = "2024-11-01"
+
+# Create the namespace first, then paste its id here:
+#   npx wrangler kv namespace create AVIATORS
+[[kv_namespaces]]
+binding = "KV"
+id = "PASTE_YOUR_KV_NAMESPACE_ID_HERE"

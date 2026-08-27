@@ -2074,6 +2074,41 @@ const diff={
 /** is the enemy scaled right now? not during training or a mission */
 function campaign(){ return G.started&&!G.tut&&!G.mission }
 /* ------------------------------ accounts ---------------------------------- */
+/* Optional server. Empty means everything below stays exactly as it has always
+   been — local accounts in this browser, and the peer-held room list. Put a
+   Worker URL here (see backend/README.md) and names become global, progress
+   follows you between devices, and the room list stops depending on one player
+   staying online. If the server is unreachable at any point the game falls
+   straight back to local, so a deployment going down never locks anybody out. */
+const BACKEND='';
+const API={ url:BACKEND, token:null, live:false, checked:false };
+function apiOn(){ return !!API.url }
+async function apiCall(path,body,method){
+  if(!apiOn()) throw new Error('offline');
+  const ctl=new AbortController();
+  const bail=setTimeout(()=>ctl.abort(),7000);
+  try{
+    const r=await fetch(API.url+path,{
+      method:method||(body?'POST':'GET'),
+      headers:body?{'content-type':'application/json'}:undefined,
+      body:body?JSON.stringify(body):undefined,
+      signal:ctl.signal
+    });
+    const j=await r.json().catch(()=>({error:'The server sent something unreadable.'}));
+    API.live=true;
+    if(!r.ok) throw new Error(j.error||('Server said '+r.status));
+    return j;
+  }finally{ clearTimeout(bail); }
+}
+/** true if the server answered; false means fall back to local without a fuss */
+async function apiReachable(){
+  if(!apiOn()) return false;
+  if(API.checked) return API.live;
+  API.checked=true;
+  try{ await apiCall('/v1/ping'); return API.live=true; }
+  catch(e){ return API.live=false; }
+}
+
 /* Sign-in with a username and password. There is no server behind this game —
    it is a single file on a static host — so accounts live in this browser's
    own storage and a name being "taken" means taken on this machine. Passwords
@@ -2082,6 +2117,7 @@ const ACC={ list:{}, name:null };
 function accLoad(){
   try{ ACC.list=JSON.parse(localStorage.getItem('ironskies.accounts')||'{}')||{}; }catch(e){ ACC.list={}; }
   try{ ACC.name=localStorage.getItem('ironskies.session')||null; }catch(e){ ACC.name=null; }
+  try{ API.token=localStorage.getItem('ironskies.token')||null; }catch(e){ API.token=null; }
   if(ACC.name&&!ACC.list[ACC.name]) ACC.name=null;
 }
 function accStore(){
@@ -2129,6 +2165,15 @@ function accTaken(nm,exceptKey){
 async function accCreate(nm,pw){
   const bad=accCheckName(nm); if(bad) return bad;
   if(String(pw||'').length<4) return 'Pick a password of at least four characters.';
+  if(await apiReachable()){
+    try{
+      // a local account signing up for the first time takes its progress with it
+      const carry=(ACC.name&&ACC.list[ACC.name]&&ACC.list[ACC.name].profile)||
+                  (()=>{ try{ return localStorage.getItem('ironskies.profile') }catch(e){ return null } })();
+      const r=await apiCall('/v1/signup',{name:nm,pass:pw,profile:carry||undefined});
+      return accAdopt(r);
+    }catch(e){ if(API.live) return e.message; }   // a real refusal, not a dead server
+  }
   if(accTaken(nm)) return 'That name is already taken on this device. Pick another.';
   const salt=accSalt();
   ACC.list[accKey(nm)]={name:String(nm).trim(),salt,hash:await accHash(salt,pw),
@@ -2143,17 +2188,46 @@ async function accCreate(nm,pw){
   saveProfile();
   return null;
 }
+/** take what the server sent and make it this browser's signed-in account */
+function accAdopt(r){
+  API.token=r.token||API.token;
+  try{ localStorage.setItem('ironskies.token',API.token||''); }catch(e){}
+  const k=accKey(r.name);
+  ACC.list[k]=Object.assign({},ACC.list[k],{name:r.name,server:true,profile:r.profile||null});
+  ACC.name=k; accStore(); loadProfile();
+  if(!PROFILE.callsign) PROFILE.callsign=String(r.name).trim().toUpperCase().slice(0,12);
+  saveProfile();
+  return null;
+}
 async function accSignIn(nm,pw){
+  if(await apiReachable()){
+    try{ return accAdopt(await apiCall('/v1/login',{name:nm,pass:pw})); }
+    catch(e){ if(API.live) return e.message; }
+  }
   const k=accKey(nm), a=ACC.list[k];
   if(!a) return 'No account with that name on this device.';
   if(await accHash(a.salt,pw)!==a.hash) return 'That password does not match.';
   ACC.name=k; accStore(); loadProfile();
   return null;
 }
-function accSignOut(){ ACC.name=null; accStore(); loadProfile(); }
+function accSignOut(){
+  ACC.name=null; API.token=null;
+  try{ localStorage.removeItem('ironskies.token'); }catch(e){}
+  accStore(); loadProfile();
+}
 async function accRename(nm){
   const bad=accCheckName(nm); if(bad) return bad;
   if(!ACC.name) return 'You are playing without an account.';
+  if(API.token&&await apiReachable()){
+    try{
+      const r=await apiCall('/v1/rename',{token:API.token,name:nm});
+      const rec=ACC.list[ACC.name]; delete ACC.list[ACC.name];
+      rec.name=r.name; ACC.name=accKey(r.name); ACC.list[ACC.name]=rec;
+      API.token=r.token||API.token;
+      try{ localStorage.setItem('ironskies.token',API.token||''); }catch(e){}
+      accStore(); return null;
+    }catch(e){ if(API.live) return e.message; }
+  }
   if(accTaken(nm,ACC.name)) return 'That name is already taken on this device.';
   const rec=ACC.list[ACC.name];
   delete ACC.list[ACC.name];
@@ -2164,6 +2238,10 @@ async function accRename(nm){
 }
 async function accRepass(oldPw,newPw){
   if(!ACC.name) return 'You are playing without an account.';
+  if(API.token&&await apiReachable()){
+    try{ await apiCall('/v1/password',{token:API.token,old:oldPw,next:newPw}); return null; }
+    catch(e){ if(API.live) return e.message; }
+  }
   const a=ACC.list[ACC.name];
   if(await accHash(a.salt,oldPw)!==a.hash) return 'That is not your current password.';
   if(String(newPw||'').length<4) return 'Pick a password of at least four characters.';
@@ -2171,8 +2249,15 @@ async function accRepass(oldPw,newPw){
   accStore();
   return null;
 }
+let _pushT=0;
 function saveProfile(){
   const raw=JSON.stringify(PROFILE);
+  // push to the server at most every twenty seconds, and never let a failure
+  // interrupt the game
+  if(API.token&&apiOn()&&Date.now()-_pushT>20000){
+    _pushT=Date.now();
+    apiCall('/v1/profile',{token:API.token,data:raw}).catch(()=>{});
+  }
   try{
     if(ACC.name&&ACC.list[ACC.name]){ ACC.list[ACC.name].profile=raw; accStore(); }
     else localStorage.setItem('ironskies.profile',raw);
@@ -2187,7 +2272,7 @@ try{ localStorage.removeItem('ironskies.board'); }catch(e){}   // retired featur
 const G={
   mode:'menu', started:false, t:0, dt:0,
   planes:new Map(), bullets:[], missiles:[], parts:[], structures:[],
-  me:null, myId:uid(), team:'blue', emp:0, pulses:[], foeEmp:{}, foeEmpT:0, empWarn:null,
+  me:null, myId:uid(), team:'blue', structDirty:true, fullT:0, snapN:0, emp:0, pulses:[], foeEmp:{}, foeEmpT:0, empWarn:null,
   wxId:'clear', netWx:null, eliminated:{}, netLevel:null, netMap:null, hangarT:{}, hangarSaid:{},
   credits:600, kills:0, deaths:0, score:0,
   camMode:0, camPos:[0,120,300], camLook:[0,60,0],
@@ -2297,6 +2382,7 @@ function addStruct(type,team,ownerId,idx){
     hp=Math.round(hp*(type==='hq'?diff.hq():diff.struct()));
   const s={id:uid(),type,team,owner:ownerId||null,pos,hp,maxHp:hp,cd:0,yaw:Math.atan2(-BASES[team][0],-BASES[team][2]),pitch:0,spin:0,alive:true};
   G.structures.push(s);
+  G.structDirty=true;
   return s;
 }
 
@@ -2906,6 +2992,7 @@ function sweepWrecks(dt){
 }
 function damageStruct(s,amt,byId){
   if(!s.alive) return;
+  G.structDirty=true;
   s.hp-=amt;
   if(byId===G.myId){ hitmark(); G.credits+=Math.round(amt*.5); }
   if(s.hp<=0){
@@ -4710,6 +4797,7 @@ function quitToMenu(){
   net.waiting=[]; net.askOpen=null; $('askJoin').classList.remove('on');
   if(net._reg){ clearInterval(net._reg); net._reg=null; }
   if(dir.conn&&dir.conn.open&&net.room) try{ dir.conn.send(JSON.stringify({t:'unreg',room:net.room})) }catch(e){}
+  if(apiOn()&&net.room) apiCall('/v1/rooms/'+net.room,null,'DELETE').catch(()=>{});
   G.started=false; G.paused=false; G.over=false; G.round=null; G.tut=null; G.mission=null;
   G.planes.clear(); G.structures.length=0; G.bullets.length=0; G.missiles.length=0;
   G.parts.length=0; G.rings.length=0; G.fires.length=0;
@@ -4818,6 +4906,7 @@ async function openDirectory(){
 function pushRegistration(){
   if(!net.isHost||!net.room) return;
   const rec={t:'reg',room:net.room,name:(PROFILE.callsign||'PILOT'),pilots:net.conns.length+1};
+  if(apiOn()) apiCall('/v1/rooms',{room:rec.room,name:rec.name,pilots:rec.pilots}).catch(()=>{});
   if(dir.isDir) dir.rooms.set(net.room,{room:rec.room,name:rec.name,pilots:rec.pilots,at:Date.now()});
   else if(dir.conn&&dir.conn.open) try{ dir.conn.send(JSON.stringify(rec)) }catch(e){}
 }
@@ -4825,7 +4914,14 @@ function askRooms(){
   if(dir.isDir){ renderRooms(); return; }
   if(dir.conn&&dir.conn.open) try{ dir.conn.send(JSON.stringify({t:'list'})) }catch(e){}
 }
-function refreshRooms(){
+async function refreshRooms(){
+  if(await apiReachable()){
+    try{
+      const r=await apiCall('/v1/rooms');
+      dir.listed=r.rooms||[]; dirNote('room list from the server');
+      renderRooms(); return;
+    }catch(e){ /* fall through to the peer-held list */ }
+  }
   if(!dir.isDir&&!dir.conn) openDirectory(); else askRooms();
   renderRooms();
 }
@@ -4998,6 +5094,28 @@ function packPlayer(p){
     hp:Math.round(p.hp),maxHp:p.maxHp,speed:Math.round(p.speed),alive:p.alive,bot:!!p.isBot,upg:p.upg,k:p.kills,d:p.deaths};
 }
 function packStruct(s){return {id:s.id,type:s.type,team:s.team,pos:s.pos.map(v=>+v.toFixed(1)),hp:Math.round(s.hp),alive:s.alive,owner:s.owner}}
+/* The snapshot used to carry every field of every aircraft nine times a second,
+   which at sixty-odd aircraft is fifteen kilobytes a tick — a host with five
+   peers was pushing the better part of a megabyte a second up a domestic line.
+   This is the same information with the parts that never change left out (they
+   are sent once when an aircraft first appears) and everything else rounded to
+   what the interpolation can actually use: whole metres and two decimals of
+   attitude. */
+function packLite(p){
+  return [p.id, Math.round(p.pos[0]), Math.round(p.pos[1]), Math.round(p.pos[2]),
+          +p.quat[0].toFixed(2), +p.quat[1].toFixed(2), +p.quat[2].toFixed(2), +p.quat[3].toFixed(2),
+          Math.round(p.hp), Math.round(p.speed), p.alive?1:0];
+}
+function unpackLite(a){
+  const p=G.planes.get(a[0]);
+  if(!p) return null;                    // not seen yet: the next full record introduces it
+  p.tpos=[a[1],a[2],a[3]]; p.tquat=[a[4],a[5],a[6],a[7]];
+  if(!p.pos||dist(p.pos,p.tpos)>900){ p.pos=p.tpos.slice(); p.quat=p.tquat.slice(); }
+  p.hp=a[8]; p.speed=a[9];
+  const wasAlive=p.alive; p.alive=!!a[10];
+  if(wasAlive&&!p.alive){ explode(p.pos,30,1.3); sfxAt('boom',p.pos,.9); }
+  return p;
+}
 function unpackPlayer(d){
   let p=G.planes.get(d.id);
   if(!p){
@@ -5067,8 +5185,9 @@ function onNet(raw,conn){
       break;
     case 'peer': unpackPlayer(m.p); break;
     case 'snap':
-      for(const p of m.b) unpackPlayer(p);
-      for(const s of m.s){
+      if(m.b) for(const p of m.b) unpackPlayer(p);
+      if(m.l) for(const a of m.l) unpackLite(a);
+      if(m.s) for(const s of m.s){
         let st=G.structures.find(x=>x.id===s.id);
         if(!st){ st={...s,cd:0,yaw:0,pitch:0,spin:0,maxHp:STRUCTS[s.type].hp}; G.structures.push(st) }
         else { st.hp=s.hp; if(st.alive&&!s.alive){ explode(st.pos,60,2.6); sfxAt('boom',st.pos,1) } st.alive=s.alive }
@@ -5184,8 +5303,37 @@ function netTick(dt){
     snapT-=dt;
     if(snapT<=0){
       snapT=1/9;
-      const bots=[...G.planes.values()].filter(p=>p.isBot).map(packPlayer);
-      net.send({t:'snap',b:bots,s:G.structures.map(packStruct)});
+      G.snapN=((G.snapN||0)+1)%1000;
+      G.fullT=(G.fullT||0)-1/9;
+      const full=G.fullT<=0;             // a whole-world resync every few seconds
+      if(full) G.fullT=5;
+      // Structures only go out when one of them actually changed, which is
+      // rarely — they were most of the old snapshot.
+      let sPart=null;
+      if(full||G.structDirty){ sPart=G.structures.map(packStruct); G.structDirty=false; }
+      const bots=[...G.planes.values()].filter(p=>p.isBot);
+      // Aircraft each peer has never seen need a full record once; after that
+      // they are just eleven numbers.
+      for(const c of net.conns){
+        if(!c.open) continue;
+        const seen=c._seen||(c._seen=new Set());
+        const at=(c._pid&&G.planes.get(c._pid))?G.planes.get(c._pid).pos:null;
+        const intro=[], lite=[];
+        for(const p of bots){
+          // Close aircraft go every tick; distant ones every third, because at
+          // three kilometres nobody can tell. Anything that has just died goes
+          // regardless, so a wreck is never left flying on someone's screen.
+          const d=at?dist(p.pos,at):0;
+          const near=!at||d<2500;
+          if(!near&&p.alive&&seen.has(p.id)&&(G.snapN%3)!==0&&d>2500) continue;
+          if(!seen.has(p.id)){ seen.add(p.id); intro.push(packPlayer(p)); }
+          else lite.push(packLite(p));
+        }
+        const msg={t:'snap',l:lite};
+        if(intro.length) msg.b=intro;
+        if(sPart) msg.s=sPart;
+        try{ c.send(JSON.stringify(msg)) }catch(e){}
+      }
     }
   }
 }
@@ -5632,8 +5780,11 @@ function renderSettings(){
   $('sensRange').value=Math.round(PROFILE.sens*100);
   $('sensVal').textContent=PROFILE.sens.toFixed(2);
   const acc=ACC.name&&ACC.list[ACC.name];
+  const where=apiOn()?(API.live?' Signed in on the server, so this name works on any device.'
+                              :' The server is not answering — this account is local to this browser.')
+                    :' Accounts are kept in this browser only.';
   $('signLine').innerHTML=acc
-    ? `Signed in as <b style="color:#7fe6c0">${esc(acc.name)}</b>. Your progress is kept under that name.`
+    ? `Signed in as <b style="color:#7fe6c0">${esc(acc.name)}</b>.`+where
     : `You are playing without an account — progress is kept in this browser only. `+
       `Sign out is disabled; create an account from the title screen to keep it under a name.`;
   $('btnRename').disabled=!acc; $('btnRepass').disabled=!acc; $('btnSignOut').disabled=!acc;
@@ -5675,9 +5826,10 @@ function siRender(){
     ? 'Pick a name and a password. Tokens, campaign level and your aircraft are kept against that name on this device.'
     : 'Enter the name and password you signed up with.';
   const names=Object.values(ACC.list).map(a=>a.name);
-  $('siWho').textContent=names.length
-    ? 'Accounts on this device: '+names.join(', ')
-    : 'No accounts on this device yet.';
+  $('siWho').textContent=(apiOn()
+      ? 'Names are held on the server, so yours works on any device. '
+      : 'Accounts are kept in this browser only. ')+
+    (names.length?'Seen here: '+names.join(', '):'None seen here yet.');
   $('siMsg').textContent='';
 }
 function showSignIn(){ siNew=Object.keys(ACC.list).length===0; siRender(); $('signin').classList.add('on'); }
