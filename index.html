@@ -161,6 +161,9 @@ kbd{background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.16);bord
 #askJoin.on{display:block}
 #askJoin p{font-size:13px;color:#e6f2ff;margin-bottom:10px;letter-spacing:1px}
 #askJoin .btns{display:flex;gap:10px;justify-content:center}
+#autoHud{position:absolute;left:50%;top:calc(34% - 58px);transform:translateX(-50%);display:none;
+  font-size:13px;font-weight:700;letter-spacing:3px;color:#7fe6c0;pointer-events:none;
+  text-shadow:0 2px 10px #000,0 0 16px rgba(0,0,0,.9)}
 #empHud{position:absolute;left:50%;top:calc(34% - 34px);transform:translateX(-50%);display:none;
   font-size:14px;font-weight:700;letter-spacing:3px;color:#8fe8ff;pointer-events:none;
   text-shadow:0 2px 10px #000,0 0 18px rgba(60,180,255,.7)}
@@ -360,6 +363,7 @@ td{padding:6px 8px;border-bottom:1px solid rgba(255,255,255,.045)}
     <div class="skip">PRESS <kbd>N</kbd> TO SKIP THIS STEP</div>
   </div>
 
+  <div id="autoHud">AUTOPILOT — <kbd>K</kbd> TO TAKE OVER</div>
   <div id="empHud"></div>
   <div id="weps"></div>
   <div id="feed"></div>
@@ -420,6 +424,14 @@ td{padding:6px 8px;border-bottom:1px solid rgba(255,255,255,.045)}
       <p id="crewDesc">Take an aircraft, or man an emplacement at your own base and hold the line
       from the ground. Gun crews cannot move, but they see everything and hit hard.</p>
       <div class="seg" id="crewSeg"></div>
+    </div>
+
+    <div class="srow">
+      <h4>AUTOPILOT</h4>
+      <p id="autoDesc">Hand the aircraft to the computer and watch. It flies, fights and lands
+      the same way every other aircraft in the sky does. <kbd>K</kbd> takes the controls back
+      mid-flight, or gives them up again.</p>
+      <div class="seg" id="autoSeg"></div>
     </div>
 
     <div class="srow">
@@ -600,8 +612,9 @@ td{padding:6px 8px;border-bottom:1px solid rgba(255,255,255,.045)}
       <b>FLY</b> mouse aims · <kbd>A</kbd><kbd>D</kbd> roll · mouse wheel throttle · <kbd>Shift</kbd> afterburner<br/>
       <b>FIGHT</b> <kbd>LMB</kbd>/<kbd>Space</kbd> fire · <kbd>1</kbd>–<kbd>5</kbd> weapon (<kbd>4</kbd> = missiles) · <kbd>RMB</kbd>/<kbd>F</kbd> quick missile · <kbd>X</kbd> flares · <kbd>R</kbd> resupply<br/>
       <b>BUILD</b> <kbd>B</kbd> hangar &amp; shop — buy weapons, armor, <b>Sniper Towers</b> and <b>Surface-to-Air Missile sites</b><br/>
+      <b>CANYON</b> the mesa rim carries a <b>SAM belt</b> — it ignores the trench and fires only on aircraft that climb over the lip<br/>
       <b>VIEW</b> you fly from the <b>cockpit</b> — <kbd>C</kbd> cycles cockpit / chase / cinematic<br/>
-      <b>GAME</b> <kbd>Esc</kbd> or <kbd>P</kbd> pause &amp; exit · <kbd>M</kbd> mute sound<br/>
+      <b>GAME</b> <kbd>Esc</kbd> or <kbd>P</kbd> pause &amp; exit · <kbd>M</kbd> mute sound · <kbd>K</kbd> autopilot on/off<br/>
 <br/>
       Destroy the enemy <b>Command HQ</b> to win the round. Credits come from kills, structure hits and passive income.
     </div>
@@ -1070,16 +1083,13 @@ const WEATHERS=[
   {id:'mist',  name:'FOG BANK',     fog:[.71,.73,.76], near:260,  far:1900,  tint:[.82,.84,.86],
    note:'Thick fog. You will be on top of things before you see them.'}
 ];
-/** A fresh draw every round. Storms come up rather more than the rest. */
-function pickWeather(){
-  const bag=['clear','cloud','rain','storm','storm','storm','snow','mist'];
-  const id=bag[rndi(0,bag.length-1)];
-  return WEATHERS.find(w=>w.id===id)||WEATHERS[0];
-}
+/** A fresh draw every round, and every sky exactly as likely as every other. */
+function pickWeather(){ return WEATHERS[rndi(0,WEATHERS.length-1)] }
 /** Which ground an AUTO map lands on — canyon most of the time, as before. */
+/** Every kind of ground exactly as likely as every other. */
 function pickMapKind(){
-  const bag=['canyon','canyon','canyon','hills','hills','plains','sea','mesas','isles','isles','basin'];
-  return bag[rndi(0,bag.length-1)];
+  const kinds=MAPS.filter(m=>m.id!=='auto').map(m=>m.id);
+  return kinds[rndi(0,kinds.length-1)];
 }
 const WX={w:WEATHERS[0], t:0, flash:0, thunder:0, gustX:0, gustY:0, bolts:[]};
 const BOLT_R=260, BOLT_DMG=210;
@@ -1101,7 +1111,7 @@ function strikeLightning(){
   }
   if(!at) at=[rnd(-WORLD*.6,WORLD*.6),0,rnd(-WORLD*.6,WORLD*.6)];
   at[1]=Math.max(terrainH(at[0],at[2]),SEA);
-  WX.bolts.push({pos:at,t:0,life:.62,seed:Math.random()*9});
+  WX.bolts.push({pos:at,t:0,life:.80,seed:Math.random()*9});
   WX.flash=1;
   sfxAt('boom',at,1.0);
   if(!authority()) return;
@@ -1163,7 +1173,7 @@ function stepWeather(dt){
     }
   }else if(!w.lightning) WX.bolts.length=0;
   const el=$('wxflash');
-  if(el) el.style.opacity=(WX.flash*WX.flash*.55).toFixed(3);
+  if(el) el.style.opacity=(WX.flash*WX.flash*.80).toFixed(3);
 }
 
 /** canyon is the usual ground: open levels are the break, one in four */
@@ -1174,7 +1184,7 @@ const MAPS=[
   {id:'auto',  name:'AUTO',       note:'A fresh draw every round — mostly canyon, sometimes hills or open plains.'},
   {id:'plains',name:'PLAINS',     note:'Flat and fast, with nothing to hide behind and nothing to hit.'},
   {id:'hills', name:'HILLS',      note:'Rolling ground with ridgelines across the middle; you have to find the gaps.'},
-  {id:'canyon',name:'CANYON RUN', note:'A winding trench between the bases. Fast and covered, but you can climb over the mesa if you would rather take the long way.'},
+  {id:'canyon',name:'CANYON RUN', note:'A winding trench between the bases. Fast and covered — and the mesa rim carries a SAM belt that ignores the trench entirely and fires only on whatever climbs over the lip.'},
   {id:'sea',   name:'OPEN SEA',   note:'Blue water from edge to edge. Each side flies off a carrier — the deck is the whole base, and there is nowhere else to put down.'},
   {id:'mesas', name:'MESA COUNTRY',note:'Flat-topped buttes standing out of the desert. Cover if you fly low enough to use it, and hard edges if you do not.'},
   {id:'isles', name:'ISLAND CHAIN',note:'Scattered islands in deep water. Land where you can find it, sea everywhere else, and somewhere to dive if a pulse is coming.'},
@@ -2033,14 +2043,15 @@ const DIFFS=[
 ];
 const PROFILE={tokens:0,perks:{},muted:false,level:1,wins:0,losses:0,
                kills:0,deaths:0,missions:0,callsign:'',difficulty:1,sens:1,
-               plane:{frame:0,paint:0,frames:[0],paints:[0]},gTol:7,playAs:'plane',map:'auto'};
+               plane:{frame:0,paint:0,frames:[0],paints:[0]},gTol:7,playAs:'plane',map:'auto',
+               autopilot:false};
 const DK=()=>DIFFS[clamp(PROFILE.difficulty|0,0,DIFFS.length-1)];
 function loadProfile(){
   // start from defaults so signing in and out does not leak one account's
   // progress into another
   PROFILE.tokens=0; PROFILE.perks={}; PROFILE.level=1; PROFILE.wins=0; PROFILE.losses=0;
   PROFILE.kills=0; PROFILE.deaths=0; PROFILE.missions=0; PROFILE.callsign='';
-  PROFILE.gTol=7; PROFILE.playAs='plane'; PROFILE.map='auto';
+  PROFILE.gTol=7; PROFILE.playAs='plane'; PROFILE.map='auto'; PROFILE.autopilot=false;
   try{
     const raw=(ACC.name&&ACC.list[ACC.name]&&ACC.list[ACC.name].profile)
       || (ACC.name?null:localStorage.getItem('ironskies.profile'));
@@ -2053,7 +2064,8 @@ function loadProfile(){
       PROFILE.sens=d.sens||1;
       if(d.plane) PROFILE.plane=d.plane;
       PROFILE.gTol=d.gTol||7; PROFILE.playAs=d.playAs||'plane';
-      PROFILE.map=MAPS.some(m=>m.id===d.map)?d.map:'auto'; }
+      PROFILE.map=MAPS.some(m=>m.id===d.map)?d.map:'auto';
+      PROFILE.autopilot=!!d.autopilot; }
   }catch(e){}
   // Auto-Tracker was retired: give back what was spent on it rather than
   // quietly pocketing the tokens.
@@ -2396,6 +2408,27 @@ function hangarPos(team){
   const x=b[0]+Math.cos(a)*r, z=b[2]+Math.sin(a)*r;
   return [x,terrainH(x,z),z];
 }
+/* A belt of SAM sites along the top of the canyon mesa. They belong to no side
+   and they watch one thing: the airspace above the lip. Anything down in the
+   trench is none of their business — cross the rim and the nearest battery
+   engages that aircraft, and only that aircraft. */
+function addRimSams(){
+  if(!TERRAIN.trench) return;
+  const cfg=STRUCTS.sam, n=10;
+  // stop short of the base bowls at either end, which are cut down to ground
+  const bz=Math.abs(BASES[teamList()[0]][2]);
+  const span=Math.min(TERRAIN.wallZ*.82, bz-BOWL_R-250);
+  for(let i=0;i<n;i++){
+    const z=-span+2*span*(i/(n-1));
+    const side=(i%2)?1:-1;
+    const x=trenchX(z)+side*(TERRAIN.half+520);
+    const hp=Math.round(cfg.hp*1.4);
+    G.structures.push({id:uid(),type:'sam',team:'neutral',owner:null,
+      pos:[x,terrainH(x,z),z],hp,maxHp:hp,cd:rnd(0,3),
+      yaw:side>0?Math.PI:0,pitch:0,spin:0,alive:true,rim:true});
+  }
+  G.structDirty=true;
+}
 function addStruct(type,team,ownerId,idx){
   const cfg=STRUCTS[type];
   const pos = (type==='hq'||type==='dome') ? [BASES[team][0],terrainH(BASES[team][0],BASES[team][2]),BASES[team][2]]
@@ -2605,6 +2638,7 @@ addEventListener('keydown',e=>{
     if(w&&G.me.have[w]){G.me.wep=w;updateWeps()}
   }
   if(e.code==='KeyX') dropFlares();
+  if(e.code==='KeyK'&&!G.over){ setAutopilot(!PROFILE.autopilot); }
   if(e.code==='Enter'&&!G.over){ e.preventDefault(); fireEMP(); }
   if(e.code==='KeyN'&&G.tut&&!G.tut.done){ toast('OBJECTIVE SKIPPED','gold',1.2); advanceTut(); }
 });
@@ -2769,7 +2803,7 @@ function simPlane(p,dt){
   // of them in the dirt, so below this height the aircraft simply will not
   // descend any further and the nose is forced up until it is clear. The player
   // gets no such help.
-  if(p.isBot&&!p.isLocal&&p.alive){
+  if((p.isBot||(p.isLocal&&autoOn()))&&p.alive){
     const g0=Math.max(terrainH(p.pos[0],p.pos[2]),SEA);
     if(p.pos[1]<g0+46){
       p.pos[1]=g0+46;
@@ -3397,11 +3431,18 @@ function stepStructs(dt){
 
     // pick nearest enemy plane in range
     let best=null,bd=cfg.range;
+    // A rim battery only ever engages an aircraft that has come up over the
+    // canyon lip. Anything in the trench below it is left alone entirely, and
+    // once it has picked one it shoots at that one — the missile it launches
+    // chases that aircraft and nothing else.
+    const lip=TERRAIN.floor+(TERRAIN.wallTop-TERRAIN.floor)*.82;
     for(const p of G.planes.values()){
       if(!p.alive||p.team===s.team) continue;
+      if(s.rim&&p.pos[1]<lip) continue;
       const d=dist(p.pos,s.pos);
       if(d<bd){bd=d;best=p}
     }
+    if(s.rim&&!best){ s.pitch=lerp(s.pitch,0,clamp(dt*2,0,1)); continue; }
     if(best){
       const cy=s.pos[1]+(cfg.y||8);
       const dx=best.pos[0]-s.pos[0],dy=best.pos[1]-cy,dz=best.pos[2]-s.pos[2];
@@ -4170,24 +4211,37 @@ function render(){
     for(const B of WX.bolts){
       const k=clamp(B.t/B.life,0,1), a=(1-k)*(1-k);
       // a ragged column: a stack of offset boxes rather than a straight line
-      const H=CEILING+400, SEG=14;
+      const H=CEILING+400, SEG=16;
       const px=B.pos[0], pz=B.pos[2];
       for(let i=0;i<SEG;i++){
         const y0=B.pos[1]+H*i/SEG, h=H/SEG;
-        const jx=Math.sin((i+B.seed)*2.7)*34*(i/SEG), jz=Math.cos((i+B.seed)*3.1)*34*(i/SEG);
-        const w=16+i*3.4;
-        // a hot white core inside a wider blue-white sheath
+        const jx=Math.sin((i+B.seed)*2.7)*40*(i/SEG), jz=Math.cos((i+B.seed)*3.1)*40*(i/SEG);
+        const w=30+i*6.0;
+        // three sleeves: a wide pale halo, a blue-white sheath, a white-hot core
         M4.trans(model,px+jx,y0+h*.5,pz+jz);
-        M4.mul(model,model,M4.scl(tmpM,w*1.9,h*.54,w*1.9));
-        draw(MESH.cube,model,{unlit:true,alpha:a*.45,tint:[.62,.78,1]});
+        M4.mul(model,model,M4.scl(tmpM,w*3.2,h*.55,w*3.2));
+        draw(MESH.cube,model,{unlit:true,alpha:a*.30,tint:[.66,.80,1]});
         M4.trans(model,px+jx,y0+h*.5,pz+jz);
-        M4.mul(model,model,M4.scl(tmpM,w,h*.54,w));
-        draw(MESH.cube,model,{unlit:true,alpha:a,tint:[1,1,1]});
+        M4.mul(model,model,M4.scl(tmpM,w*1.7,h*.55,w*1.7));
+        draw(MESH.cube,model,{unlit:true,alpha:a*.72,tint:[.86,.93,1]});
+        M4.trans(model,px+jx,y0+h*.5,pz+jz);
+        M4.mul(model,model,M4.scl(tmpM,w,h*.55,w));
+        draw(MESH.cube,model,{unlit:true,alpha:Math.min(1,a*1.6),tint:[1,1,1]});
+      }
+      // a branch or two off the main channel
+      for(let bch=0;bch<2;bch++){
+        const at=0.45+bch*0.22, y0=B.pos[1]+H*at;
+        for(let i=0;i<5;i++){
+          const sp=(bch?1:-1)*(i+1)*46, yy=y0-i*58;
+          M4.trans(model,px+sp+Math.sin(i+B.seed)*18, yy, pz+sp*.6);
+          M4.mul(model,model,M4.scl(tmpM,20,44,20));
+          draw(MESH.cube,model,{unlit:true,alpha:a*.55*(1-i/5),tint:[.92,.96,1]});
+        }
       }
       // the flash where it lands
       M4.trans(model,B.pos[0],B.pos[1]+12,B.pos[2]);
-      M4.mul(model,model,M4.scl(tmpM,BOLT_R*(.35+k*1.1),BOLT_R*.42,BOLT_R*(.35+k*1.1)));
-      draw(MESH.shell,model,{unlit:true,alpha:a*.5,tint:[.85,.92,1]});
+      M4.mul(model,model,M4.scl(tmpM,BOLT_R*(.35+k*1.3),BOLT_R*.55,BOLT_R*(.35+k*1.3)));
+      draw(MESH.shell,model,{unlit:true,alpha:a*.80,tint:[.94,.97,1]});
     }
     gl.depthMask(true); gl.disable(gl.BLEND); gl.enable(gl.CULL_FACE);
   }
@@ -4405,6 +4459,7 @@ function updateWarnings(dt){
       pushWarn('base','⚠ HOME BASE UNDER ATTACK','crit',2.6,14);
   }
   for(let i=warns.length-1;i>=0;i--){ warns[i].t-=dt; if(warns[i].t<=0) warns.splice(i,1); }
+  if($('autoHud')) $('autoHud').style.display=autoOn()?'block':'none';
   const eb=$('empHud');
   if(eb){ eb.style.display=(G.emp>0)?'block':'none'; eb.textContent=G.emp>1?('EMP ×'+G.emp+' — ENTER'):'EMP READY — ENTER'; }
   $('warn').innerHTML=warns.map(w=>
@@ -4664,6 +4719,28 @@ function buyStruct(type,cost){
   if(G.tut) G.tut.builds++;
   toast(STRUCTS[type].name.toUpperCase()+' DEPLOYED AT BASE','grn',2);
   renderShop();
+}
+
+/* ----------------------------- autopilot ---------------------------------- */
+/* Hands your aircraft to the same code that flies every other aircraft. It is
+   not a separate, simpler pilot: it takes a role, picks its own targets, breaks
+   off when it is hurt and goes home to rearm, exactly as the rest of the sky
+   does. You keep the camera. */
+function autoOn(){ return !!PROFILE.autopilot && !G.crew }
+function setAutopilot(on){
+  PROFILE.autopilot=!!on; saveProfile();
+  const p=G.me;
+  if(p){
+    if(PROFILE.autopilot){
+      if(!p.role) p.role=roleFor(p.team);
+      p.aiTarget=null; p.aiT=0; p.aiStuck=0; p.aiBest=undefined; p.rtb=false;
+    }else{
+      p.ctrl.fire=0; p.ctrl.fire2=0; p.ctrl.lift=0; p.ctrl.strafe=0;
+      p.ctrl.roll=0; p.ctrl.pitch=0; p.ctrl.yaw=0; p.ctrl.ab=0;
+    }
+  }
+  if(G.started) toast(PROFILE.autopilot?'AUTOPILOT ENGAGED — SIT BACK':'YOU HAVE THE CONTROLS',
+                      PROFILE.autopilot?'grn':'gold',2.6);
 }
 
 /* ------------------------------- EMP -------------------------------------- */
@@ -5976,6 +6053,16 @@ function renderSettings(){
   const cur=CREWS.find(c=>c.id===(PROFILE.playAs||'plane'))||CREWS[0];
   $('crewDesc').textContent=cur.note+(cur.id==='plane'?'':
     '  You will man this emplacement at your base; destroyed, it rebuilds and you take it again.');
+  $('autoSeg').innerHTML=[['off','YOU FLY'],['on','AUTOPILOT']].map(([v,l])=>
+    `<button data-auto="${v}" class="${(!!PROFILE.autopilot)===(v==='on')?'on':''}">${l}</button>`).join('');
+  [...document.querySelectorAll('[data-auto]')].forEach(b=>b.onclick=()=>{
+    setAutopilot(b.dataset.auto==='on'); renderSettings(); sfx('buy',.4);
+  });
+  $('autoDesc').textContent=PROFILE.autopilot
+    ? 'On. The aircraft flies and fights itself — it picks its own targets, breaks off when it '+
+      'is hurt and comes home to rearm. Press K to take the controls back.'
+    : 'Hand the aircraft to the computer and watch. It flies, fights and lands the same way every '+
+      'other aircraft in the sky does. Press K in flight to hand it over or take it back.';
   $('mapSeg').innerHTML=MAPS.map(m=>
     `<button data-map="${m.id}" class="${m.id===(PROFILE.map||'auto')?'on':''}">${m.name}</button>`).join('');
   [...document.querySelectorAll('[data-map]')].forEach(b=>b.onclick=()=>{
@@ -6366,6 +6453,7 @@ function spawnBotFrom(s){
    = an identical compound for every pilot, plus whatever permanent upgrades
    that particular pilot brought with them. */
 function buildCompounds(){
+  addRimSams();          // canyon maps only; a no-op everywhere else
   // Above Regular the enemy carries an EMP of their own — two on Jose.
   G.foeEmp={}; G.foeEmpT=25;
   const charges=empCharges();
@@ -6438,7 +6526,7 @@ function startGame(team,nteams){
     toast('THEIR COMMAND HQ IS UNDER A FORCE DOME — BEAT THE SHELL DOWN FIRST','red',7);
   if(WX.w.id!=='clear') toast(WX.w.name+' — '+WX.w.note, WX.w.lightning?'red':'gold', 6);
   if(TERRAIN.trench)
-    toast('CANYON RUN — the trench is the fast way through, but you can climb over the mesa.','gold',7);
+    toast('CANYON RUN — the trench is the fast way through. Climb over the mesa and the rim SAM belt will see you.','gold',8);
   else if(TERRAIN.ridges.length)
     toast('RIDGELINES AHEAD — find the gaps','gold',5);
   canvas.requestPointerLock();
@@ -6499,6 +6587,10 @@ function frame(now){
     const p=G.me;
     if(p){
       if(G.crew){ /* crewing a gun: the aircraft stays parked */ }
+      else if(autoOn()&&p.alive&&!shopOpen){
+        if(!p.role) p.role=roleFor(p.team);
+        stepBot(p,dt);                       // the same pilot every bot uses
+      }
       else if(!shopOpen&&p.alive) readInput(p,dt);
       else if(p.alive){ // autopilot levels the wings while the hangar is open
         p.ctrl.fire=0;p.ctrl.fire2=0;p.ctrl.lift=0;p.ctrl.strafe=0;
