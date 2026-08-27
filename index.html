@@ -409,7 +409,7 @@ td{padding:6px 8px;border-bottom:1px solid rgba(255,255,255,.045)}
 <div id="settings" class="ovl">
   <div class="box panel">
     <h1 style="font-size:24px;letter-spacing:5px">SETTINGS</h1>
-    <div class="sub" style="margin:2px 0 16px">DIFFICULTY · MAP · CONTROLS · SIGN-IN</div>
+    <div class="sub" style="margin:2px 0 16px">DIFFICULTY · GRAPHICS · MAP · CONTROLS · SIGN-IN</div>
     <div id="settingsHost"></div>
     <div id="settingsBody">
 
@@ -424,6 +424,12 @@ td{padding:6px 8px;border-bottom:1px solid rgba(255,255,255,.045)}
       <p id="crewDesc">Take an aircraft, or man an emplacement at your own base and hold the line
       from the ground. Gun crews cannot move, but they see everything and hit hard.</p>
       <div class="seg" id="crewSeg"></div>
+    </div>
+
+    <div class="srow">
+      <h4>GRAPHICS</h4>
+      <p id="gfxDesc">How hard the game works your screen.</p>
+      <div class="seg" id="gfxSeg"></div>
     </div>
 
     <div class="srow">
@@ -1061,6 +1067,21 @@ function trenchX(z){
        + Math.sin(z/200+TERRAIN.ph2)*70
        + Math.sin(z/100+TERRAIN.ph3)*70;
 }
+/* ------------------------------ graphics ---------------------------------- */
+/* Almost everything expensive left in this game is fill rate: large alpha-blended
+   surfaces drawn over each other. On a Retina display the canvas is four times
+   the pixels of a normal one, and every one of them pays for the rain, the water,
+   the fog and the shockwaves. This is the dial for that. */
+const GFX=[
+  {id:'high', name:'HIGH',     dpr:2,    prec:1,   layers:9,
+   note:'Full resolution. On a Retina screen that is four times the pixels, and this game blends a lot of them.'},
+  {id:'bal',  name:'BALANCED', dpr:1.35, prec:.65, layers:6,
+   note:'Renders a little under full resolution and thins the weather. Hard to tell apart in the air, and much cheaper.'},
+  {id:'fast', name:'FAST',     dpr:1,    prec:.35, layers:4,
+   note:'One pixel per pixel and light weather. Pick this if the frame rate ever sags.'}
+];
+function gfx(){ return GFX.find(g=>g.id===(PROFILE.gfx||'bal'))||GFX[1] }
+
 /* ------------------------------ weather ---------------------------------- */
 /* Single-player only. Multiplayer stays clear so that everybody in a room is
    looking at the same sky and nobody is fighting through fog the host picked.
@@ -1173,7 +1194,12 @@ function stepWeather(dt){
     }
   }else if(!w.lightning) WX.bolts.length=0;
   const el=$('wxflash');
-  if(el) el.style.opacity=(WX.flash*WX.flash*.80).toFixed(3);
+  if(el){
+    // a full-screen element: only touch it when the value actually changes,
+    // otherwise every frame is a full-screen composite for nothing
+    const o=(WX.flash*WX.flash*.80).toFixed(3);
+    if(o!==WX._flashO){ WX._flashO=o; el.style.opacity=o; }
+  }
 }
 
 /** canyon is the usual ground: open levels are the break, one in four */
@@ -2044,7 +2070,7 @@ const DIFFS=[
 const PROFILE={tokens:0,perks:{},muted:false,level:1,wins:0,losses:0,
                kills:0,deaths:0,missions:0,callsign:'',difficulty:1,sens:1,
                plane:{frame:0,paint:0,frames:[0],paints:[0]},gTol:7,playAs:'plane',map:'auto',
-               autopilot:false};
+               autopilot:false,gfx:'bal'};
 const DK=()=>DIFFS[clamp(PROFILE.difficulty|0,0,DIFFS.length-1)];
 function loadProfile(){
   // start from defaults so signing in and out does not leak one account's
@@ -2052,6 +2078,7 @@ function loadProfile(){
   PROFILE.tokens=0; PROFILE.perks={}; PROFILE.level=1; PROFILE.wins=0; PROFILE.losses=0;
   PROFILE.kills=0; PROFILE.deaths=0; PROFILE.missions=0; PROFILE.callsign='';
   PROFILE.gTol=7; PROFILE.playAs='plane'; PROFILE.map='auto'; PROFILE.autopilot=false;
+  PROFILE.gfx='bal';
   try{
     const raw=(ACC.name&&ACC.list[ACC.name]&&ACC.list[ACC.name].profile)
       || (ACC.name?null:localStorage.getItem('ironskies.profile'));
@@ -2065,7 +2092,8 @@ function loadProfile(){
       if(d.plane) PROFILE.plane=d.plane;
       PROFILE.gTol=d.gTol||7; PROFILE.playAs=d.playAs||'plane';
       PROFILE.map=MAPS.some(m=>m.id===d.map)?d.map:'auto';
-      PROFILE.autopilot=!!d.autopilot; }
+      PROFILE.autopilot=!!d.autopilot;
+      PROFILE.gfx=GFX.some(g=>g.id===d.gfx)?d.gfx:'bal'; }
   }catch(e){}
   // Auto-Tracker was retired: give back what was spent on it rather than
   // quietly pocketing the tokens.
@@ -3997,21 +4025,26 @@ function updateCamera(dt){
 function drawWeather(){
   const kind=WX.w.prec; if(!kind) return;
   const mesh=kind==='rain'?MESH.rain:MESH.snow; if(!mesh) return;
+  if(gfx().prec<1&&(WX.t*60|0)%1===0){ /* density is baked below */ }
   const fall=kind==='rain'?58:7.5;
   const WRAP=90;
   const shift=-((WX.t*fall)%WRAP);
   const drift=kind==='snow'?Math.sin(WX.t*.5)*14:WX.gustX*22;
   gl.enable(gl.BLEND); gl.depthMask(false); gl.disable(gl.CULL_FACE);
   M4.trans(model, G.camPos[0]+drift, G.camPos[1]-90+shift, G.camPos[2]+drift*.6);
+  // the mesh is built at full density; drawing a slice of its indices thins it
+  const full=mesh.count, part=Math.max(36,Math.floor(full*gfx().prec/36)*36);
+  const saved=mesh.count; mesh.count=part;
   draw(mesh,model,{unlit:true, alpha:kind==='rain'?.30:.62,
                    tint:kind==='rain'?[.78,.85,.96]:[1,1,1]});
+  mesh.count=saved;
   gl.depthMask(true); gl.disable(gl.BLEND); gl.enable(gl.CULL_FACE);
 }
 
 /* ------------------------------ render ----------------------------------- */
 const proj=M4.create(), view=M4.create(), model=M4.create(), tmpM=M4.create(), projC=M4.create();
 function render(){
-  const dpr=Math.min(devicePixelRatio||1,2);
+  const dpr=Math.min(devicePixelRatio||1,gfx().dpr);
   const w=Math.floor(innerWidth*dpr),h=Math.floor(innerHeight*dpr);
   if(canvas.width!==w||canvas.height!==h){canvas.width=w;canvas.height=h}
   gl.viewport(0,0,w,h);
@@ -4201,9 +4234,11 @@ function render(){
   partBatchDraw(.92);
   gl.depthMask(true);
   // --- water last (transparent) ---
-  gl.disable(gl.CULL_FACE);
-  M4.ident(model); draw(MESH.water,model,{alpha:.80,tint:[1,1,1]});
-  gl.enable(gl.CULL_FACE); gl.disable(gl.BLEND);
+  gl.disable(gl.CULL_FACE); gl.disable(gl.BLEND);
+  // opaque: it is the bottom of the world, so blending it was a full screen of
+  // overdraw for an effect nothing is behind
+  M4.ident(model); draw(MESH.water,model,{tint:[1,1,1]});
+  gl.enable(gl.CULL_FACE);
 
   // --- lightning ---
   if(WX.bolts.length){
@@ -4278,7 +4313,7 @@ function render(){
       const hot=[Math.min(1,col[0]*.86+.14),Math.min(1,col[1]*.86+.14),Math.min(1,col[2]*.86+.14)];
       // A thick wall rather than a soap bubble: nine shells stacked back from
       // the front, so you can see how deep it is and how fast it is coming.
-      const LAYERS=9;
+      const LAYERS=gfx().layers;
       for(let i=0;i<LAYERS;i++){
         const rr=Math.max(6,P.r*(1-i*.035));
         const a=(i===0?.80:.46*(1-i/LAYERS));
@@ -6053,6 +6088,12 @@ function renderSettings(){
   const cur=CREWS.find(c=>c.id===(PROFILE.playAs||'plane'))||CREWS[0];
   $('crewDesc').textContent=cur.note+(cur.id==='plane'?'':
     '  You will man this emplacement at your base; destroyed, it rebuilds and you take it again.');
+  $('gfxSeg').innerHTML=GFX.map(g=>
+    `<button data-gfx="${g.id}" class="${g.id===(PROFILE.gfx||'bal')?'on':''}">${g.name}</button>`).join('');
+  [...document.querySelectorAll('[data-gfx]')].forEach(b=>b.onclick=()=>{
+    PROFILE.gfx=b.dataset.gfx; saveProfile(); renderSettings(); sfx('buy',.4);
+  });
+  $('gfxDesc').textContent=gfx().note;
   $('autoSeg').innerHTML=[['off','YOU FLY'],['on','AUTOPILOT']].map(([v,l])=>
     `<button data-auto="${v}" class="${(!!PROFILE.autopilot)===(v==='on')?'on':''}">${l}</button>`).join('');
   [...document.querySelectorAll('[data-auto]')].forEach(b=>b.onclick=()=>{
