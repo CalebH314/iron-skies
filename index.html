@@ -177,6 +177,8 @@ kbd{background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.16);bord
 @keyframes warnpulse{0%,100%{opacity:1}50%{opacity:.45}}
 #warn .crit{color:#ff5b4a;animation:warnpulse .7s infinite}
 #warn .six{color:#ffd451}
+#warn .gold{color:#ffd451;animation:warnpulse .7s infinite}
+#warn .ok{color:#7fe6c0}
 
 /* --- mission tracker --- */
 #mission{position:absolute;right:14px;top:222px;width:250px;padding:13px 15px;display:none}
@@ -996,6 +998,17 @@ Builder.prototype.build=function(){
     pos:gl.createBuffer(),nrm:gl.createBuffer(),col:gl.createBuffer(),idx:gl.createBuffer(),
     count:this.i.length
   };
+  // What was just built, and how big it is. Cheap to record here — one pass over
+  // vertices that have only just been written — and it means anything that needs
+  // to know a mesh's size can ask it instead of assuming.
+  let x0=1e30,y0=1e30,z0=1e30,x1=-1e30,y1=-1e30,z1=-1e30;
+  for(let i=0;i<this.p.length;i+=3){
+    const x=this.p[i],y=this.p[i+1],z=this.p[i+2];
+    if(x<x0)x0=x; if(x>x1)x1=x;
+    if(y<y0)y0=y; if(y>y1)y1=y;
+    if(z<z0)z0=z; if(z>z1)z1=z;
+  }
+  mesh.ext=this.p.length?[x0,y0,z0,x1,y1,z1]:[0,0,0,0,0,0];
   gl.bindBuffer(gl.ARRAY_BUFFER,mesh.pos);gl.bufferData(gl.ARRAY_BUFFER,new Float32Array(this.p),gl.STATIC_DRAW);
   gl.bindBuffer(gl.ARRAY_BUFFER,mesh.nrm);gl.bufferData(gl.ARRAY_BUFFER,new Float32Array(this.n),gl.STATIC_DRAW);
   gl.bindBuffer(gl.ARRAY_BUFFER,mesh.col);gl.bufferData(gl.ARRAY_BUFFER,new Float32Array(this.c),gl.STATIC_DRAW);
@@ -1568,6 +1581,24 @@ function buildWorld(){
   ms.push();ms.rx(-Math.PI/2);ms.prism(.34,.34,3.4,8,[.80,.82,.86]);ms.tr(0,3.4,0);ms.prism(.34,0,1.1,8,[.9,.35,.25]);ms.pop();
   ms.push();ms.tr(0,0,1.5);ms.box(1.5,.1,.7,[.85,.3,.25]);ms.box(.1,1.5,.7,[.85,.3,.25]);ms.pop();
   MESH.missile=ms.build();
+  /* A warhead is not a scaled-up air-to-air round. It is built at its own size —
+     about three times the length of a fighter — because the whole point of one
+     is that everybody on the map can see it coming and has time to be somewhere
+     else. Same nose-down-the-minus-Z convention as the missile above. */
+  const nk=new Builder();
+  const nkSh=[.86,.87,.90], nkBand=[.90,.24,.18], nkDk=[.19,.20,.23];
+  nk.push(); nk.rx(-Math.PI/2);
+    nk.prism(3.1,3.1,24,12,nkSh);                       // body
+    nk.tr(0,24,0); nk.prism(3.1,0,9,12,nkBand);         // nose cone
+  nk.pop();
+  for(const [at,col] of [[6,nkBand],[13,nkDk],[19.5,nkBand]]){   // hazard bands
+    nk.push(); nk.rx(-Math.PI/2); nk.tr(0,at,0); nk.prism(3.28,3.28,1.5,12,col); nk.pop();
+  }
+  for(const a of [0,Math.PI/2]){                        // tail fins
+    nk.push(); nk.rz(a); nk.tr(0,0,7.5); nk.box(12.5,.6,8,nkSh); nk.pop();
+  }
+  nk.push(); nk.tr(0,0,10); nk.rx(Math.PI/2); nk.prism(2.5,3.4,4.5,12,nkDk); nk.pop();  // motor bell
+  MESH.nuke=nk.build();
   const pc=new Builder(); pc.box(1,1,1,[1,1,1]); MESH.cube=pc.build();
 
   // shield dome: a unit hemisphere, scaled to DOME_R when drawn
@@ -3575,9 +3606,20 @@ function fireNukeSalvo(s){
       team:s.team,owner:s.owner||null,target:tgt,dmg:NUKE_DMG,
       turn:1.1,speed:300,life:40,fuse:70,nuke:true,fromStruct:true});
   }
-  sfxAt('launch',s.pos,1);
-  if(s.team===G.team) toast('NUCLEAR SALVO AWAY','gold',2.2);
-  else pushWarn('nuke','⚠ NUCLEAR LAUNCH DETECTED — STAY CLEAR OF YOUR OWN BASE','crit',2.6,8);
+  /* A nuclear launch is the loudest thing that happens in a round, and both
+     sides need to know about it — the side that fired because its own aircraft
+     have to be nowhere near where those land, and the side receiving because a
+     dome is the only thing that will stop them. */
+  sfxAt('launch',s.pos,1); sfx('lock',.95);
+  const n=cfg.salvo||1;
+  if(s.team===G.team){
+    pushWarn('nuke','☢ NUKES FIRING — '+n+' AWAY FROM YOUR SILO','gold',3.2,5);
+    toast('NUKES FIRING — KEEP YOUR OWN AIRCRAFT CLEAR','gold',3.4);
+  }else{
+    pushWarn('nuke','☢ NUKES FIRING — WARHEADS INBOUND','crit',3.6,5);
+    toast('ENEMY NUKES FIRING — GET BEHIND YOUR DOME','red',3.4);
+  }
+  feed(`<span class="${s.team}">NUCLEAR SILO</span> — ${n} warheads away`);
 }
 function segSphere(ax,ay,az,b,c,r){
   const dx=b[0]-ax,dy=b[1]-ay,dz=b[2]-az;
@@ -3618,7 +3660,12 @@ function stepMissiles(dt){
       v[0]=v[0]/nl*sp; v[1]=v[1]/nl*sp; v[2]=v[2]/nl*sp;
     }
     m.pos[0]+=m.vel[0]*dt; m.pos[1]+=m.vel[1]*dt; m.pos[2]+=m.vel[2]*dt;
-    if(Math.random()<dt*45) addPart(m.pos,[rnd(-4,4),rnd(-2,6),rnd(-4,4)],[.85,.85,.9],.45,rnd(.9,2.0));
+    // a warhead lays a heavy column of smoke you can follow right across the map
+    if(m.nuke){
+      if(Math.random()<dt*20)
+        addPart(m.pos,[rnd(-11,11),rnd(-4,13),rnd(-11,11)],[.88,.88,.92],rnd(2.8,4.8),rnd(1.3,2.1));
+    }
+    else if(Math.random()<dt*45) addPart(m.pos,[rnd(-4,4),rnd(-2,6),rnd(-4,4)],[.85,.85,.9],.45,rnd(.9,2.0));
 
     let boom=false, domeStop=null;
     // A force dome stops a warhead at the shell. Checked before anything else,
@@ -4715,10 +4762,9 @@ function render(){
   for(const m of G.missiles){
     const l=Math.hypot(...m.vel)||1;
     const q=qLookDir([0,0,0,1],[m.vel[0]/l,m.vel[1]/l,m.vel[2]/l],[0,1,0]);
-    // a warhead is a far bigger thing than an air-to-air round, and you want to
-    // see one coming from a long way off
-    M4.fromRTS(model,q,m.pos,m.nuke?3.4:1);
-    draw(MESH.missile,model,m.nuke?{tint:[1,.72,.55]}:{});
+    // a warhead has a body of its own, built at the size it deserves
+    M4.fromRTS(model,q,m.pos,1);
+    draw(m.nuke?MESH.nuke:MESH.missile,model,{});
   }
   // --- shield domes ---
   gl.enable(gl.BLEND); gl.depthMask(false); gl.disable(gl.CULL_FACE);
