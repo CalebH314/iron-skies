@@ -167,6 +167,9 @@ kbd{background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.16);bord
 #empHud{position:absolute;left:50%;top:calc(34% - 34px);transform:translateX(-50%);display:none;
   font-size:14px;font-weight:700;letter-spacing:3px;color:#8fe8ff;pointer-events:none;
   text-shadow:0 2px 10px #000,0 0 18px rgba(60,180,255,.7)}
+#nukeHud{position:absolute;left:50%;top:calc(34% - 54px);transform:translateX(-50%);display:none;
+  font-size:14px;font-weight:700;letter-spacing:3px;color:#ffc46b;pointer-events:none;
+  text-shadow:0 2px 10px #000,0 0 18px rgba(255,140,40,.75)}
 #warn{position:absolute;left:50%;top:34%;transform:translateX(-50%);text-align:center;
   pointer-events:none;width:max-content;max-width:90vw}
 #warn div{font-size:19px;font-weight:700;letter-spacing:3px;margin-bottom:6px;
@@ -365,6 +368,7 @@ td{padding:6px 8px;border-bottom:1px solid rgba(255,255,255,.045)}
 
   <div id="autoHud">AUTOPILOT — <kbd>K</kbd> TO TAKE OVER</div>
   <div id="empHud"></div>
+  <div id="nukeHud"></div>
   <div id="weps"></div>
   <div id="feed"></div>
   <div id="toast"></div>
@@ -1029,7 +1033,7 @@ function setupTeams(n){
                        : [Math.cos(a)*RING_R, BASE_Y, Math.sin(a)*RING_R];
   }
   buildTeamMeshes();
-  structSlot=teamMap(0); hangarSlot=teamMap(0);
+  structSlot=teamMap(0); hangarSlot=teamMap(0); nukeSlot={};
   G.hangarLvl=teamMap(0); G.shieldLvl=teamMap(0); G.droneLvl=teamMap(0); G.botLvl=teamMap(0);
   G.eliminated={}; TEAMPERK={};
 }
@@ -1823,6 +1827,28 @@ function buildStructMesh(type,tc){
     for(const s of [1,-1]){ b.push(); b.tr(0,7,s*14.2); b.box(26,13,1.4,[.08,.09,.11]); b.pop(); }
     b.push(); b.tr(25,9,18); b.box(1.3,17,1.3,[.60,.62,.66]); b.pop();          // windsock mast
     b.push(); b.tr(27.6,17,18); b.box(5,2.4,.5,tc); b.pop();
+  }else if(type==='nuke'){
+    // a sunken concrete collar with the blast doors laid back and a warhead
+    // standing in the tube — it reads as a silo from the air, which matters
+    // because it is the one thing on the base worth flying out to break
+    const warn=[.94,.78,.12], shell=[.82,.83,.86];
+    b.push(); b.tr(0,1.5,0); b.box(40,3,40,[.34,.35,.33]); b.pop();      // apron
+    b.push(); b.tr(0,3.2,0); b.box(30,1,30,conc); b.pop();
+    b.push(); b.tr(0,3.9,0); b.box(31,.5,3,warn); b.pop();               // hazard stripes
+    b.push(); b.tr(0,3.9,0); b.box(3,.5,31,warn); b.pop();
+    b.push(); b.tr(0,6,0); b.prism(11,10,6,12,conc); b.pop();            // collar
+    for(const sx of [1,-1]){                                             // blast doors, laid open
+      b.push(); b.tr(sx*13,8.5,0); b.rz(sx*.85); b.box(12,1.4,20,[.40,.41,.44]); b.pop();
+    }
+    b.push(); b.tr(0,9,0); b.prism(7.6,7.2,3,12,dark); b.pop();          // tube mouth
+    b.push(); b.tr(0,11,0); b.prism(5.2,5.2,12,12,shell); b.pop();       // warhead body
+    b.push(); b.tr(0,23,0); b.prism(5.2,0,7,12,[.86,.30,.22]); b.pop();  // nose cone
+    b.push(); b.tr(0,14,0); b.box(11,1.2,.6,warn); b.pop();              // band
+    for(const sx of [1,-1]){                                             // service masts
+      b.push(); b.tr(sx*14,10,14); b.box(1.2,20,1.2,metal); b.pop();
+      b.push(); b.tr(sx*14,20,14); b.box(2.4,1,2.4,warn); b.pop();
+    }
+    b.push(); b.tr(0,4.4,17); b.box(16,2.2,.6,tc); b.pop();              // team stripe
   }else if(type==='repair'){
     b.push(); b.tr(0,.9,0); b.box(46,2,46,[.30,.32,.34]); b.pop();
     b.push(); b.tr(0,2,0); b.box(30,.6,7,tc); b.pop();
@@ -1996,6 +2022,16 @@ function buildTurrets(){
 }
 
 /* --------------------------- game config -------------------------------- */
+/* The nuke. One warhead, three completely different outcomes depending on what
+   it reaches first:
+     — caught in the open, everything flying inside half a kilometre comes down,
+       whoever it belongs to. Only the aircraft that launched it is spared.
+     — run into a force dome and the shield eats it. The dome takes a real bite
+       out of its integrity and the warhead is gone; nothing underneath is
+       touched. A dome is the answer to a nuke.
+     — put on a Command HQ and it takes a tremendous piece out of the building
+       and flattens whatever is standing near it. */
+const NUKE_AIR_R=500, NUKE_BLAST_R=320, NUKE_DMG=1100, NUKE_DOME_DMG=900;
 const STRUCTS={
   hq:     {name:'Command HQ',       hp:5200, cost:0,    range:0,    r:44, y:0,  turret:null,     short:'HQ', desc:'Your team’s heart. Lose it and the round is over.'},
   sniper: {name:'Sniper Tower',     hp:340,  cost:900,  range:1500, r:12, y:35, turret:'sniper', cd:1.7, dmg:30,
@@ -2015,7 +2051,9 @@ const STRUCTS={
   bunker: {name:'Hardened Bunker',   hp:300,  cost:0,    range:0,    r:26, y:9,  turret:null,
            short:'BUNKER', desc:'A reinforced command bunker. Guns and rockets scratch the shell — only a missile strike will crack it.'},
   spawner:{name:'Aircraft Hangar',  hp:520,  cost:1900, range:0,    r:28, y:10, turret:null, cd:9, cap:12,
-           short:'HANGAR', desc:'Sits beside the HQ and launches a fighter every 9&nbsp;seconds, up to twelve airborne. Buy <b>Hangar Crews</b> to go faster still. It is lightly built — destroy the enemy hangar and their reinforcements stop dead.'}
+           short:'HANGAR', desc:'Sits beside the HQ and launches a fighter every 9&nbsp;seconds, up to twelve airborne. Buy <b>Hangar Crews</b> to go faster still. It is lightly built — destroy the enemy hangar and their reinforcements stop dead.'},
+  nuke:   {name:'Nuclear Silo',     hp:640,  cost:6500, range:0,    r:16, y:12, turret:null, cd:60, salvo:2,
+           short:'SILO', desc:'Stands <b>outside</b> your force dome — it cannot shelter under the shield it is meant to out-range, and it can be attacked in its own right. Every minute it puts a pair of warheads into the air and walks them to the enemy Command HQ. Anything flying near where one lands comes down, whichever side it belongs to. An enemy dome will stop them dead, so beat the shield down first.'}
 };
 const BOT_HP=55;        // deliberately fragile — a short burst downs one
 const BOT_SPEED=165;    // well under the player's 270+, so you can always disengage
@@ -2064,7 +2102,7 @@ const SHOP=[
   {id:'shield', cat:'Airframe', name:'Energy Shield',  max:4, cost:l=>Math.round(650*Math.pow(1.7,l)),
    desc:'A recharging shield on your aircraft <b>and every friendly plane in the air</b>. Soaks damage, then rebuilds a few seconds after you stop being hit.',
    eff:l=>`${l*45} shield · recharges after 4s`},
-  {id:'emp',   cat:'Defenses', name:'EMP Charge',      max:99, cost:()=>2800, repeat:true,
+  {id:'emp',   cat:'Weapons', name:'EMP Charge',      max:99, cost:()=>2800, repeat:true,
    desc:'A shockwave fired from your Command HQ — press <kbd>Enter</kbd>. The front travels '+
         'outward and brings down <b>every aircraft it reaches, yours included</b>, so get your '+
         'own people clear first. Enemy installations go dark behind it; SAM sites are hardened '+
@@ -2072,6 +2110,12 @@ const SHOP=[
         'blast takes the edge off it. It reaches far enough to scratch their Command HQ, so there '+
         'is very little of the map outside it — though water stops it dead, if there is any to dive into.',
    eff:()=>`one charge · ${(EMP_R/1000).toFixed(1)} km — the whole field · dark for ${EMP_T} s`},
+  {id:'nuke',  cat:'Weapons', name:'Tactical Nuke',   max:99, cost:()=>16000, repeat:true,
+   cap:1, held:()=>G.nukes||0,
+   desc:'The silo’s warhead, carried under your own aircraft. <b>One at a time, and one shot</b> — press <kbd>N</kbd> and it flies itself at the nearest enemy Command HQ. '+
+        'Everything in the air within half a kilometre of where it goes off comes down, whichever side it belongs to; you are the only one it spares. '+
+        'A force dome will stop it dead and take the damage itself, so break the shield first or you are throwing it away.',
+   eff:()=>`one warhead · ${NUKE_AIR_R} m airburst · ${NUKE_DMG} to a Command HQ`},
   {id:'repairk',cat:'Airframe', name:'Field Repair Kit',max:99,cost:()=>320, repeat:true,
    desc:'Instantly patch your hull back to full, right now, mid-flight.', eff:()=>'Restores hull to 100%'},
 
@@ -2082,6 +2126,7 @@ const SHOP=[
   {id:'s_radar', cat:'Defenses', struct:'radar'},
   {id:'s_repair',cat:'Defenses', struct:'repair'},
   {id:'s_spawner',cat:'Defenses',struct:'spawner'},
+  {id:'s_nuke',  cat:'Defenses', struct:'nuke'},
   {id:'wingman',cat:'Defenses', name:'Squadron Refit', max:5, cost:l=>Math.round(950*Math.pow(1.55,l)),
    desc:'Upgrades every friendly aircraft — the ones already up and every one that launches after. Tougher, quicker and harder hitting.',
    eff:l=>`+${l*25}% hull · +${l*15}% gun damage · +${l*8}% speed on your side`},
@@ -2402,7 +2447,7 @@ try{ localStorage.removeItem('ironskies.board'); }catch(e){}   // retired featur
 const G={
   mode:'menu', started:false, t:0, dt:0,
   planes:new Map(), bullets:[], missiles:[], parts:[], structures:[],
-  me:null, myId:uid(), team:'blue', structDirty:true, fullT:0, snapN:0, emp:0, pulses:[], foeEmp:{}, foeEmpT:0, empWarn:null,
+  me:null, myId:uid(), team:'blue', structDirty:true, fullT:0, snapN:0, emp:0, nukes:0, pulses:[], foeEmp:{}, foeEmpT:0, empWarn:null,
   wxId:'clear', netWx:null, eliminated:{}, netLevel:null, netMap:null, hangarT:{}, hangarSaid:{},
   credits:600, kills:0, deaths:0, score:0,
   camMode:0, camPos:[0,120,300], camLook:[0,60,0],
@@ -2488,6 +2533,16 @@ function structPos(team,idx){
   const x=b[0]+Math.cos(a)*r, z=b[2]+Math.sin(a)*r;
   return [x,groundH(x,z),z];
 }
+/* A silo stands outside the shield, deliberately. It is the one building on the
+   base that the dome does not cover, so a side that leans on nuclear fire has
+   something exposed for the other side to go and break. */
+let nukeSlot={};
+function nukePos(team){
+  const b=BASES[team], i=(nukeSlot[team]=(nukeSlot[team]||0)+1)-1;
+  const a=1.9+i*1.37, r=DOME_R+180;      // clear of the dome by a good margin
+  const x=b[0]+Math.cos(a)*r, z=b[2]+Math.sin(a)*r;
+  return [x,groundH(x,z),z];
+}
 /** hangars sit right beside the HQ they defend, alternating left and right */
 let hangarSlot={blue:0,red:0};
 function hangarPos(team){
@@ -2522,6 +2577,7 @@ function addStruct(type,team,ownerId,idx){
   const cfg=STRUCTS[type];
   const pos = (type==='hq'||type==='dome') ? [BASES[team][0],groundH(BASES[team][0],BASES[team][2]),BASES[team][2]]
             : type==='spawner' ? hangarPos(team)
+            : type==='nuke'    ? nukePos(team)
                           : structPos(team,idx===undefined?structSlot[team]++:idx);
   let hp=cfg.hp;
   if(type==='dome') hp=domeHp(teamPerk(team,'dome'));
@@ -2727,6 +2783,7 @@ addEventListener('keydown',e=>{
     if(w&&G.me.have[w]){G.me.wep=w;updateWeps()}
   }
   if(e.code==='KeyX') dropFlares();
+  if(e.code==='KeyN'&&!G.over){ e.preventDefault(); fireNuke(); }
   if(e.code==='KeyK'&&!G.over){ setAutopilot(!PROFILE.autopilot); }
   if(e.code==='Enter'&&!G.over){ e.preventDefault(); fireEMP(); }
   if(e.code==='KeyN'&&G.tut&&!G.tut.done){ toast('OBJECTIVE SKIPPED','gold',1.2); advanceTut(); }
@@ -2899,15 +2956,23 @@ function simPlane(p,dt){
   // descend any further and the nose is forced up until it is clear. The player
   // gets no such help.
   if((p.isBot||(p.isLocal&&autoOn()))&&p.alive){
-    const g0=surfaceH(p.pos[0],p.pos[2]);
-    if(p.pos[1]<g0+46){
-      p.pos[1]=g0+46;
-      const fw=fwdOf(p,[0,0,0]);
-      if(fw[1]<.30){                       // climb out instead of scraping along
-        const flat=Math.hypot(fw[0],fw[2])||1;
-        qLookDir(p.quat,[fw[0]/flat*.90,.44,fw[2]/flat*.90],[0,1,0]);
+    const bed=groundH(p.pos[0],p.pos[2]);
+    // An autopilot ducking a pulse is going into the water on purpose, so the
+    // surface cannot be a floor for it — but the seabed still is, because that
+    // kills. Everything else is held well clear of the ground as before.
+    if(p.isLocal&&(p.diving||p.under>0)&&bed<SEA){
+      if(p.pos[1]<bed+26){ p.pos[1]=bed+26; p.pullUp=Math.max(p.pullUp||0,.4); }
+    }else{
+      const g0=bed>SEA?bed:SEA;
+      if(p.pos[1]<g0+46){
+        p.pos[1]=g0+46;
+        const fw=fwdOf(p,[0,0,0]);
+        if(fw[1]<.30){                       // climb out instead of scraping along
+          const flat=Math.hypot(fw[0],fw[2])||1;
+          qLookDir(p.quat,[fw[0]/flat*.90,.44,fw[2]/flat*.90],[0,1,0]);
+        }
+        p.thr=1; p.pullUp=Math.max(p.pullUp||0,.8);
       }
-      p.thr=1; p.pullUp=Math.max(p.pullUp||0,.8);
     }
   }
 
@@ -3408,6 +3473,55 @@ function stepBullets(dt){
     if(b.life<=0) G.bullets.splice(i,1);
   }
 }
+/* Everything flying inside the fireball comes down — friend, enemy, or the poor
+   soul who happened to be passing. The only aircraft spared is the one that
+   launched it, because a weapon you aim yourself should not be a trap. On the
+   ground it takes a heavy bite out of whatever is standing close. */
+function nukeBlast(m,myPlanes,myStructs){
+  explode(m.pos,90,3.4);
+  sfxAt('boom',m.pos,1);
+  for(let e=0;e<44;e++)
+    addPart(m.pos,[rnd(-110,110),rnd(10,170),rnd(-110,110)],
+      Math.random()<.5?[1,.62,.16]:[1,.93,.62],rnd(2.6,6.5),rnd(1.5,3.2));
+  for(const p of myPlanes){
+    if(!p.alive||p.id===m.owner) continue;
+    if(dist(p.pos,m.pos)<NUKE_AIR_R){
+      p.crashLabel='CAUGHT IN A NUCLEAR BLAST';
+      damagePlane(p,1e9,m.owner);
+    }
+  }
+  for(const s of myStructs){
+    if(!s.alive||s.team===m.team||s.type==='dome') continue;
+    const cy=s.pos[1]+(STRUCTS[s.type].y||8);
+    const d=dist([s.pos[0],cy,s.pos[2]],m.pos);
+    if(d<NUKE_BLAST_R) damageStruct(s,NUKE_DMG*clamp(1-d/(NUKE_BLAST_R*1.4),.35,1),m.owner);
+  }
+}
+/* What a warhead is aimed at: the nearest rival Command HQ, or the dome over it
+   if one is standing, since that is what it will actually meet first. */
+function nukeTargetFor(team,from){
+  let best=null,bd=1e18;
+  for(const st of G.structures){
+    if(!st.alive||st.team===team||st.type!=='hq') continue;
+    const d=dist(st.pos,from); if(d<bd){ bd=d; best=st; }
+  }
+  if(!best) return null;
+  return domeOf(best.team)||best;
+}
+function fireNukeSalvo(s){
+  const cfg=STRUCTS.nuke;
+  const tgt=nukeTargetFor(s.team,s.pos);
+  if(!tgt) return;
+  for(let i=0;i<(cfg.salvo||1);i++){
+    spawnMissile({pos:[s.pos[0]+rnd(-9,9), s.pos[1]+(cfg.y||8)+12, s.pos[2]+rnd(-9,9)],
+      vel:[rnd(-40,40),330,rnd(-40,40)],
+      team:s.team,owner:s.owner||null,target:tgt,dmg:NUKE_DMG,
+      turn:1.1,speed:300,life:40,fuse:70,nuke:true,fromStruct:true});
+  }
+  sfxAt('launch',s.pos,1);
+  if(s.team===G.team) toast('NUCLEAR SALVO AWAY','gold',2.2);
+  else pushWarn('nuke','⚠ NUCLEAR LAUNCH DETECTED — STAY CLEAR OF YOUR OWN BASE','crit',2.6,8);
+}
 function segSphere(ax,ay,az,b,c,r){
   const dx=b[0]-ax,dy=b[1]-ay,dz=b[2]-az;
   const fx=ax-c[0],fy=ay-c[1],fz=az-c[2];
@@ -3449,8 +3563,14 @@ function stepMissiles(dt){
     m.pos[0]+=m.vel[0]*dt; m.pos[1]+=m.vel[1]*dt; m.pos[2]+=m.vel[2]*dt;
     if(Math.random()<dt*45) addPart(m.pos,[rnd(-4,4),rnd(-2,6),rnd(-4,4)],[.85,.85,.9],.45,rnd(.9,2.0));
 
-    let boom=false;
-    for(const p of myPlanes){
+    let boom=false, domeStop=null;
+    // A force dome stops a warhead at the shell. Checked before anything else,
+    // because the whole point is that nothing underneath is ever touched.
+    if(m.nuke) for(const s of myStructs){
+      if(!s.alive||s.type!=='dome'||s.team===m.team) continue;
+      if(dist(m.pos,s.pos)<DOME_R){ domeStop=s; boom=true; break; }
+    }
+    if(!boom) for(const p of myPlanes){
       if(p.team===m.team||p.id===m.owner) continue;
       if(dist(p.pos,m.pos)<m.fuse){ boom=true; break; }
     }
@@ -3460,7 +3580,17 @@ function stepMissiles(dt){
     }
     if(!boom&&m.pos[1]<surfaceH(m.pos[0],m.pos[2])) boom=true;
     if(boom||m.life<=0){
-      if(boom){
+      if(boom&&m.nuke){
+        if(domeStop){
+          // the shield holds, and pays for it
+          hitDome(domeStop,NUKE_DOME_DMG,m.owner);
+          explode(m.pos,34,1.7); sfxAt('boom',m.pos,1);
+          for(let e=0;e<10;e++) addPart(m.pos,[rnd(-40,40),rnd(6,50),rnd(-40,40)],
+            [.45,.85,1],rnd(1.4,3.2),rnd(.5,1.1));
+          if(domeStop.team===G.team) toast('THE DOME TOOK A WARHEAD','gold',2.4);
+        } else nukeBlast(m,myPlanes,myStructs);
+      }
+      else if(boom){
         explode(m.pos,26,1.1); sfxAt('boom',m.pos,.8);
         for(const p of myPlanes) if(p.team!==m.team&&dist(p.pos,m.pos)<60) damagePlane(p,m.dmg*clamp(1-dist(p.pos,m.pos)/70,.3,1),m.owner);
         for(const s of myStructs) if(s.team!==m.team&&dist([s.pos[0],s.pos[1]+(STRUCTS[s.type].y||8),s.pos[2]],m.pos)<STRUCTS[s.type].r+22)
@@ -3555,6 +3685,12 @@ function stepStructs(dt){
         // slot that its own casualty is about to walk back into
         if(botsOn(s.team)<botCapFor(s.team)) spawnBotFrom(s);
       }
+      continue;
+    }
+    if(s.type==='nuke'){
+      if(!authority) continue;
+      s.cd-=dt;
+      if(s.cd<=0){ s.cd=cfg.cd; fireNukeSalvo(s); }
       continue;
     }
     if(s.type==='dome'){
@@ -3668,6 +3804,48 @@ function threatBehind(p){
   }
   return null;
 }
+/* --- reading an incoming pulse ------------------------------------------- */
+/** Seconds until a hostile pulse front reaches this aircraft, or Infinity. */
+function empETA(p){
+  let best=Infinity;
+  for(const P of G.pulses){
+    if(P.team===p.team||P.planes.has(p.id)) continue;
+    const d=dist(p.pos,P.pos);
+    if(d>P.R) continue;                       // it will never reach this far out
+    best=Math.min(best,Math.max(0,(d-P.r)/EMP_SPEED));
+  }
+  const w=G.empWarn;
+  if(w&&w.team!==p.team&&w.hq&&w.hq.pos){
+    const d=dist(p.pos,w.hq.pos);             // still spooling up: charge, then travel
+    if(d<=EMP_R) best=Math.min(best,Math.max(0,w.t)+d/EMP_SPEED);
+  }
+  return best;
+}
+/** Is a front still on its way to us, or right on top of us? */
+function empPassing(p){
+  for(const P of G.pulses){
+    if(P.team===p.team) continue;
+    const d=dist(p.pos,P.pos);
+    if(d<=P.R&&P.r<d+260) return true;
+  }
+  return false;
+}
+/** The nearest water deep enough to hide in: [x, z, seabed], or null. */
+function nearestWater(pos,maxR){
+  let best=null,bd=1e18;
+  for(let r=200;r<=maxR;r+=200){
+    for(let a=0;a<12;a++){
+      const th=a*(Math.PI/6)+r*.013;
+      const x=pos[0]+Math.cos(th)*r, z=pos[2]+Math.sin(th)*r;
+      const bed=groundH(x,z);
+      if(bed>SEA-70) continue;                // needs real depth, not a puddle
+      const dx=x-pos[0], dz=z-pos[2], d2=dx*dx+dz*dz;
+      if(d2<bd){ bd=d2; best=[x,z,bed]; }
+    }
+    if(best) break;                           // the innermost ring that has any
+  }
+  return best;
+}
 function stepBot(p,dt){
   if(!p.alive){ p.ctrl.fire=0; p.ctrl.fire2=0; return; }
   if(p.passive){                       // training drone: unarmed, holds a lazy orbit
@@ -3692,14 +3870,19 @@ function stepBot(p,dt){
   if(p.aiTarget&&p.aiTarget.pos&&p.aiTarget.alive!==false){
     const d=dist(p.pos,p.aiTarget.pos);
     if(p.aiBest===undefined||d<p.aiBest-25){ p.aiBest=d; p.aiStuck=0; }
-    else if(p.aiTarget.speed!==undefined&&p.aiTarget!==G.me){
+    else if(p.aiTarget.speed!==undefined&&p.aiTarget!==G.me&&!(p.isLocal&&autoOn())){
       // a stern chase after another aircraft is worth swapping quarry over —
-      // but it stays a hunter, it does not wander off
+      // but it stays a hunter, it does not wander off.
+      // The autopilot is exempt: you are watching it, and something that keeps
+      // changing its mind reads as aimless. It sees one target through.
       p.aiStuck=(p.aiStuck||0)+dt;
       if(p.aiStuck>9){ p.aiAvoid=p.aiTarget.id; p.aiTarget=null; p.aiT=0; }
     }
   }
-  if(p.aiT<=0||!p.aiTarget||(p.aiTarget.alive===false)){
+  // The autopilot holds a target for as long as it is alive — no timer, no
+  // reconsidering. Only its destruction frees it to pick another.
+  const holding=p.isLocal&&autoOn()&&p.aiTarget&&p.aiTarget.pos&&p.aiTarget.alive!==false;
+  if(!holding&&(p.aiT<=0||!p.aiTarget||(p.aiTarget.alive===false))){
     p.aiBest=undefined; p.aiStuck=0;
     p.aiT=30;                     // a safety net, not a schedule
     const foeTeam=foeBaseOf(p.team,p.pos);
@@ -3985,8 +4168,10 @@ function stepBot(p,dt){
   // the guns. Survival is worth more than one more pass.
   // An aircraft sent after the player presses the attack; it only goes home
   // when it is nearly finished, and the rest break off at a third of hull.
+  // The autopilot goes home to heal as well — it is flying your aircraft, and
+  // pressing a hopeless attack with it is not looking after your hull.
   const rtbAt=p.role==='ace'?.12:.30;
-  if(!p.isLocal&&p.hp<p.maxHp*rtbAt&&!p.rtb&&Math.random()<dt*.9) p.rtb=true;
+  if((!p.isLocal||autoOn())&&p.hp<p.maxHp*rtbAt&&!p.rtb&&Math.random()<dt*.9) p.rtb=true;
   if(p.rtb){
     if(p.hp>p.maxHp*.72||!hangarFor(p.team)) p.rtb=false;
     else{
@@ -3994,6 +4179,43 @@ function stepBot(p,dt){
       aim=[b[0],Math.max(b[1]+340,ghNow+320),b[2]];
       p.thr=1; c.fire=0;
     }
+  }
+
+  /* --- the autopilot's own instincts --------------------------------------
+     Two things the stock bot never had to care about, because nobody is sitting
+     and watching a bot: staying alive on purpose, and getting out of the way of
+     a pulse. This runs last, so it overrides every other waypoint. */
+  if(p.isLocal&&autoOn()){
+    // flares the moment something is genuinely tracking you, instead of waiting
+    // until the hull is almost gone
+    p.flareT=Math.max(0,(p.flareT||0)-dt);
+    if(p.flares>0&&p.flareT<=0){
+      for(const m of G.missiles){
+        if(m.target!==p||m.flared) continue;
+        if(dist(m.pos,p.pos)<1000){ dropFlares(); p.flareT=2.4; break; }
+      }
+    }
+    // An EMP cannot be fought and cannot be outrun, and it takes your own side
+    // with it. Water is the only thing that stops it. Start for the sea as soon
+    // as one is announced, and go under just before the front arrives — no
+    // earlier, because you drown down there.
+    const eta=empETA(p), passing=empPassing(p);
+    if(eta<14||passing){
+      p.duckT=(p.duckT||0)-dt;
+      if(p.duckT<=0){ p.duckAt=nearestWater(p.pos,3400); p.duckT=1.5; }
+      if(p.duckAt){
+        const under=eta<2.0||passing;
+        // hold off the seabed: drowning is survivable for a few seconds, the
+        // bottom is not
+        const wy=under?Math.max(SEA-40,p.duckAt[2]+34):SEA+90;
+        aim=[p.duckAt[0],wy,p.duckAt[1]];
+        p.thr=1; c.ab=1; c.fire=0; c.fire2=0;
+        p.pullUp=0; p.rtb=false;
+        // tells the ground guard to let this one through the surface
+        p.diving=under;
+        if(under&&p.under<=0) pushWarn('emp','AUTOPILOT — GOING UNDER','ok',1.4,3);
+      }
+    }else if(p.duckAt){ p.duckAt=null; p.duckT=0; p.diving=false; }
   }
 
   // steer: convert target direction into local space
@@ -4334,8 +4556,10 @@ function render(){
   for(const m of G.missiles){
     const l=Math.hypot(...m.vel)||1;
     const q=qLookDir([0,0,0,1],[m.vel[0]/l,m.vel[1]/l,m.vel[2]/l],[0,1,0]);
-    M4.fromRTS(model,q,m.pos,1);
-    draw(MESH.missile,model,{});
+    // a warhead is a far bigger thing than an air-to-air round, and you want to
+    // see one coming from a long way off
+    M4.fromRTS(model,q,m.pos,m.nuke?3.4:1);
+    draw(MESH.missile,model,m.nuke?{tint:[1,.72,.55]}:{});
   }
   // --- shield domes ---
   gl.enable(gl.BLEND); gl.depthMask(false); gl.disable(gl.CULL_FACE);
@@ -4613,7 +4837,7 @@ function updateHUD(dt){
 /* Threat callouts. Each has its own cooldown so they announce a change in the
    situation rather than nagging every frame. */
 const warns=[];
-let warnCd={six:0,msl:0,base:0,emp:0};
+let warnCd={six:0,msl:0,base:0,emp:0,nuke:0};
 function pushWarn(key,txt,cls,hold,cool){
   if(warnCd[key]>0) return;
   warnCd[key]=cool;
@@ -4644,9 +4868,12 @@ function updateWarnings(dt){
   for(let i=warns.length-1;i>=0;i--){ warns[i].t-=dt; if(warns[i].t<=0) warns.splice(i,1); }
   if($('autoHud')) $('autoHud').style.display=autoOn()?'block':'none';
   const eb=$('empHud');
-  if(eb){ eb.style.display=(G.emp>0)?'block':'none'; eb.textContent=G.emp>1?('EMP ×'+G.emp+' — ENTER'):'EMP READY — ENTER'; }
-  $('warn').innerHTML=warns.map(w=>
-    `<div class="${w.cls}" style="opacity:${clamp(w.t/Math.min(w.max,1),0,1)}">${w.txt}</div>`).join('');
+  if(eb){ setSty(eb,'display',(G.emp>0)?'block':'none');
+          setTxt(eb,G.emp>1?('EMP ×'+G.emp+' — ENTER'):'EMP READY — ENTER'); }
+  const nb=$('nukeHud');
+  if(nb){ setSty(nb,'display',(G.nukes>0)?'block':'none'); setTxt(nb,'WARHEAD ARMED — N'); }
+  setHTML($('warn'),warns.map(w=>
+    `<div class="${w.cls}" style="opacity:${clamp(w.t/Math.min(w.max,1),0,1).toFixed(2)}">${w.txt}</div>`).join(''));
 }
 
 /* Health bars pinned above every structure, projected from the world each
@@ -4873,14 +5100,17 @@ function renderShop(){
     const lvl=(p.upg[i.id]||0);
     // nothing caps out any more — the price is what limits you
     const cost=i.cost(lvl);
-    const can=G.credits>=cost;
+    // ...except the things you physically carry, which have a rack limit
+    const atCap=!!(i.cap&&i.held&&i.held()>=i.cap);
+    const can=G.credits>=cost&&!atCap;
     const pips=i.repeat?'':`<div class="pips">${Array.from({length:i.max},(_,k)=>`<i class="${k<Math.min(lvl,i.max)?'f':''}"></i>`).join('')}</div>`;
     return `<div class="item">
       <h3>${i.name}${i.repeat?'':` <span class="tagm">LV ${lvl}${lvl>=i.max?'':' / '+i.max}</span>`}</h3>
       <p>${i.desc}<br/><span style="color:#7fe6c0">${i.eff(i.repeat?0:lvl+1<=i.max?lvl+1:lvl)}</span></p>
       ${pips}
       <div class="buy"><span class="cost">${cost} ¢</span>
-        <button data-buy="${i.id}" data-cost="${cost}" ${can?'':'disabled'}>${lvl===0&&i.unlock?'UNLOCK':'UPGRADE'}</button></div></div>`;
+        <button data-buy="${i.id}" data-cost="${cost}" ${can?'':'disabled'}>${
+          atCap?'ONE LOADED':lvl===0&&i.unlock?'UNLOCK':'UPGRADE'}</button></div></div>`;
   }).join('');
   [...document.querySelectorAll('[data-buy]')].forEach(b=>b.onclick=()=>buy(b.dataset.buy,+b.dataset.cost));
   [...document.querySelectorAll('[data-struct]')].forEach(b=>b.onclick=()=>buyStruct(b.dataset.struct,+b.dataset.cost));
@@ -4891,6 +5121,10 @@ function buy(id,cost){
   if(id==='repairk'){ G.credits-=cost; p.hp=p.maxHp; rearm(p); toast('HULL REPAIRED & REARMED','grn',1.4); }
   else if(id==='emp'){ G.credits-=cost; G.emp=(G.emp||0)+1;
     toast('EMP CHARGE LOADED — PRESS ENTER TO FIRE','grn',3); }
+  else if(id==='nuke'){
+    if((G.nukes||0)>=1) return;          // one on the rack, and only one
+    G.credits-=cost; G.nukes=1;
+    toast('WARHEAD ON THE RACK — PRESS N TO RELEASE','grn',3.4); }
   else{
     G.credits-=cost; p.upg[id]=(p.upg[id]||0)+1;
     applyUpgrades(p);
@@ -4933,8 +5167,11 @@ function setAutopilot(on){
   const p=G.me;
   if(p){
     if(PROFILE.autopilot){
-      if(!p.role) p.role=roleFor(p.team);
+      // a hunter, so what you are watching is an aircraft picking a fight and
+      // seeing it through, rather than a random errand
+      p.role='hunter';
       p.aiTarget=null; p.aiT=0; p.aiStuck=0; p.aiBest=undefined; p.rtb=false;
+      p.duckAt=null; p.duckT=0; p.flareT=0; p.diving=false;
     }else{
       p.ctrl.fire=0; p.ctrl.fire2=0; p.ctrl.lift=0; p.ctrl.strafe=0;
       p.ctrl.roll=0; p.ctrl.pitch=0; p.ctrl.yaw=0; p.ctrl.ab=0;
@@ -5007,6 +5244,27 @@ function stepPulses(dt){
 function domeSoak(origin,R){
   const dome=G.structures.find(s=>s.alive&&s.type==='dome'&&dist(s.pos,origin)<R+DOME_R);
   return dome?{R:Math.round(R*.82),D:.8}:null;   // a dent, not a wall
+}
+/* The carried warhead. One on the rack, released forward and then it flies
+   itself at the nearest enemy Command HQ — or at the dome over it, which is
+   what it would meet first anyway. Anything hostile it passes close to sets it
+   off early, which is a perfectly good way to use one. */
+function fireNuke(){
+  const p=G.me;
+  if(!p||!p.alive) return;
+  if((G.nukes||0)<1){ toast('NO WARHEAD — BUY ONE IN THE HANGAR (B)','red',2.4); return; }
+  if(p.under>0){ toast('NOT FROM UNDER THE WATER','red',1.8); return; }
+  const tgt=nukeTargetFor(p.team,p.pos);
+  if(!tgt){ toast('NOTHING LEFT TO AIM IT AT','gold',2.0); return; }
+  G.nukes=0;
+  const f=fwdOf(p,[0,0,0]);
+  spawnMissile({pos:[p.pos[0]+f[0]*16,p.pos[1]+f[1]*16-3,p.pos[2]+f[2]*16],
+    vel:[f[0]*300,f[1]*300+30,f[2]*300],
+    team:p.team,owner:p.id,target:tgt,dmg:NUKE_DMG,
+    turn:1.1,speed:300,life:40,fuse:70,nuke:true});
+  sfxAt('launch',p.pos,1);
+  toast('WARHEAD AWAY — GET CLEAR, IT TAKES EVERYONE BUT YOU','gold',3.4);
+  feed(`<span class="${p.team}">${esc(myName())}</span> released a warhead`);
 }
 function fireEMP(){
   if(!G.started||G.over||G.paused) return;
@@ -5139,7 +5397,7 @@ function endRound(winner){
 function resetRound(){
   G.round=null; G.over=false;
   $('over').classList.remove('on');
-  G.structures.length=0; structSlot=teamMap(0); hangarSlot=teamMap(0); G.eliminated={}; G.hangarSaid={};
+  G.structures.length=0; structSlot=teamMap(0); hangarSlot=teamMap(0); nukeSlot={}; G.eliminated={}; G.hangarSaid={};
   G.bullets.length=0; G.missiles.length=0; G.parts.length=0; G.fires.length=0;
   G.pulses.length=0; G.empWarn=null; G.rings.length=0;
   applyTerrain();          // a new round is new ground and a new sky
@@ -5166,7 +5424,7 @@ function quitToMenu(){
   for(let i=0;i<3;i++) FOG[i]=WEATHERS[0].fog[i];
   if(gl&&U&&U.uFogCol) gl.uniform3fv(U.uFogCol,FOG);
   { const el=$('wxflash'); if(el) el.style.opacity=0; }
-  G.me=null; G.crew=null; G.roster=[]; G.emp=0; G.pulses.length=0; G.foeEmp={}; G.foeEmpT=0; G.empWarn=null; G.netLevel=null; G.netMap=null; G.netWx=null; G.hangarT={}; G.hangarSaid={}; G.credits=600; G.kills=0; G.deaths=0; G.score=0; G.camMode=0;
+  G.me=null; G.crew=null; G.roster=[]; G.emp=0; G.nukes=0; G.pulses.length=0; G.foeEmp={}; G.foeEmpT=0; G.empWarn=null; G.netLevel=null; G.netMap=null; G.netWx=null; G.hangarT={}; G.hangarSaid={}; G.credits=600; G.kills=0; G.deaths=0; G.score=0; G.camMode=0;
   baseBarEls.forEach(el=>el.classList.remove('on'));
   tagEls.forEach(el=>el.remove()); tagEls.clear();
   for(const id of ['pause','over','shop','dead','tut','mission']) $(id).classList.remove('on');
