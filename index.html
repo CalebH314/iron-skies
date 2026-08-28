@@ -758,8 +758,19 @@ const dist2=(a,b)=>{const x=a[0]-b[0],y=a[1]-b[1],z=a[2]-b[2];return x*x+y*y+z*z
 
 /* ------------------------------ WebGL ----------------------------------- */
 const canvas=$('gl');
-const gl=canvas.getContext('webgl',{antialias:true,alpha:false})||
-         canvas.getContext('experimental-webgl',{antialias:true,alpha:false});
+/* Multisampling makes the GPU shade and store four samples for every pixel on
+   screen. On a laptop whose graphics share the system's memory that is the most
+   expensive single thing the renderer asks for, and it multiplies with the
+   resolution the graphics setting already picks — which is why turning the
+   quality down did not rescue the frame rate on its own.
+   Only HIGH pays for it now. The other tiers get their smoothing from drawing
+   above the display's own resolution instead, which does the same job for flat
+   shaded geometry at a fraction of the bandwidth. Read straight out of storage,
+   because the drawing context has to exist long before the profile is loaded,
+   and the flag can only be set when the context is created. */
+const AA=(()=>{ try{ return localStorage.getItem('ironskies.aa')==='1' }catch(e){ return false } })();
+const gl=canvas.getContext('webgl',{antialias:AA,alpha:false})||
+         canvas.getContext('experimental-webgl',{antialias:AA,alpha:false});
 if(!gl){document.body.innerHTML='<div style="padding:40px;font:16px monospace;color:#ff7a6b">WebGL is not available in this browser.</div>';throw new Error('no webgl');}
 
 const VS=`
@@ -1131,7 +1142,7 @@ function strikeLightning(){
     if(st.length){ const x=st[rndi(0,st.length-1)]; at=[x.pos[0]+rnd(-90,90),0,x.pos[2]+rnd(-90,90)]; }
   }
   if(!at) at=[rnd(-WORLD*.6,WORLD*.6),0,rnd(-WORLD*.6,WORLD*.6)];
-  at[1]=Math.max(terrainH(at[0],at[2]),SEA);
+  at[1]=surfaceH(at[0],at[2]);
   WX.bolts.push({pos:at,t:0,life:.80,seed:Math.random()*9});
   WX.flash=1;
   sfxAt('boom',at,1.0);
@@ -1337,6 +1348,41 @@ function terrainH(x,z){
   }
   return h;
 }
+/* The ground does not move for the whole round, but working out how high it is
+   costs three octaves of value noise — twelve Math.sin calls — and the hot paths
+   ask constantly: once per bullet, once per missile and seven times per aircraft,
+   every single frame. In a busy fight that was over half of all the simulation's
+   time spent re-deriving a landscape that had not changed since the round began,
+   and it got worse exactly as the shooting got heavier.
+   So it is sampled once into a grid and read back with a bilinear lookup. The
+   grid is twice as fine as the terrain mesh actually on screen, so an answer is
+   never coarser than the triangle it stands for. */
+const GH_N=449;                  // 2x the mesh's 224 cells, plus one for the far edge
+let GH=null, GHstep=1;
+function buildHeightField(){
+  GH=new Float32Array(GH_N*GH_N);
+  GHstep=WORLD*2/(GH_N-1);
+  for(let i=0;i<GH_N;i++){
+    const x=-WORLD+i*GHstep;
+    for(let j=0;j<GH_N;j++) GH[i*GH_N+j]=terrainH(x,-WORLD+j*GHstep);
+  }
+}
+/** Ground height at a point, from the sampled field. Agrees with terrainH to
+    within the size of one terrain triangle, at a fraction of the cost. */
+function groundH(x,z){
+  if(!GH) return terrainH(x,z);            // before the first build, answer honestly
+  let fx=(x+WORLD)/GHstep, fz=(z+WORLD)/GHstep;
+  // clamp into the field rather than extrapolating off the edge of the world
+  if(fx<0)fx=0; else if(fx>GH_N-1)fx=GH_N-1;
+  if(fz<0)fz=0; else if(fz>GH_N-1)fz=GH_N-1;
+  const i=Math.min(fx|0,GH_N-2), j=Math.min(fz|0,GH_N-2);
+  const u=fx-i, v=fz-j, k=i*GH_N+j;
+  const a=GH[k], b=GH[k+GH_N], c=GH[k+1], d=GH[k+GH_N+1];
+  const p=a+(b-a)*u, q=c+(d-c)*u;
+  return p+(q-p)*v;
+}
+/** ground or sea surface, whichever is higher — the thing you actually hit */
+function surfaceH(x,z){ const g=groundH(x,z); return g>SEA?g:SEA }
 function terrainColor(h,slope){
   const n=vnoise(0,0);
   if(h<3) return [.80,.74,.52];
@@ -1355,15 +1401,21 @@ function freeMesh(m){
 /** Rebuilt whenever the level changes, so the map really is different each time. */
 function buildTerrainMesh(){
   if(MESH.terrain) for(const m of MESH.terrain) freeMesh(m);
+  // Sample the landscape once, here, and let both the mesh and the simulation
+  // read that one field — so what you fly into is exactly what you can see.
+  buildHeightField();
   // split into chunks so each stays inside the 16-bit index limit
   const CH=4, NC=56, step=WORLD*2/(CH*NC);   // 16 chunks, each inside the 16-bit index limit
   MESH.terrain=[];
   for(let cx=0;cx<CH;cx++)for(let cz=0;cz<CH;cz++){
     const b=new Builder();
+    let lo=1e9, hi=-1e9;
     for(let i=0;i<NC;i++)for(let j=0;j<NC;j++){
       const gi=cx*NC+i, gj=cz*NC+j;
       const x0=-WORLD+gi*step,x1=x0+step,z0=-WORLD+gj*step,z1=z0+step;
-      const h00=terrainH(x0,z0),h10=terrainH(x1,z0),h11=terrainH(x1,z1),h01=terrainH(x0,z1);
+      const h00=groundH(x0,z0),h10=groundH(x1,z0),h11=groundH(x1,z1),h01=groundH(x0,z1);
+      if(h00<lo)lo=h00; if(h00>hi)hi=h00;
+      if(h11<lo)lo=h11; if(h11>hi)hi=h11;
       const hm=(h00+h10+h11+h01)/4;
       const slope=Math.max(Math.abs(h00-h11),Math.abs(h10-h01))/step;
       const c=terrainColor(hm,slope);
@@ -1372,7 +1424,12 @@ function buildTerrainMesh(){
       b.rawTri([x0,h00,z0],[x0,h01,z1],[x1,h11,z1],col);
       b.rawTri([x0,h00,z0],[x1,h11,z1],[x1,h10,z0],col);
     }
-    MESH.terrain.push(b.build());
+    const m=b.build();
+    // the chunk's own extent, so the frustum test can throw it out whole
+    m.bx0=-WORLD+cx*NC*step; m.bx1=m.bx0+NC*step;
+    m.bz0=-WORLD+cz*NC*step; m.bz1=m.bz0+NC*step;
+    m.by0=lo; m.by1=hi;
+    MESH.terrain.push(m);
   }
 }
 /** Pick and build the landscape for whatever we are about to play. */
@@ -2425,7 +2482,7 @@ let structSlot={blue:0,red:0};
 function structPos(team,idx){
   const b=BASES[team], a=idx*(Math.PI*2/11)+0.3+teamIdx(team)*0.55, r=210+((idx%3)*80);
   const x=b[0]+Math.cos(a)*r, z=b[2]+Math.sin(a)*r;
-  return [x,terrainH(x,z),z];
+  return [x,groundH(x,z),z];
 }
 /** hangars sit right beside the HQ they defend, alternating left and right */
 let hangarSlot={blue:0,red:0};
@@ -2434,7 +2491,7 @@ function hangarPos(team){
   // an arc beside the HQ, so a side that keeps rebuilding does not stack them
   const a=.6+i*1.71, r=168+((i%3)*40);
   const x=b[0]+Math.cos(a)*r, z=b[2]+Math.sin(a)*r;
-  return [x,terrainH(x,z),z];
+  return [x,groundH(x,z),z];
 }
 /* A belt of SAM sites along the top of the canyon mesa. They belong to no side
    and they watch one thing: the airspace above the lip. Anything down in the
@@ -2452,14 +2509,14 @@ function addRimSams(){
     const x=trenchX(z)+side*(TERRAIN.half+520);
     const hp=Math.round(cfg.hp*1.4);
     G.structures.push({id:uid(),type:'sam',team:'neutral',owner:null,
-      pos:[x,terrainH(x,z),z],hp,maxHp:hp,cd:rnd(0,3),
+      pos:[x,groundH(x,z),z],hp,maxHp:hp,cd:rnd(0,3),
       yaw:side>0?Math.PI:0,pitch:0,spin:0,alive:true,rim:true});
   }
   G.structDirty=true;
 }
 function addStruct(type,team,ownerId,idx){
   const cfg=STRUCTS[type];
-  const pos = (type==='hq'||type==='dome') ? [BASES[team][0],terrainH(BASES[team][0],BASES[team][2]),BASES[team][2]]
+  const pos = (type==='hq'||type==='dome') ? [BASES[team][0],groundH(BASES[team][0],BASES[team][2]),BASES[team][2]]
             : type==='spawner' ? hangarPos(team)
                           : structPos(team,idx===undefined?structSlot[team]++:idx);
   let hp=cfg.hp;
@@ -2764,7 +2821,7 @@ function simPlane(p,dt){
       if(p.noRespawn){ G.planes.delete(p.id); return; }   // training drones stay down
       if(!hangarFor(p.team)&&!G.tut&&!G.mission){
         if(p.isLocal){ $('deadTitle').textContent='NO HANGARS LEFT';
-          $('deadTxt').textContent='EVERY HANGAR ON YOUR SIDE IS DOWN — HOLD ON, ONE IS BEING REBUILT'; }
+          setTxt($('deadTxt'),'EVERY HANGAR ON YOUR SIDE IS DOWN — HOLD ON, ONE IS BEING REBUILT'); }
         else if(p.isBot){ G.planes.delete(p.id); }
         p.respawn=1;
         return;
@@ -2775,7 +2832,7 @@ function simPlane(p,dt){
   }
   // Rough air. Storms and rain shove everything in the sky, the player most
   // noticeably because nothing is correcting for it but you.
-  if((WX.gustX||WX.gustY)&&p.pos[1]>Math.max(terrainH(p.pos[0],p.pos[2]),SEA)+30){
+  if((WX.gustX||WX.gustY)&&p.pos[1]>surfaceH(p.pos[0],p.pos[2])+30){
     const g=(p.isLocal?1:.55)*(p.drone?1.5:1);
     qAxis(_dq,0,0,1, WX.gustX*.40*g*dt); qmul(p.quat,p.quat,_dq);
     qAxis(_dq,1,0,0, WX.gustY*.24*g*dt); qmul(p.quat,p.quat,_dq);
@@ -2832,7 +2889,7 @@ function simPlane(p,dt){
   // descend any further and the nose is forced up until it is clear. The player
   // gets no such help.
   if((p.isBot||(p.isLocal&&autoOn()))&&p.alive){
-    const g0=Math.max(terrainH(p.pos[0],p.pos[2]),SEA);
+    const g0=surfaceH(p.pos[0],p.pos[2]);
     if(p.pos[1]<g0+46){
       p.pos[1]=g0+46;
       const fw=fwdOf(p,[0,0,0]);
@@ -2848,7 +2905,7 @@ function simPlane(p,dt){
   // nothing works: the water drags you down to a crawl, no weapon will fire, and
   // you drown if you stay. The seabed still kills you, so it is not a refuge.
   const wasUnder=p.under>0;
-  if(p.pos[1]<SEA&&terrainH(p.pos[0],p.pos[2])<SEA){
+  if(p.pos[1]<SEA&&groundH(p.pos[0],p.pos[2])<SEA){
     p.under=(p.under||0)+dt;
     p.speed*=Math.pow(.03,dt);                  // heavy drag, near a standstill
     p.thr=Math.min(p.thr,.25);                  // the engine is drowning too
@@ -2863,7 +2920,7 @@ function simPlane(p,dt){
   }
 
   // terrain / sea collision
-  const bed=terrainH(p.pos[0],p.pos[2]);
+  const bed=groundH(p.pos[0],p.pos[2]);
   const gh=bed<SEA?bed:Math.max(bed,SEA);
   if(p.pos[1]<gh+4){
     // a graze at low speed is survivable; a dive at full throttle is not
@@ -2913,7 +2970,7 @@ function doRespawn(p){
     p.pos=[h.pos[0]+rnd(-24,24), 0, h.pos[2]+rnd(-24,24)];
     // the apron can slope away from the hangar, so clear the ground under the
     // aircraft rather than the ground under the building
-    p.pos[1]=Math.max(h.pos[1]+18, terrainH(p.pos[0],p.pos[2])+20);
+    p.pos[1]=Math.max(h.pos[1]+18, groundH(p.pos[0],p.pos[2])+20);
   }
   else  p.pos=[b[0]+Math.cos(a)*420, BASE_Y+rnd(320,460), b[2]+Math.sin(a)*420];
   const toC=[-p.pos[0],0,-p.pos[2]]; const l=Math.hypot(toC[0],toC[2])||1;
@@ -3293,7 +3350,7 @@ function stepBullets(dt){
         if(!s.missileOnly) damageStruct(s,dmg*(b.antiStruct||1),b.owner);
         hit=true; hitPos=[s.pos[0],cy,s.pos[2]]; break; }
     }
-    if(!hit && b.pos[1]<Math.max(terrainH(b.pos[0],b.pos[2]),SEA)){ hit=true; }
+    if(!hit && b.pos[1]<surfaceH(b.pos[0],b.pos[2])){ hit=true; }
     if(hit){
       if(b.splash){
         explode(b.pos,14,.7);
@@ -3359,7 +3416,7 @@ function stepMissiles(dt){
       if(s.team===m.team) continue;
       if(dist([s.pos[0],s.pos[1]+(STRUCTS[s.type].y||8),s.pos[2]],m.pos)<STRUCTS[s.type].r+10){ boom=true; break; }
     }
-    if(!boom&&m.pos[1]<Math.max(terrainH(m.pos[0],m.pos[2]),SEA)) boom=true;
+    if(!boom&&m.pos[1]<surfaceH(m.pos[0],m.pos[2])) boom=true;
     if(boom||m.life<=0){
       if(boom){
         explode(m.pos,26,1.1); sfxAt('boom',m.pos,.8);
@@ -3697,7 +3754,7 @@ function stepBot(p,dt){
   let gh=SEA;
   for(let i=1;i<=6;i++){
     const d=LOOK*i/6;
-    gh=Math.max(gh,terrainH(p.pos[0]+f[0]*d,p.pos[2]+f[2]*d));
+    gh=Math.max(gh,groundH(p.pos[0]+f[0]*d,p.pos[2]+f[2]*d));
   }
   // Buildings count as terrain for avoidance. An attack run is supposed to end
   // in a pull-up, not in the roof of the thing it was shooting at.
@@ -3713,7 +3770,7 @@ function stepBot(p,dt){
     if(lat>cfg.r+60) continue;
     gh=Math.max(gh, st.pos[1]+(cfg.y||8)+cfg.r+20);
   }
-  const ghNow=Math.max(terrainH(p.pos[0],p.pos[2]),SEA);
+  const ghNow=surfaceH(p.pos[0],p.pos[2]);
   const lowNow=p.pos[1]<ghNow+150;
   // Where it will actually be by the end of that look, if it holds this
   // attitude. A shallow descent that looks fine right now is what turns a gun
@@ -4022,7 +4079,7 @@ function updateCamera(dt){
     want=[p.pos[0]+off[0],p.pos[1]+off[1],p.pos[2]+off[2]];
     look=p.pos.slice();
   }
-  const gh=Math.max(terrainH(want[0],want[2]),SEA)+6;
+  const gh=surfaceH(want[0],want[2])+6;
   if(want[1]<gh) want[1]=gh;
   const k=clamp(dt*9,0,1);
   for(let i=0;i<3;i++){ G.camPos[i]=lerp(G.camPos[i],want[i],k); G.camLook[i]=lerp(G.camLook[i],look[i],clamp(dt*12,0,1)); }
@@ -4050,6 +4107,31 @@ function drawWeather(){
 }
 
 /* ------------------------------ render ----------------------------------- */
+/* The whole landscape was drawn every frame — sixteen chunks, a hundred thousand
+   triangles — including the two thirds of it standing behind the camera. These
+   are the six sides of the view volume, pulled straight out of the combined
+   view-projection, so a chunk that cannot be on screen is never submitted.
+   The matrix is column-major, so element (row r, column c) is m[c*4+r], and each
+   plane is a sum or difference of two of its rows. */
+const _fr=[[0,0,0,0],[0,0,0,0],[0,0,0,0],[0,0,0,0],[0,0,0,0],[0,0,0,0]];
+function frustumFrom(m){
+  for(let k=0;k<4;k++){
+    const rx=m[k*4+0], ry=m[k*4+1], rz=m[k*4+2], rw=m[k*4+3];
+    _fr[0][k]=rw+rx;  _fr[1][k]=rw-rx;      // left, right
+    _fr[2][k]=rw+ry;  _fr[3][k]=rw-ry;      // bottom, top
+    _fr[4][k]=rw+rz;  _fr[5][k]=rw-rz;      // near, far
+  }
+}
+/** Is any part of this axis-aligned box inside the view volume? */
+function boxVisible(x0,y0,z0,x1,y1,z1){
+  for(let i=0;i<6;i++){
+    const p=_fr[i], a=p[0], b=p[1], c=p[2];
+    // the corner furthest along the plane normal; if even that is behind the
+    // plane, every other corner is too and the box is wholly outside
+    if(a*(a>0?x1:x0)+b*(b>0?y1:y0)+c*(c>0?z1:z0)+p[3]<0) return false;
+  }
+  return true;
+}
 const proj=M4.create(), view=M4.create(), model=M4.create(), tmpM=M4.create(), projC=M4.create();
 function render(){
   const dpr=Math.min(devicePixelRatio||1,gfx().dpr);
@@ -4065,6 +4147,7 @@ function render(){
   const upBlend=cockpit?up:[lerp(0,up[0],.35),lerp(1,up[1],.35),lerp(0,up[2],.35)];
   M4.lookAt(view,G.camPos,G.camLook,upBlend);
   M4.mul(_vp,proj,view);
+  frustumFrom(_vp);
   gl.uniform3fv(U.uCam,G.camPos);
 
   // --- sky ---
@@ -4081,12 +4164,19 @@ function render(){
 
   // --- terrain + clouds ---
   M4.ident(model);
-  for(const ch of MESH.terrain) draw(ch,model);
+  for(const ch of MESH.terrain){
+    if(ch.bx0!==undefined&&!boxVisible(ch.bx0,ch.by0,ch.bz0,ch.bx1,ch.by1,ch.bz1)) continue;
+    draw(ch,model);
+  }
   draw(MESH.clouds,model,{tint:WX.w.tint});
 
   // --- structures ---
   for(const s of G.structures){
     const cfg=STRUCTS[s.type];
+    {  // a compound behind you is still a few thousand triangles
+      const r=(cfg.r||20)+(cfg.y||8)+30;
+      if(!boxVisible(s.pos[0]-r,s.pos[1]-r,s.pos[2]-r,s.pos[0]+r,s.pos[1]+r,s.pos[2]+r)) continue;
+    }
     if(!s.alive){
       M4.trans(model,s.pos[0],s.pos[1],s.pos[2]);
       draw(MESH.struct[s.type][s.team],model,{tint:[.22,.20,.19]});
@@ -4137,6 +4227,9 @@ function render(){
     // in the cockpit your own airframe is redrawn in the near-field pass below,
     // because most of it sits inside this pass's 1.2 near plane
     if(p.isLocal&&cockpit) continue;
+    // an airframe is well over a thousand triangles, and most of the sky is
+    // behind you at any moment
+    if(!boxVisible(p.pos[0]-18,p.pos[1]-18,p.pos[2]-18,p.pos[0]+18,p.pos[1]+18,p.pos[2]+18)) continue;
     M4.fromRTS(model,p.quat,p.pos,p.drone?.72:1);
     const hurt=clamp(p.hp/p.maxHp,0,1);
     draw(p.drone?MESH['drone_'+p.team]:((p.isLocal&&MESH.custom)||MESH['plane_'+p.team]),
@@ -4392,81 +4485,82 @@ function flashHurt(amt){ hurtT=Math.max(hurtT,clamp(.22+(amt||0)*.012,.22,.9)); 
 
 function updateHUD(dt){
   const p=G.me; if(!p) return;
-  $('hpTxt').textContent=Math.max(0,Math.round(p.hp))+' / '+p.maxHp;
+  setTxt($('hpTxt'),Math.max(0,Math.round(p.hp))+' / '+p.maxHp);
   const hf=clamp(p.hp/p.maxHp,0,1);
-  const hb=$('hpBar'); hb.style.width=(hf*100)+'%';
-  hb.style.background=hf>.5?'linear-gradient(90deg,#2ecc8f,#7fe6c0)':hf>.25?'linear-gradient(90deg,#d4a02a,#ffd451)':'linear-gradient(90deg,#c0392b,#ff7a6b)';
+  const hb=$('hpBar'); setSty(hb,'width',pct(hf));
+  setSty(hb,'background',hf>.5?'linear-gradient(90deg,#2ecc8f,#7fe6c0)':hf>.25?'linear-gradient(90deg,#d4a02a,#ffd451)':'linear-gradient(90deg,#c0392b,#ff7a6b)');
   const hasSh=p.maxShield>0;
-  $('shLbl').style.display=hasSh?'flex':'none';
-  $('shBarWrap').style.display=hasSh?'block':'none';
+  setSty($('shLbl'),'display',hasSh?'flex':'none');
+  setSty($('shBarWrap'),'display',hasSh?'block':'none');
   if(hasSh){
-    $('shTxt').textContent=Math.round(p.shield)+' / '+p.maxShield;
-    $('shBar').style.width=(clamp(p.shield/p.maxShield,0,1)*100)+'%';
+    setTxt($('shTxt'),Math.round(p.shield)+' / '+p.maxShield);
+    setSty($('shBar'),'width',pct(clamp(p.shield/p.maxShield,0,1)));
   }
-  $('flTxt').textContent=Math.floor(p.flares)+' / '+p.maxFlares;
-  $('flBar').style.width=(p.maxFlares?clamp(p.flares/p.maxFlares,0,1)*100:0)+'%';
-  $('credits').innerHTML=Math.floor(G.credits)+' <small>CREDITS · press B for HANGAR</small>';
+  setTxt($('flTxt'),Math.floor(p.flares)+' / '+p.maxFlares);
+  setSty($('flBar'),'width',pct(p.maxFlares?clamp(p.flares/p.maxFlares,0,1):0));
+  setHTML($('credits'),Math.floor(G.credits)+' <small>CREDITS · press B for HANGAR</small>');
   const gEl=$('gLoad');
   if(gEl){
-    gEl.textContent=(p.g===undefined?1:p.g).toFixed(1);
-    gEl.style.color=(p.gStress||0)>.05?'#ff7a6b':Math.abs(p.g||1)>gTolerance()*.75?'#ffd451':'#7fe6c0';
+    setTxt(gEl,(p.g===undefined?1:p.g).toFixed(1));
+    setSty(gEl,'color',(p.gStress||0)>.05?'#ff7a6b':Math.abs(p.g||1)>gTolerance()*.75?'#ffd451':'#7fe6c0');
   }
   const gv=$('gvig');
-  gv.style.opacity=clamp((p.gStress||0)*1.15,0,1);
+  setSty(gv,'opacity',clamp((p.gStress||0)*1.15,0,1).toFixed(2));
   gv.classList.toggle('red',!!p.gNeg);
-  $('spd').textContent=Math.round(p.speed*3.6);
-  $('alt').textContent=Math.round(Math.max(0,p.pos[1]-Math.max(terrainH(p.pos[0],p.pos[2]),SEA)));
-  $('thr').firstElementChild.style.height=(p.thr*100)+'%';
+  setTxt($('spd'),String(Math.round(p.speed*3.6)));
+  setTxt($('alt'),String(Math.round(Math.max(0,p.pos[1]-surfaceH(p.pos[0],p.pos[2])))));
+  setSty($('thr').firstElementChild,'height',pct(p.thr));
 
-  hitT=Math.max(0,hitT-dt); $('hitmark').style.opacity=hitT>0?1:0;
+  hitT=Math.max(0,hitT-dt); setSty($('hitmark'),'opacity',hitT>0?'1':'0');
   hurtT=Math.max(0,hurtT-dt);
-  $('hurt').style.opacity=clamp(hurtT*3.2,0,1);
+  setSty($('hurt'),'opacity',clamp(hurtT*3.2,0,1).toFixed(2));
 
   // lock box
   const lb=$('lockbox');
   if(p.lock&&p.lock.alive){
     const sp=project(p.lock.pos);
-    if(sp){ lb.style.display='block'; lb.style.left=sp[0]+'px'; lb.style.top=sp[1]+'px';
+    if(sp){ setSty(lb,'display','block');
+      setSty(lb,'left',Math.round(sp[0])+'px'); setSty(lb,'top',Math.round(sp[1])+'px');
       const d=Math.round(dist(p.lock.pos,p.pos));
-      lb.firstElementChild.textContent='LOCK '+d+'m'; }
-    else lb.style.display='none';
-  } else lb.style.display='none';
+      setTxt(lb.firstElementChild,'LOCK '+d+'m'); }
+    else setSty(lb,'display','none');
+  } else setSty(lb,'display','none');
 
   // toasts + feed
   for(let i=toasts.length-1;i>=0;i--){toasts[i].t-=dt;if(toasts[i].t<=0)toasts.splice(i,1)}
-  $('toast').innerHTML=toasts.map(t=>`<div class="${t.cls}" style="opacity:${clamp(t.t,0,1)}">${t.txt}</div>`).join('');
+  setHTML($('toast'),toasts.map(t=>`<div class="${t.cls}" style="opacity:${clamp(t.t,0,1).toFixed(2)}">${t.txt}</div>`).join(''));
   for(let i=feeds.length-1;i>=0;i--){feeds[i].t-=dt;if(feeds[i].t<=0)feeds.splice(i,1)}
-  $('feed').innerHTML=feeds.map(f=>`<div style="opacity:${clamp(f.t/2,0,1)}">${f.html}</div>`).join('');
+  setHTML($('feed'),feeds.map(f=>`<div style="opacity:${clamp(f.t/2,0,1).toFixed(2)}">${f.html}</div>`).join(''));
 
   // home base readout
   const home=G.structures.find(s=>s.type==='hq'&&s.team===G.team);
   if(home){
     const hf=clamp(home.hp/home.maxHp,0,1);
-    $('hbTxt').textContent=home.alive?Math.max(0,Math.round(home.hp))+' / '+home.maxHp:'DESTROYED';
-    const hb=$('hbBar'); hb.style.width=(hf*100)+'%';
-    hb.style.background=hf>.5?'linear-gradient(90deg,#2a7fd4,#5fb2ff)'
-      :hf>.25?'linear-gradient(90deg,#d4a02a,#ffd451)':'linear-gradient(90deg,#c0392b,#ff7a6b)';
+    setTxt($('hbTxt'),home.alive?Math.max(0,Math.round(home.hp))+' / '+home.maxHp:'DESTROYED');
+    const hb=$('hbBar'); setSty(hb,'width',pct(hf));
+    setSty(hb,'background',hf>.5?'linear-gradient(90deg,#2a7fd4,#5fb2ff)'
+      :hf>.25?'linear-gradient(90deg,#d4a02a,#ffd451)':'linear-gradient(90deg,#c0392b,#ff7a6b)');
   }
 
   // your force dome, if one is standing over the base
   const dome=G.structures.find(s=>s.type==='dome'&&s.team===G.team);
   const showDome=!!dome;
-  $('dmLbl').style.display=showDome?'flex':'none';
-  $('dmBarWrap').style.display=showDome?'block':'none';
+  setSty($('dmLbl'),'display',showDome?'flex':'none');
+  setSty($('dmBarWrap'),'display',showDome?'block':'none');
   if(showDome){
     const df=clamp(dome.hp/dome.maxHp,0,1);
     // it regenerates once nothing has hit it for a few seconds — say which it is
     const cooling=(dome.cool||0)>0;
-    $('dmTxt').textContent=dome.alive
+    setTxt($('dmTxt'),dome.alive
       ? Math.max(0,Math.round(dome.hp))+' / '+dome.maxHp+(cooling?' ⚠':(df<1?' ↑':''))
-      : 'DOWN';
+      : 'DOWN');
     const db=$('dmBar');
-    db.style.width=(dome.alive?df*100:0)+'%';
-    db.style.background=df>.5?'linear-gradient(90deg,#2f9fd0,#8fe4ff)'
-      :df>.25?'linear-gradient(90deg,#d4a02a,#ffd451)':'linear-gradient(90deg,#c0392b,#ff7a6b)';
+    setSty(db,'width',pct(dome.alive?df:0));
+    setSty(db,'background',df>.5?'linear-gradient(90deg,#2f9fd0,#8fe4ff)'
+      :df>.25?'linear-gradient(90deg,#d4a02a,#ffd451)':'linear-gradient(90deg,#c0392b,#ff7a6b)');
   }
 
-  if(!p.alive) $('deadTxt').textContent=(G.deadBy?G.deadBy+' — RESPAWN IN ':'RESPAWN IN ')+Math.ceil(p.respawn);
+  if(!p.alive) setTxt($('deadTxt'),(G.deadBy?G.deadBy+' — RESPAWN IN ':'RESPAWN IN ')+Math.ceil(p.respawn));
   updateWarnings(dt);
   updateBaseBars();
   updateNameTags();
@@ -4516,6 +4610,23 @@ function updateWarnings(dt){
 /* Health bars pinned above every structure, projected from the world each
    frame. HQs get the full treatment; defences get a compact bar that only
    spells out numbers once you are close enough to be shooting at it. */
+/* Touching .style or .textContent makes the browser recalculate that element's
+   style whether or not the value actually changed — and these run for every
+   structure and every named aircraft, every single frame. Re-assigning a CSS
+   gradient string sixty times a second has the browser re-parse it sixty times
+   a second, for a bar whose colour band changes perhaps twice a match.
+   So each write is remembered on the element and only repeated when it really
+   differs. Positions are rounded to the pixel first, which is where the screen
+   puts them anyway, so a bar that has not moved stops writing entirely. */
+function setSty(el,prop,v){ const k='_s_'+prop; if(el[k]!==v){ el[k]=v; el.style[prop]=v } }
+function setTxt(el,v){ if(el._txt!==v){ el._txt=v; el.textContent=v } }
+/* Assigning innerHTML throws away a subtree and re-parses HTML from scratch.
+   The kill feed, the toasts and the credit line all did that on every frame,
+   including the frames where they were empty and nothing had happened. */
+function setHTML(el,v){ if(el._html!==v){ el._html=v; el.innerHTML=v } }
+/** A bar width. Quantised to a tenth of a percent — finer than any screen can
+    show — so a bar that is not really moving stops rewriting its own style. */
+function pct(f){ return (Math.round(f*1000)/10)+'%' }
 const baseBarEls=new Map();
 const _seenBars=new Set();
 function updateBaseBars(){
@@ -4542,23 +4653,24 @@ function updateBaseBars(){
     const mine=s.team===G.team;
     el.classList.add('on');
     el.classList.toggle('small',!hq);
-    el.style.left=sp[0]+'px'; el.style.top=sp[1]+'px'; el.style.width=w+'px';
-    el.style.opacity=hq?1:clamp(1.35-d/range,.35,1);
+    setSty(el,'left',Math.round(sp[0])+'px'); setSty(el,'top',Math.round(sp[1])+'px');
+    setSty(el,'width',Math.round(w)+'px');
+    setSty(el,'opacity',hq?'1':clamp(1.35-d/range,.35,1).toFixed(2));
     const nm=el.firstElementChild;
     // a full defence ring overlaps badly at range, so names fade out first
     // with six compounds in play, name the side rather than just 'enemy'
-    nm.textContent=hq?((mine?'YOUR':(teamList().length>2?s.team.toUpperCase():'ENEMY'))+' COMMAND HQ')
-                     :(d<1800?(s.rim?'RIM SAM':(cfg.short||cfg.name)):'');
-    nm.style.color=mine?'#7fe6c0':(teamList().length>2?teamHex(s.team):'#ff8a7a');
-    nm.style.fontSize=(hq?clamp(w/19,10,15):clamp(w/15,8,10))+'px';
+    setTxt(nm,hq?((mine?'YOUR':(teamList().length>2?s.team.toUpperCase():'ENEMY'))+' COMMAND HQ')
+                     :(d<1800?(s.rim?'RIM SAM':(cfg.short||cfg.name)):''));
+    setSty(nm,'color',mine?'#7fe6c0':(teamList().length>2?teamHex(s.team):'#ff8a7a'));
+    setSty(nm,'fontSize',Math.round(hq?clamp(w/19,10,15):clamp(w/15,8,10))+'px');
     const fl=el.children[1].firstElementChild;
-    fl.style.width=(f*100)+'%';
-    fl.style.background=f>.5?(mine?'linear-gradient(90deg,#2ecc8f,#7fe6c0)':'linear-gradient(90deg,#c0392b,#ff7a6b)')
-      :f>.25?'linear-gradient(90deg,#d4a02a,#ffd451)':'linear-gradient(90deg,#a32718,#ff5b4a)';
+    setSty(fl,'width',pct(f));
+    setSty(fl,'background',f>.5?(mine?'linear-gradient(90deg,#2ecc8f,#7fe6c0)':'linear-gradient(90deg,#c0392b,#ff7a6b)')
+      :f>.25?'linear-gradient(90deg,#d4a02a,#ffd451)':'linear-gradient(90deg,#a32718,#ff5b4a)');
     const pc=el.children[2];
     const showNums=hq||d<1100;
-    pc.textContent=showNums?(Math.max(0,Math.round(s.hp))+' / '+s.maxHp):'';
-    pc.style.fontSize=(hq?clamp(w/26,8,11):9)+'px';
+    setTxt(pc,showNums?(Math.max(0,Math.round(s.hp))+' / '+s.maxHp):'');
+    setSty(pc,'fontSize',Math.round(hq?clamp(w/26,8,11):9)+'px');
   }
   // structures replaced between rounds must not leave a bar behind, and their
   // elements must not accumulate in the DOM round after round
@@ -4599,18 +4711,18 @@ function updateNameTags(){
     const w=clamp(9000/Math.max(d,1),52,150);
     const f=clamp(q.hp/(q.maxHp||100),0,1);
     el.classList.add('on');
-    el.style.left=sp[0]+'px'; el.style.top=sp[1]+'px';
-    el.style.opacity=clamp(1.3-d/5200,.4,1);
+    setSty(el,'left',Math.round(sp[0])+'px'); setSty(el,'top',Math.round(sp[1])+'px');
+    setSty(el,'opacity',clamp(1.3-d/5200,.4,1).toFixed(2));
     const nm=el.firstElementChild;
-    nm.textContent=q.name;
-    nm.style.color=q.team===G.team?'#7fe6c0':teamHex(q.team);
-    nm.style.fontSize=clamp(w/11,9,13)+'px';
+    setTxt(nm,q.name);
+    setSty(nm,'color',q.team===G.team?'#7fe6c0':teamHex(q.team));
+    setSty(nm,'fontSize',Math.round(clamp(w/11,9,13))+'px');
     const tr=el.children[1];
-    tr.style.width=w+'px';
-    tr.firstElementChild.style.width=(f*100)+'%';
-    tr.firstElementChild.style.background=
+    setSty(tr,'width',Math.round(w)+'px');
+    setSty(tr.firstElementChild,'width',pct(f));
+    setSty(tr.firstElementChild,'background',
       f>.5?'linear-gradient(90deg,#2ecc8f,#7fe6c0)':
-      f>.25?'linear-gradient(90deg,#d4a02a,#ffd451)':'linear-gradient(90deg,#c0392b,#ff7a6b)';
+      f>.25?'linear-gradient(90deg,#d4a02a,#ffd451)':'linear-gradient(90deg,#c0392b,#ff7a6b)');
   }
   tagEls.forEach((el,id)=>{
     if(_seenTags.has(id)) return;
@@ -5573,7 +5685,7 @@ const MISSIONS=[
      // the bunker sits in the far bowl; you come in from your own end
      const zT=BASES.red[2]+BOWL_R*.45, xT=trenchX(zT);
      const b={id:uid(),type:'bunker',team:'red',owner:null,
-              pos:[xT,terrainH(xT,zT),zT],
+              pos:[xT,groundH(xT,zT),zT],
               hp:Math.round(STRUCTS.bunker.hp*msScale()),maxHp:Math.round(STRUCTS.bunker.hp*msScale()),
               cd:0,yaw:0,pitch:0,spin:0,alive:true,missileOnly:true};
      G.structures.push(b);
@@ -5583,7 +5695,7 @@ const MISSIONS=[
        const a=i/3*Math.PI*2+.6, r=210;
        const gx=xT+Math.cos(a)*r, gz=zT+Math.sin(a)*r;
        const g=addStruct(i===1?'sam':'flak','red',null);
-       g.pos=[gx,terrainH(gx,gz),gz];
+       g.pos=[gx,groundH(gx,gz),gz];
      }
      const z0=BASES.blue[2]-BOWL_R*.5, x0=trenchX(z0);
      M.home=[x0,TERRAIN.floor+220,z0];
@@ -5688,7 +5800,7 @@ const MISSIONS=[
        const a=i/n*Math.PI*2+rnd(-.3,.3), r=rnd(1500,3600);
        const sx=Math.cos(a)*r, sz=Math.sin(a)*r;
        const st=addStruct('sam',foeBaseOf(G.team),null);
-       st.pos=[sx,Math.max(terrainH(sx,sz),SEA),sz];
+       st.pos=[sx,surfaceH(sx,sz),sz];
        st.hp=st.maxHp=Math.round(STRUCTS.sam.hp*msScale());
        M.sams.push(st);
      }
@@ -6103,7 +6215,14 @@ function renderSettings(){
   $('gfxSeg').innerHTML=GFX.map(g=>
     `<button data-gfx="${g.id}" class="${g.id===(PROFILE.gfx||'bal')?'on':''}">${g.name}</button>`).join('');
   [...document.querySelectorAll('[data-gfx]')].forEach(b=>b.onclick=()=>{
-    PROFILE.gfx=b.dataset.gfx; saveProfile(); renderSettings(); sfx('buy',.4);
+    PROFILE.gfx=b.dataset.gfx; saveProfile();
+    // multisampling can only be chosen when the drawing context is made, so it
+    // is stored here and picked up next time the page loads
+    const want=(PROFILE.gfx==='high');
+    let had=false; try{ had=localStorage.getItem('ironskies.aa')==='1' }catch(e){}
+    try{ localStorage.setItem('ironskies.aa',want?'1':'0') }catch(e){}
+    if(want!==had) toast('Edge smoothing '+(want?'on':'off')+' — reload to apply');
+    renderSettings(); sfx('buy',.4);
   });
   $('gfxDesc').textContent=gfx().note;
   $('autoSeg').innerHTML=[['off','YOU FLY'],['on','AUTOPILOT']].map(([v,l])=>
@@ -6270,12 +6389,12 @@ function renderPerm(){
 /* ------------------------------ training --------------------------------- */
 /* Each step gates on the player actually performing the action. `setup` runs
    once when the step opens, `tick` runs every frame, `check` advances it. */
-const altAGL=p=>p.pos[1]-Math.max(terrainH(p.pos[0],p.pos[2]),SEA);
+const altAGL=p=>p.pos[1]-surfaceH(p.pos[0],p.pos[2]);
 
 function spawnDrone(side){
   const p=G.me, f=fwdOf(p,[0,0,0]), r=rightOf(p,[0,0,0]);
   const d=newPlane({name:'DRONE-'+rndi(10,99),team:'red',isBot:true,passive:true,noRespawn:true});
-  d.pos=[p.pos[0]+f[0]*720+r[0]*side, Math.max(p.pos[1]+f[1]*720+30,terrainH(p.pos[0],p.pos[2])+260), p.pos[2]+f[2]*720+r[2]*side];
+  d.pos=[p.pos[0]+f[0]*720+r[0]*side, Math.max(p.pos[1]+f[1]*720+30,groundH(p.pos[0],p.pos[2])+260), p.pos[2]+f[2]*720+r[2]*side];
   qLookDir(d.quat,f,[0,1,0]);
   d.upg={}; applyUpgrades(d); rearm(d);
   d.maxHp=70; d.hp=70; d.speed=110; d.thr=.45; d.holdY=d.pos[1]; d.turn=rnd(-.3,.3);
@@ -6419,7 +6538,7 @@ function stepCrew(dt){
   if(!s.alive){                      // blown up: rebuild and climb back in
     G.crewT=(G.crewT||0)-dt;
     $('deadTitle').textContent='EMPLACEMENT DESTROYED';
-    $('deadTxt').textContent='REBUILDING IN '+Math.max(1,Math.ceil(G.crewT));
+    setTxt($('deadTxt'),'REBUILDING IN '+Math.max(1,Math.ceil(G.crewT)));
     $('dead').classList.add('on');
     if(G.crewT<=0){ G.crew=null; takeEmplacement(); $('dead').classList.remove('on'); }
     return;
