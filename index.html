@@ -2961,15 +2961,37 @@ function simPlane(p,dt){
     // surface cannot be a floor for it — but the seabed still is, because that
     // kills. Everything else is held well clear of the ground as before.
     if(p.isLocal&&(p.diving||p.under>0)&&bed<SEA){
-      if(p.pos[1]<bed+26){ p.pos[1]=bed+26; p.pullUp=Math.max(p.pullUp||0,.4); }
+      if(p.diving){
+        // holding under deliberately: the seabed is the only floor that counts
+        if(p.pos[1]<bed+26){ p.pos[1]=bed+26; p.pullUp=Math.max(p.pullUp||0,.4); }
+      }else if(p.pos[1]<SEA+46){
+        /* The pulse has gone and it is still down there. Underwater drag leaves
+           it with no speed to fly out on, so it has to be brought up — but
+           lifted at a rate you can watch, not snapped two hundred metres to the
+           surface in one frame. Fast enough to beat drowning either way. */
+        p.pos[1]=Math.min(SEA+46,p.pos[1]+110*dt);
+        p.pullUp=Math.max(p.pullUp||0,.4);
+      }
     }else{
       const g0=bed>SEA?bed:SEA;
       if(p.pos[1]<g0+46){
         p.pos[1]=g0+46;
         const fw=fwdOf(p,[0,0,0]);
-        if(fw[1]<.30){                       // climb out instead of scraping along
+        /* Bots get re-aimed whenever they are not already climbing hard. For the
+           autopilot that is a trap: riding this floor along a canyon wall, a
+           perfectly level aircraft has its attitude hauled to a climb every
+           single frame, physics settles it back, and the view buzzes. It is only
+           re-aimed when the nose is genuinely down. */
+        if(fw[1]<(p.isLocal?.02:.30)){       // climb out instead of scraping along
           const flat=Math.hypot(fw[0],fw[2])||1;
-          qLookDir(p.quat,[fw[0]/flat*.90,.44,fw[2]/flat*.90],[0,1,0]);
+          const wx=fw[0]/flat*.90, wy=.44, wz=fw[2]/flat*.90;
+          if(p.isLocal){
+            // Rewriting the attitude outright throws the view through a wide arc
+            // in a single frame. Eased in, it still has the nose up within a few
+            // frames — fast enough to clear the ground, slow enough to watch.
+            const k=clamp(dt*9,0,1);
+            qLookDir(p.quat,[lerp(fw[0],wx,k),lerp(fw[1],wy,k),lerp(fw[2],wz,k)],[0,1,0]);
+          }else qLookDir(p.quat,[wx,wy,wz],[0,1,0]);
         }
         p.thr=1; p.pullUp=Math.max(p.pullUp||0,.8);
       }
@@ -3833,12 +3855,24 @@ function empPassing(p){
 /** The nearest water deep enough to hide in: [x, z, seabed], or null. */
 function nearestWater(pos,maxR){
   let best=null,bd=1e18;
-  for(let r=200;r<=maxR;r+=200){
+  // Starts well out rather than underfoot: an aircraft cannot hover, so a patch
+  // a couple of hundred metres away is one it simply overflies. It also has to
+  // be a broad piece of water — circling a narrow channel puts you over dry land
+  // half of every lap, which is no use at all when the wave arrives.
+  for(let r=400;r<=maxR;r+=250){
     for(let a=0;a<12;a++){
       const th=a*(Math.PI/6)+r*.013;
       const x=pos[0]+Math.cos(th)*r, z=pos[2]+Math.sin(th)*r;
       const bed=groundH(x,z);
       if(bed>SEA-70) continue;                // needs real depth, not a puddle
+      /* Open water for six hundred metres in every direction. An aircraft
+         cannot hold station, so it will be circling this spot when the wave
+         arrives; a patch that merely has water at its centre puts it over the
+         carrier deck for half of every lap, which is no help at all. */
+      let broad=true;
+      for(const [ox,oz] of [[420,0],[-420,0],[0,420],[0,-420],[300,300],[-300,300],[300,-300],[-300,-300]])
+        if(groundH(x+ox,z+oz)>SEA-40){ broad=false; break; }
+      if(!broad) continue;
       const dx=x-pos[0], dz=z-pos[2], d2=dx*dx+dz*dz;
       if(d2<bd){ bd=d2; best=[x,z,bed]; }
     }
@@ -4015,21 +4049,47 @@ function stepBot(p,dt){
     // head for the enemy base, never "away from where I am" — that flips sign
     // at z=0 and leaves the aircraft oscillating in the middle of the canyon
     const tz=t?t.pos[2]:BASES[foeBaseOf(p.team,p.pos)][2];
-    const dir=Math.sign(tz-p.pos[2])||1;
+    let dir=Math.sign(tz-p.pos[2])||1;
+    // The same trap as the roll reversal: a direction taken from a difference
+    // that passes through zero throws the waypoint a kilometre fore and aft
+    // between one frame and the next. The autopilot picks a way down the trench
+    // and keeps it until it is clearly past the other end.
+    if(p.isLocal&&autoOn()){
+      if(p.trenchWay===undefined||Math.abs(tz-p.pos[2])>240) p.trenchWay=dir;
+      dir=p.trenchWay;
+    }
     // look well ahead down the trench so the turn stays inside the bot's turn
     // rate, and descend into the corridor before the wall arrives
     const zA=p.pos[2]+dir*520;
     const off=Math.abs(p.pos[0]-trenchX(p.pos[2]));
-    const wantY=Math.abs(p.pos[2])<TERRAIN.wallZ+120 ? TERRAIN.floor+240
-              : Math.max(TERRAIN.floor+240, ghNow+300);
+    // The autopilot flies the slot a little higher than a bot does. Down at the
+    // bot's height it spent the run riding the proximity floor along the rock,
+    // which is what the shaking in a canyon actually was.
+    const lift=(p.isLocal&&autoOn())?170:0;
+    /* Trench height only applies once you are actually over the trench. Out on
+       the plateau — and the autopilot regularly found itself a mile off the
+       centreline — commanding the trench floor means commanding a descent into
+       nine hundred metres of rock, so it flew into the mesa and ground along the
+       proximity floor the whole way. That grinding was the shaking in a canyon.
+       Off the centreline it holds a height above whatever it is actually over,
+       and only drops into the slot once it is above it. */
+    const overSlot=Math.abs(p.pos[2])<TERRAIN.wallZ+120
+                   && (!(p.isLocal&&autoOn())||off<TERRAIN.half*1.6);
+    const wantY=overSlot ? TERRAIN.floor+240+lift
+              : Math.max(TERRAIN.floor+240+lift, ghNow+300+lift);
     aim=[trenchX(zA),wantY,zA];
     // hug the centreline first if badly out of position
     if(off>TERRAIN.half*.7) aim=[trenchX(p.pos[2]+dir*200),wantY,p.pos[2]+dir*200];
     p.thr=.72; c.ab=0;
-    p.canyonBoost=2.4;              // threading a slot needs a firmer hand
+    // Threading a slot needs a firmer hand — but stepping the aircraft's whole
+    // control authority from 1 to 2.4 the instant the fight leaves the bowl
+    // jolts the view, so the autopilot's is wound on rather than switched.
+    p.canyonBoost=(p.isLocal&&autoOn())
+      ? lerp(p.canyonBoost||1,2.4,clamp(dt*2.5,0,1)) : 2.4;
   }
   else{
-    p.canyonBoost=1;
+    p.canyonBoost=(p.isLocal&&autoOn())
+      ? lerp(p.canyonBoost||1,1,clamp(dt*2.5,0,1)) : 1;
     // On a run at a ground target the 620m lookahead always reports "ground
     // ahead" the instant the nose drops, so avoidance cancels every attack and
     // they orbit instead. Inside the run-in, only the hard floor applies.
@@ -4145,14 +4205,26 @@ function stepBot(p,dt){
   // A fixed clearance forbids ever pointing the nose down, which cancelled
   // every gun run. What matters is whether there is room left to pull out:
   // how far ahead this attitude actually meets the ground.
-  const FLOOR=90, PULLOUT=360;
+  /* The autopilot starts its recovery earlier and from higher up. A bot may
+     leave it late and be caught by the hard proximity floor underneath — that
+     costs a bot nothing, but it is what the shaking in a canyon actually was:
+     the aircraft skidding along an invisible floor with the guard correcting it
+     every frame. Reacting sooner means never reaching the guard at all. */
+  // ...except while it is deliberately going into the sea to duck a pulse, when
+  // a floor is exactly the wrong instinct.
+  const early=p.isLocal&&autoOn()&&!p.duckOn;
+  const FLOOR=early?170:90, PULLOUT=early?560:360;
   const sink=-f[1], altNow=p.pos[1]-ghNow;
   const toGround = sink>.02 ? altNow/sink : 1e9;
   if(inCanyon){
     // Inside the slot the rock is beside you, not under you. Sampling straight
     // ahead reads the wall and would command a climb every frame, so the only
     // floor that counts in here is the trench floor.
-    if(p.pos[1]<TERRAIN.floor+150){ aim=[aim[0],TERRAIN.floor+340,aim[2]]; p.pullUp=.5; }
+    // the autopilot keeps a wider margin over the trench floor, for the same
+    // reason it starts its recovery earlier out in the open
+    if(p.pos[1]<TERRAIN.floor+(early?300:150)){
+      aim=[aim[0],TERRAIN.floor+(early?480:340),aim[2]]; p.pullUp=.5;
+    }
   }else{
     const ahead2=p.pos[1]+f[1]*LOOK*.5-gh;      // rising ground, not just a descent
     if(altNow<FLOOR||toGround<PULLOUT||ahead2<0){
@@ -4201,21 +4273,41 @@ function stepBot(p,dt){
     // earlier, because you drown down there.
     const eta=empETA(p), passing=empPassing(p);
     if(eta<14||passing){
-      p.duckT=(p.duckT||0)-dt;
-      if(p.duckT<=0){ p.duckAt=nearestWater(p.pos,3400); p.duckT=1.5; }
-      if(p.duckAt){
-        const under=eta<2.0||passing;
+      const bedHere=groundH(p.pos[0],p.pos[2]);
+      const overWater=bedHere<SEA-40;
+      /* If it is already over deep water there is nowhere to go — it dives where
+         it stands. Searching for "somewhere to duck" while flying over two
+         hundred metres of open sea, and finding nothing because the search
+         started half a mile out, was why it sailed serenely through the pulse. */
+      if(!overWater){
+        // Otherwise pick a patch and stay with it; re-choosing the nearest every
+        // second had it wandering between two and arriving over dry ground.
+        p.duckT=(p.duckT||0)-dt;
+        if(!p.duckAt||p.duckT<=0){ p.duckAt=nearestWater(p.pos,3400); p.duckT=6; }
+      }
+      if(overWater||p.duckAt){
+        // It cannot dive through dry ground, so it only goes down once there is
+        // actually water underneath.
+        const under=(eta<3.0||passing)&&overWater;
         // hold off the seabed: drowning is survivable for a few seconds, the
         // bottom is not
-        const wy=under?Math.max(SEA-40,p.duckAt[2]+34):SEA+90;
-        aim=[p.duckAt[0],wy,p.duckAt[1]];
-        p.thr=1; c.ab=1; c.fire=0; c.fire2=0;
-        p.pullUp=0; p.rtb=false;
+        const wy=under?Math.max(SEA-40,bedHere+34):SEA+70;
+        // over water, just fly on and let the nose down; otherwise go and find it
+        aim=overWater ? [p.pos[0]+f[0]*300, wy, p.pos[2]+f[2]*300]
+                      : [p.duckAt[0],wy,p.duckAt[1]];
+        c.ab=0; c.fire=0; c.fire2=0;
+        // ease right off once it is close: at full throttle it simply sweeps
+        // past and orbits half a mile wide, which is how it ended up over the
+        // carrier deck at the moment the wave went by
+        const away=overWater?0:Math.hypot(p.duckAt[0]-p.pos[0],p.duckAt[1]-p.pos[2]);
+        p.thr=away>900?1:.35;
+        // the pull-off-the-ground logic must not fight a deliberate descent
+        p.pullUp=0; p.rtb=false; p.duckOn=true;
         // tells the ground guard to let this one through the surface
         p.diving=under;
         if(under&&p.under<=0) pushWarn('emp','AUTOPILOT — GOING UNDER','ok',1.4,3);
       }
-    }else if(p.duckAt){ p.duckAt=null; p.duckT=0; p.diving=false; }
+    }else if(p.duckAt){ p.duckAt=null; p.duckT=0; p.diving=false; p.duckOn=false; }
   }
 
   // steer: convert target direction into local space
@@ -4229,7 +4321,39 @@ function stepBot(p,dt){
   // bank into the turn
   c.roll=clamp(loc[0]*2.6,-1,1);
   // target behind: bank hard around rather than looping over the top
-  if(loc[2]>0&&!inCanyon){ c.roll=clamp(loc[0]>0?1:-1,-1,1); c.pitch=clamp(.6+loc[1],-.55,.55); }
+  if(loc[2]>0&&!inCanyon){
+    if(p.isLocal&&autoOn()){
+      /* Rolling by the *sign* of a number that sits near zero means the stick
+         slams from one stop to the other several times a second whenever the
+         target is nearly dead astern. A bot doing that is invisible from
+         outside; the autopilot is flying the aircraft you are sitting in.
+         So it picks a hand, commits, and only changes once the target is
+         decisively round the other side. */
+      if(p.rollWay===undefined||Math.abs(loc[0])>.22) p.rollWay=loc[0]>0?1:-1;
+      c.roll=clamp(p.rollWay*Math.min(1,.55+Math.abs(loc[0])*2),-1,1);
+    }else c.roll=clamp(loc[0]>0?1:-1,-1,1);
+    c.pitch=clamp(.6+loc[1],-.55,.55);
+  }
+  else if(p.isLocal) p.rollWay=undefined;
+  /* Everything above is recomputed from nothing every single frame, and the
+     waypoint it steers to can jump hundreds of metres between one frame and the
+     next — a dodge appearing and vanishing, terrain avoidance cutting in, a
+     target crossing behind the wing. On a bot, seen from a distance, none of
+     that shows. The autopilot is flying the aircraft the camera is bolted to,
+     where every one of those steps is felt as a jolt, so its commands are eased
+     in rather than snapped.
+     Pulling off the ground is exempt: a recovery that fades in is a recovery
+     that arrives too late. */
+  if(p.isLocal&&autoOn()){
+    // A recovery still needs to be quick, but not raw: it was in recovery for
+    // nearly half of a canyon run, which left most of the flight unsmoothed.
+    const k=clamp(dt*(p.pullUp>0?9:5.5),0,1);
+    if(!p.sm) p.sm={r:c.roll,p:c.pitch,y:c.yaw};
+    p.sm.r=lerp(p.sm.r,c.roll,k);
+    p.sm.p=lerp(p.sm.p,c.pitch,k);
+    p.sm.y=lerp(p.sm.y,c.yaw,k);
+    c.roll=p.sm.r; c.pitch=p.sm.p; c.yaw=p.sm.y;
+  }
   p.thr=lowNow?1:clamp(.6+dl/2200,.5,1);
   if(dl>900) c.ab=1;
   // A chase is only a chase if you can catch them: burner on until you are in
@@ -5171,7 +5295,7 @@ function setAutopilot(on){
       // seeing it through, rather than a random errand
       p.role='hunter';
       p.aiTarget=null; p.aiT=0; p.aiStuck=0; p.aiBest=undefined; p.rtb=false;
-      p.duckAt=null; p.duckT=0; p.flareT=0; p.diving=false;
+      p.duckAt=null; p.duckT=0; p.flareT=0; p.diving=false; p.duckOn=false; p.sm=null; p.rollWay=undefined; p.trenchWay=undefined;
     }else{
       p.ctrl.fire=0; p.ctrl.fire2=0; p.ctrl.lift=0; p.ctrl.strafe=0;
       p.ctrl.roll=0; p.ctrl.pitch=0; p.ctrl.yaw=0; p.ctrl.ab=0;
