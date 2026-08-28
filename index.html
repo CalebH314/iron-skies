@@ -303,6 +303,20 @@ table{width:100%;border-collapse:collapse;font-size:12px}
 th{text-align:left;font-size:10px;letter-spacing:1.5px;color:#7d93ad;padding:6px 8px;
   border-bottom:1px solid rgba(255,255,255,.1)}
 td{padding:6px 8px;border-bottom:1px solid rgba(255,255,255,.045)}
+/* mission briefing — shown before the clock starts, with the world behind it */
+#brief .eyebrow{font-size:10px;letter-spacing:4px;color:#c9a3ff;margin-bottom:6px}
+#brief h2{font-size:26px;letter-spacing:3px;color:#e6f2ff;margin-bottom:10px}
+#brief .bfmeta{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:14px}
+#brief .bfmeta span{font-size:10px;letter-spacing:2px;padding:4px 9px;border-radius:4px;
+  background:rgba(120,190,255,.10);border:1px solid rgba(120,190,255,.22);color:#9fc4e8}
+#brief .bfmeta span.pay{background:rgba(255,212,81,.10);border-color:rgba(255,212,81,.30);color:#ffd451}
+#brief .bfmeta span.tier{background:rgba(201,163,255,.10);border-color:rgba(201,163,255,.30);color:#c9a3ff}
+#brief p{font-size:13px;color:#c9d8e8;line-height:1.65;margin-bottom:12px}
+#brief ul{list-style:none;display:flex;flex-direction:column;gap:9px}
+#brief li{font-size:12px;color:#8fa8c4;line-height:1.6;padding-left:18px;position:relative}
+#brief li:before{content:'';position:absolute;left:0;top:7px;width:6px;height:6px;border-radius:1px;
+  background:linear-gradient(135deg,#8b5cf6,#c9a3ff)}
+#brief li b{color:#e6f2ff;font-weight:700}
 #dead{position:absolute;inset:0;display:none;align-items:center;justify-content:center;z-index:11;
   background:rgba(60,8,8,.3);pointer-events:none}
 #dead.on{display:flex}
@@ -505,6 +519,20 @@ td{padding:6px 8px;border-bottom:1px solid rgba(255,255,255,.045)}
       <button class="sndbtn" id="btnSound2">SOUND: ON</button>
       <button id="btnSettings2">SETTINGS</button>
       <button id="btnQuit">EXIT TO MENU</button>
+    </div>
+  </div>
+</div>
+
+<div id="brief" class="ovl">
+  <div class="mid panel" style="max-width:640px;text-align:left">
+    <div class="eyebrow">MISSION BRIEFING</div>
+    <h2 id="bfTitle" style="text-align:left">MISSION</h2>
+    <div id="bfMeta" class="bfmeta"></div>
+    <p id="bfLead"></p>
+    <ul id="bfList"></ul>
+    <div class="btns" style="margin-top:20px">
+      <button class="primary" id="btnBrief">FLY IT</button>
+      <button id="btnBriefBack">BACK TO MENU</button>
     </div>
   </div>
 </div>
@@ -2774,6 +2802,12 @@ addEventListener('keydown',e=>{
   keys[e.code]=true;
   if(e.code==='KeyM'){ setMuted(!PROFILE.muted); }
   if(!G.started) return;
+  /* Reading the briefing. Nothing else may act on a key while it is up — Enter
+     would fire the EMP and Escape would quietly unpause the round behind it. */
+  if(briefOpen()){
+    if(e.code==='Enter'||e.code==='Space'||e.code==='Escape'){ e.preventDefault(); closeBriefing(); }
+    return;
+  }
   if(e.code==='KeyB'&&!G.over){e.preventDefault();toggleShop()}
   if(e.code==='KeyC'){G.camMode=(G.camMode+1)%3}
   if(e.code==='Escape'&&!G.over){ e.preventDefault(); togglePause(); }
@@ -2794,6 +2828,7 @@ addEventListener('keyup',e=>{
 canvas.addEventListener('mousedown',e=>{
   if(customOpen&&!G.started){ previewDrag=e.clientX; return; }
   if(!G.started) return;
+  if(briefOpen()) return;          // the briefing has buttons of its own to click
   if(!mouseLocked){canvas.requestPointerLock();return}
   if(e.button===0)mouse.fire=true;
   if(e.button===2)mouse.fire2=true;
@@ -5541,6 +5576,7 @@ function quitToMenu(){
   if(dir.conn&&dir.conn.open&&net.room) try{ dir.conn.send(JSON.stringify({t:'unreg',room:net.room})) }catch(e){}
   if(apiOn()&&net.room) apiCall('/v1/rooms/'+net.room,null,'DELETE').catch(()=>{});
   G.started=false; G.paused=false; G.over=false; G.round=null; G.tut=null; G.mission=null;
+  $('brief').classList.remove('on');
   G.planes.clear(); G.structures.length=0; G.bullets.length=0; G.missiles.length=0;
   G.parts.length=0; G.rings.length=0; G.fires.length=0;
   setupTeams(2);
@@ -6105,6 +6141,11 @@ function ringAt(pos,dir){
 const MISSIONS=[
   {id:'strike', name:'Precision Strike', tokens:9, map:'canyon', time:0,
    desc(){ return 'Follow the canyon in, put a missile into the bunker, and get back out.' },
+   brief:[
+     'Fly the trench. The mesa either side of it is above your flight ceiling — there is no way over, only through.',
+     'The bunker is hardened. Guns and rockets will scratch it; <b>only a missile will crack it</b>, and you are carrying two.',
+     'Three guns are dug in around it, one of them a SAM. Come in fast and do not linger over the target.',
+     'Killing it is not the mission. <b>Fly back to where you started</b> — you are not finished until you are home.'],
    setup(){
      const M=G.mission, me=G.me;
      // the bunker sits in the far bowl; you come in from your own end
@@ -6159,6 +6200,11 @@ const MISSIONS=[
 
   {id:'intercept', name:'Lone Interceptor', tokens:10, map:'hills', time:0,
    desc(){ return `A flight of ${G.mission.goal} fighters is already up and looking for you. Nobody is coming to help.` },
+   brief:[
+     'They are airborne before you are, they know where you are, and there are no hangars behind you.',
+     'You have guns, two missiles and flares. <b>Press X for flares</b> the moment something is tracking you.',
+     'Fight them one at a time. Turning into a pair at once is how this one is lost.',
+     'Shoot down every one of them before the clock runs out.'],
    setup(){
      const M=G.mission, me=G.me;
      const n=Math.min(14,rndi(5,8)+msTier());
@@ -6190,6 +6236,11 @@ const MISSIONS=[
 
   {id:'airfield', name:'Airfield Raid', tokens:11, map:'hills', time:0,
    desc(){ return `Level all ${G.mission.goal} hangars on their forward field. It is defended.` },
+   brief:[
+     'Every hangar on the field has to come down. Leave one standing and the mission is not complete.',
+     'You are loaded with <b>rocket pods</b> — slot 3. They have splash, and they are what levels a building fastest.',
+     'The field is defended by guns that will be shooting back the whole time you are over it.',
+     'Do not press a run you have lost. Break off, come round, and set up again.'],
    setup(){
      const M=G.mission, me=G.me;
      const n=Math.min(7,rndi(3,5)+Math.round(msTier()*.5));
@@ -6216,6 +6267,11 @@ const MISSIONS=[
 
   {id:'weasel', name:'Wild Weasel', tokens:13, map:'isles', time:0,
    desc(){ return `Take out all ${G.mission.goal} SAM sites in the chain. They will see you coming.` },
+   brief:[
+     'A chain of SAM batteries across an island group. Every one of them has to go.',
+     'They reach two kilometres and they will launch long before you are in range of them.',
+     '<b>Flares (X) break a lock.</b> Carry some in reserve for the run in — you will need them on every pass.',
+     'Rockets and missiles both do the job. The water between the islands is somewhere to go low and disappear.'],
    setup(){
      const M=G.mission, me=G.me;
      const n=Math.min(9,3+Math.round(msTier()*.8)+rndi(0,1));
@@ -6248,6 +6304,11 @@ const MISSIONS=[
 
   {id:'escort', name:'Shepherd', tokens:14, map:'hills', time:0,
    desc(){ return 'Bring the transport home. It is slow, it is unarmed, and they know it is coming.' },
+   brief:[
+     'The transport flies itself home. Your job is to make sure it gets there.',
+     'It is slow and completely unarmed. <b>If it goes down, you have failed</b> — your own survival is not the point here.',
+     'Fighters will come for it, not for you. Stay between them and it rather than chasing kills.',
+     'Do not wander. Anything that slips past while you are away is going straight for the transport.'],
    setup(){
      const M=G.mission, me=G.me;
      const home=G.structures.find(s=>s.alive&&s.type==='hq'&&s.team===G.team);
@@ -6301,6 +6362,11 @@ const MISSIONS=[
 
   {id:'duel', name:'Their Best Pilot', tokens:15, map:'mesas', time:0,
    desc(){ return 'One of theirs, better than the rest, and a pair of wingmen. Kill all three.' },
+   brief:[
+     'Their best pilot, with two wingmen. <b>All three</b> have to come down.',
+     'The ace has roughly twice the hull of a wingman and flies far better. The wingmen are ordinary.',
+     'Take the wingmen first if you can — three onto one is a losing fight, and it is a shorter one than you think.',
+     'You are carrying the heavy cannon on slot 2. One burst of it is worth a long stream of machine gun fire.'],
    setup(){
      const M=G.mission, me=G.me;
      M.foes=[]; M.goal=3; M.killed=0;
@@ -6336,6 +6402,11 @@ const MISSIONS=[
 
   {id:'standoff', name:'Last Stand', tokens:12, map:'plains', time:0,
    desc(){ return `Hold the sky over your own base for ${Math.round(G.mission.time)} seconds. They keep coming.` },
+   brief:[
+     'A defensive job. You are not going anywhere — <b>survive the clock with your Command HQ still standing</b>.',
+     'They arrive in waves and they do not stop. Killing them all is not possible; outlasting them is.',
+     '<b>If the HQ falls, the mission is lost</b>, however well you are flying.',
+     'Stay over the base. Chasing a fight away from it leaves the next wave a clear run at the building.'],
    setup(){
      const M=G.mission, me=G.me;
      M.time=120+rndi(0,60)+msTier()*15;
@@ -6400,7 +6471,38 @@ function startMission(){
   $('mission').classList.add('on');
   $('msTitle').textContent=def.name;
   $('msDesc').textContent=def.desc();
-  toast('MISSION: '+def.name.toUpperCase()+(msLabel()?'  ·  '+msLabel():''),'gold',4);
+  showBriefing(def);
+}
+/* The world is built and the aircraft is on its mark, but the clock is not
+   running yet: hold everything until the briefing has been read. It is shown
+   after setup rather than before because half of these missions only know how
+   many hangars, or how long, once they have laid themselves out. */
+function briefOpen(){ const e=$('brief'); return !!e&&e.classList.contains('on') }
+function showBriefing(def){
+  G.paused=true;
+  const M=G.mission;
+  const mapName=(MAPS.find(m=>m.id===def.map)||{}).name||def.map||'—';
+  const mins=Math.max(1,Math.round((M.time||def.time||0)/60));
+  const meta=[
+    '<span>'+esc(String(mapName).toUpperCase())+'</span>',
+    '<span>'+(M.time?('TIME LIMIT '+mins+' MIN'):'NO TIME LIMIT')+'</span>',
+    '<span class="pay">'+msPay(def.tokens)+' TOKENS</span>'
+  ];
+  if(msLabel()) meta.push('<span class="tier">'+esc(msLabel())+'</span>');
+  $('bfTitle').textContent=def.name.toUpperCase();
+  $('bfMeta').innerHTML=meta.join('');
+  $('bfLead').textContent=def.desc();
+  const lines=def.brief||[];
+  $('bfList').innerHTML=lines.map(s=>'<li>'+s+'</li>').join('');
+  $('brief').classList.add('on');
+  try{ document.exitPointerLock(); }catch(e){}
+}
+function closeBriefing(){
+  $('brief').classList.remove('on');
+  G.paused=false;
+  canvas.requestPointerLock();
+  const def=G.mission&&G.mission.def;
+  if(def) toast('MISSION: '+def.name.toUpperCase()+(msLabel()?'  ·  '+msLabel():''),'gold',4);
   if(msTier()>0) toast(PROFILE.missions+' MISSIONS FLOWN — THEY ARE HARDER NOW, AND THEY PAY MORE','grn',5);
 }
 function updateMissionHUD(){
@@ -7147,6 +7249,8 @@ $('btnSettings2').onclick=()=>openSettings();
 $('btnSound2').onclick=()=>setMuted(!PROFILE.muted);
 $('btnResume').onclick=()=>togglePause();
 $('btnQuit').onclick=()=>quitToMenu();
+$('btnBrief').onclick=()=>closeBriefing();
+$('btnBriefBack').onclick=()=>{ $('brief').classList.remove('on'); G.paused=false; quitToMenu(); };
 $('btnMenu').onclick=()=>quitToMenu();
 $('btnAgain').onclick=()=>{
   $('over').classList.remove('on');
