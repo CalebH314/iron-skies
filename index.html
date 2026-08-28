@@ -1354,10 +1354,14 @@ function terrainH(x,z){
    every single frame. In a busy fight that was over half of all the simulation's
    time spent re-deriving a landscape that had not changed since the round began,
    and it got worse exactly as the shooting got heavier.
-   So it is sampled once into a grid and read back with a bilinear lookup. The
-   grid is twice as fine as the terrain mesh actually on screen, so an answer is
-   never coarser than the triangle it stands for. */
-const GH_N=449;                  // 2x the mesh's 224 cells, plus one for the far edge
+   So it is sampled once into a grid and read back with a bilinear lookup.
+   The grid deliberately matches the terrain mesh exactly — same spacing, same
+   corners — rather than being finer than it. Sampling finer than the mesh was a
+   mistake: it recorded ridges and hollows that are never drawn, so rounds and
+   aircraft collided with ground nobody could see. Matching it means what you
+   hit is what is on the screen, and mesh corners land on grid nodes exactly, so
+   the landscape you see is built from these very numbers. */
+const GH_N=225;                  // the mesh's 224 cells, plus one for the far edge
 let GH=null, GHstep=1;
 function buildHeightField(){
   GH=new Float32Array(GH_N*GH_N);
@@ -2819,6 +2823,12 @@ function simPlane(p,dt){
     p.respawn-=dt;
     if(p.respawn<=0){
       if(p.noRespawn){ G.planes.delete(p.id); return; }   // training drones stay down
+      // If its side is already at its ceiling, this one is retired instead of
+      // being put back in the air — the hangars decide what flies next. This is
+      // also what drains a sky that has somehow got above the cap already.
+      if(p.isBot&&!p.passive&&!G.tut&&!G.mission&&botsOn(p.team)>botCapFor(p.team)){
+        G.planes.delete(p.id); return;
+      }
       if(!hangarFor(p.team)&&!G.tut&&!G.mission){
         if(p.isLocal){ $('deadTitle').textContent='NO HANGARS LEFT';
           setTxt($('deadTxt'),'EVERY HANGAR ON YOUR SIDE IS DOWN — HOLD ON, ONE IS BEING REBUILT'); }
@@ -2958,6 +2968,38 @@ function hangarFor(team){
   if(G.eliminated&&G.eliminated[team]) return null;   // HQ gone: the side is finished
   const list=G.structures.filter(s=>s.alive&&s.type==='spawner'&&s.team===team);
   return list.length?list[rndi(0,list.length-1)]:null;
+}
+/* How many aircraft a side may have, and how many it actually has.
+   A shot-down aircraft counts against the ceiling for the five seconds it
+   spends waiting to come back, because it *is* coming back. Counting only the
+   living ones let a hangar see a free slot the instant somebody died, launch a
+   replacement, and then have the original respawn on top of it — so every
+   single kill quietly added one more aircraft to the world, for ever. Over a
+   long campaign level that ran into the thousands. */
+function botCapFor(team){
+  const foe=campaign()&&team!==G.team;
+  return foe?diff.cap():(campaign()?diff.myCap():STRUCTS.spawner.cap);
+}
+function botsOn(team){
+  let n=0;
+  for(const q of G.planes.values()) if(q.isBot&&q.team===team&&!q.passive) n++;
+  return n;
+}
+/* A new round reuses the pilots from the last one, which is fine, except that
+   nothing ever trimmed them: the survivors carried over, the rebuilt hangars
+   topped each side straight back up to full strength, and the round after that
+   did it again. Stack enough rounds of a long campaign on top of each other and
+   the sky ends up with thousands of aircraft in it. Cut every side back to its
+   ceiling before a new round starts. */
+function trimBots(){
+  for(const team of teamList()){
+    let over=botsOn(team)-botCapFor(team);
+    if(over<=0) continue;
+    for(const q of [...G.planes.values()]){
+      if(over<=0) break;
+      if(q.isBot&&!q.passive&&q.team===team){ G.planes.delete(q.id); over--; }
+    }
+  }
 }
 function doRespawn(p){
   const h=hangarFor(p.team);
@@ -3509,9 +3551,9 @@ function stepStructs(dt){
       if(s.cd<=0){
         const foe=campaign()&&s.team!==G.team;
         s.cd=cfg.cd*Math.pow(.8,G.hangarLvl[s.team]||0)*(foe?diff.hangarRate():1);
-        const cap=foe?diff.cap():(campaign()?diff.myCap():cfg.cap);
-        const up=[...G.planes.values()].filter(q=>q.isBot&&q.team===s.team&&q.alive&&!q.passive).length;
-        if(up<cap) spawnBotFrom(s);
+        // counts the ones waiting to respawn too, so a kill does not open a
+        // slot that its own casualty is about to walk back into
+        if(botsOn(s.team)<botCapFor(s.team)) spawnBotFrom(s);
       }
       continue;
     }
@@ -5102,6 +5144,7 @@ function resetRound(){
   G.pulses.length=0; G.empWarn=null; G.rings.length=0;
   applyTerrain();          // a new round is new ground and a new sky
   buildCompounds();
+  trimBots();              // before the revive, so nothing is put back only to be cut
   for(const p of G.planes.values()){ p.hp=p.maxHp; p.alive=true; doRespawn(p); }
   toast('NEW ROUND — GO','grn',3);
   net.send({t:'world',structs:G.structures.map(packStruct)});
