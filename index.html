@@ -3556,7 +3556,9 @@ function stepBullets(dt){
     if(authority()&&nearAnyBase(b.pos[0],b.pos[2],DOME_R+200)){
       for(const d of G.structures){
         if(!d.alive||d.type!=='dome'||d.team===b.team) continue;
-        if(segSphere(px,py,pz,b.pos,d.pos,DOME_R)){
+        // a widening beam is caught at the same reach the generic pass would
+        // have used, so nothing slips between the two
+        if(segSphere(px,py,pz,b.pos,d.pos,DOME_R+beamR(b))){
           hitDome(d,dmg*(b.antiStruct||1),b.owner);
           hit=true; hitPos=b.pos.slice();
           for(let e=0;e<2;e++) addPart(b.pos,[rnd(-12,12),rnd(2,16),rnd(-12,12)],[.45,.85,1],rnd(.6,1.6),rnd(.2,.5));
@@ -3570,6 +3572,12 @@ function stepBullets(dt){
     }
     if(!hit&&nearAnyBase(b.pos[0],b.pos[2],1500)) for(const s of myStructs){
       if(s.team===b.team) continue;
+      /* Never the dome here. The pass above owns it, and this one records the
+         impact at the structure's *centre* — which for a 340m shell is 340m
+         inside it, right on top of the HQ. A beam stopped by the shield was
+         planting its fire pool at the foot of the building it was supposed to
+         have been stopped from reaching, and burning it down through the shield. */
+      if(s.type==='dome') continue;
       const R=STRUCTS[s.type].r+4, cy=s.pos[1]+(STRUCTS[s.type].y||8);
       if(segSphere(px,py,pz,b.pos,[s.pos[0],cy,s.pos[2]],R+beamR(b))){
         if(!s.missileOnly) damageStruct(s,dmg*(b.antiStruct||1),b.owner);
@@ -3786,12 +3794,17 @@ function stepFires(dt){
     f.life-=dt; f.t+=dt;
     if(f.life<=0){ G.fires.splice(i,1); continue; }
     const fade=clamp(f.life/f.max,0,1);
+    /* A shield covers what is under it, and that includes against burning. A
+       pool alight outside the shell cannot reach through it, and one somehow
+       alight inside it belongs to whoever is sheltering there. */
     for(const p of myPlanes){
       if(p.team===f.team) continue;
+      if(shieldOver(p.pos,f.team)) continue;
       if(dist(p.pos,f.pos)<f.r+7) damagePlane(p,f.dps*fade*dt,f.owner);
     }
     for(const s of myStructs){
-      if(s.team===f.team) continue;
+      if(s.team===f.team||s.type==='dome') continue;
+      if(shieldOver(s.pos,f.team)) continue;
       const c=[s.pos[0],s.pos[1]+(STRUCTS[s.type].y||8),s.pos[2]];
       if(dist(c,f.pos)<f.r+STRUCTS[s.type].r) damageStruct(s,f.dps*fade*dt*2.5,f.owner);
     }
