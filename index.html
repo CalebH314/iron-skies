@@ -2202,7 +2202,7 @@ function buildTurrets(){
        touched. A dome is the answer to a nuke.
      — put on a Command HQ and it takes a tremendous piece out of the building
        and flattens whatever is standing near it. */
-const NUKE_AIR_R=900, NUKE_BLAST_R=560, NUKE_DMG=1100, NUKE_DOME_DMG=900;
+const NUKE_AIR_R=1500, NUKE_BLAST_R=1000, NUKE_DMG=3200, NUKE_DOME_DMG=2400;
 /* How high a warhead climbs before it goes anywhere. Well clear of the highest
    ground in the game — a canyon rim tops out at 980m — so the run across the
    map is over everything rather than through it. */
@@ -2296,7 +2296,7 @@ const SHOP=[
    desc:'The silo’s warhead, carried under your own aircraft. <b>One at a time, and one shot</b> — press <kbd>N</kbd> and it flies itself at the nearest enemy Command HQ. '+
         'Everything in the air within half a kilometre of where it goes off comes down, whichever side it belongs to; you are the only one it spares. '+
         'A force dome will stop it dead and take the damage itself, so break the shield first or you are throwing it away.',
-   eff:()=>`one warhead · ${Math.round(NUKE_AIR_R*NUKE_CARRY_R)} m airburst · ${NUKE_DMG*NUKE_CARRY_MUL} to a Command HQ`},
+   eff:()=>`one warhead · ${(NUKE_AIR_R*NUKE_CARRY_R/1000).toFixed(1)} km airburst · ${NUKE_DMG*NUKE_CARRY_MUL} to a Command HQ`},
   {id:'repairk',cat:'Airframe', name:'Field Repair Kit',max:99,cost:()=>320, repeat:true,
    desc:'Instantly patch your hull back to full, right now, mid-flight.', eff:()=>'Restores hull to 100%'},
 
@@ -2642,7 +2642,7 @@ try{ localStorage.removeItem('ironskies.board'); }catch(e){}   // retired featur
 const G={
   mode:'menu', started:false, t:0, dt:0,
   planes:new Map(), bullets:[], missiles:[], parts:[], structures:[],
-  me:null, myId:uid(), team:'blue', structDirty:true, fullT:0, snapN:0, emp:0, nukes:0, pulses:[], foeEmp:{}, foeEmpT:0, empWarn:null,
+  me:null, myId:uid(), team:'blue', structDirty:true, fullT:0, snapN:0, emp:0, nukes:0, pulses:[], blasts:[], foeEmp:{}, foeEmpT:0, empWarn:null,
   wxId:'clear', netWx:null, eliminated:{}, netLevel:null, netMap:null, hangarT:{}, hangarSaid:{},
   credits:600, kills:0, deaths:0, score:0,
   camMode:0, camPos:[0,120,300], camLook:[0,60,0],
@@ -3745,11 +3745,18 @@ function nukeBlast(m,myPlanes,myStructs){
   const airR=NUKE_AIR_R*(big?NUKE_CARRY_R:1);
   const blastR=NUKE_BLAST_R*(big?NUKE_CARRY_R:1);
   const dmg=(m.dmg||NUKE_DMG);
-  explode(m.pos,big?130:90,big?4.8:3.4);
-  sfxAt('boom',m.pos,1); sfx('boom',big?1.2:.9);
-  for(let e=0;e<(big?64:44);e++)
-    addPart(m.pos,[rnd(-160,160)*(big?1.4:1),rnd(10,220),rnd(-160,160)*(big?1.4:1)],
-      Math.random()<.5?[1,.62,.16]:[1,.93,.62],rnd(3.0,7.5),rnd(1.6,3.6));
+  /* The fireball itself: a sphere that opens out to the full kill radius over
+     about a second and hangs there going dark, with a column climbing out of the
+     top of it. The old version was a shower of particles, which at this size was
+     a puff of confetti in the middle of a mile-wide blast — you could not see
+     where the thing had actually reached. */
+  G.blasts.push({pos:m.pos.slice(),t:0,life:big?4.2:3.4,R:airR});
+  WX.flash=Math.max(WX.flash,big?1:.85);
+  explode(m.pos,big?90:70,big?14:10);
+  sfxAt('boom',m.pos,1); sfx('boom',big?1.3:1);
+  for(let e=0;e<(big?40:30);e++)
+    addPart(m.pos,[rnd(-260,260)*(big?1.5:1),rnd(40,420),rnd(-260,260)*(big?1.5:1)],
+      Math.random()<.5?[1,.62,.16]:[1,.93,.62],rnd(9,22),rnd(2.4,4.6));
   for(const p of myPlanes){
     if(!p.alive||p.id===m.owner) continue;
     if(dist(p.pos,m.pos)<airR){
@@ -5158,6 +5165,33 @@ function render(){
     gl.depthMask(true); gl.disable(gl.BLEND); gl.enable(gl.CULL_FACE);
   }
 
+  /* --- nuclear fireballs ---
+     Opens out to the full kill radius in about a second, then hangs and goes
+     dark over the next few. Drawn as nested shells like the pulse is, but
+     white-hot in the middle and falling through orange to a black smoke ball,
+     so at a glance you can see both how far it reached and how long ago. */
+  if(G.blasts.length){
+    gl.enable(gl.BLEND); gl.depthMask(false); gl.disable(gl.CULL_FACE);
+    for(const b of G.blasts){
+      const k=clamp(b.t/b.life,0,1);
+      const grow=1-Math.pow(1-clamp(b.t/(b.life*.30),0,1),3);   // fast, then eases
+      const r=b.R*(.12+.88*grow);
+      const fade=Math.pow(1-k,1.5);
+      const LAYERS=Math.max(3,gfx().layers);
+      for(let i=0;i<LAYERS;i++){
+        const rr=Math.max(8,r*(1-i*.11));
+        // the core stays hot longest; the outside is smoke almost at once
+        const heat=clamp(1-k*1.5-i*.16,0,1);
+        const col=[.20+heat*.80, .12+heat*.72, .12+heat*.42];
+        const a=(i===0?.55:.36*(1-i/LAYERS))*fade;
+        M4.trans(model,b.pos[0],b.pos[1]+r*.35,b.pos[2]);
+        M4.mul(model,model,M4.scl(tmpM,rr,rr*.86,rr));
+        draw(MESH.shell,model,{unlit:true,alpha:a,tint:col});
+      }
+    }
+    gl.depthMask(true); gl.disable(gl.BLEND); gl.enable(gl.CULL_FACE);
+  }
+
   drawWeather();          // over the whole scene, under the cockpit glass
 
   /* --- cockpit interior ---
@@ -5703,6 +5737,25 @@ function firePulse(origin,R,D,team){
   sfx('boom',1.15); sfxAt('boom',origin,1.1);
   return P;
 }
+/* The fireball left by a warhead. Purely something to look at — every scrap of
+   damage was already dealt the instant it went off — but it is what tells you
+   how far the thing actually reached, which at this size is most of what you
+   want to know. */
+function stepBlasts(dt){
+  for(let i=G.blasts.length-1;i>=0;i--){
+    const b=G.blasts[i];
+    b.t+=dt;
+    if(b.t>=b.life){ G.blasts.splice(i,1); continue; }
+    // a column of smoke and fire climbing out of the top of it
+    const k=b.t/b.life;
+    if(k<.55&&Math.random()<dt*26){
+      const rr=b.R*(.10+k*.30);
+      addPart([b.pos[0]+rnd(-rr,rr),b.pos[1]+b.R*(.25+k*1.5),b.pos[2]+rnd(-rr,rr)],
+        [rnd(-24,24),rnd(30,120),rnd(-24,24)],
+        Math.random()<.45?[1,.55,.14]:[.42,.40,.42], rnd(16,42), rnd(2.2,4.4));
+    }
+  }
+}
 function stepPulses(dt){
   for(let i=G.pulses.length-1;i>=0;i--){
     const P=G.pulses[i];
@@ -5907,7 +5960,7 @@ function resetRound(){
   $('over').classList.remove('on');
   G.structures.length=0; structSlot=teamMap(0); hangarSlot=teamMap(0); nukeSlot={}; G.eliminated={}; G.hangarSaid={};
   G.bullets.length=0; G.missiles.length=0; G.parts.length=0; G.fires.length=0;
-  G.pulses.length=0; G.empWarn=null; G.rings.length=0;
+  G.pulses.length=0; G.blasts.length=0; G.empWarn=null; G.rings.length=0;
   applyTerrain();          // a new round is new ground and a new sky
   buildCompounds();
   trimBots();              // before the revive, so nothing is put back only to be cut
@@ -5933,7 +5986,7 @@ function quitToMenu(){
   for(let i=0;i<3;i++) FOG[i]=WEATHERS[0].fog[i];
   if(gl&&U&&U.uFogCol) gl.uniform3fv(U.uFogCol,FOG);
   { const el=$('wxflash'); if(el) el.style.opacity=0; }
-  G.me=null; G.roster=[]; G.emp=0; G.nukes=0; G.pulses.length=0; G.foeEmp={}; G.foeEmpT=0; G.empWarn=null; G.netLevel=null; G.netMap=null; G.netWx=null; G.hangarT={}; G.hangarSaid={}; G.credits=600; G.kills=0; G.deaths=0; G.score=0; G.camMode=0;
+  G.me=null; G.roster=[]; G.emp=0; G.nukes=0; G.pulses.length=0; G.blasts.length=0; G.foeEmp={}; G.foeEmpT=0; G.empWarn=null; G.netLevel=null; G.netMap=null; G.netWx=null; G.hangarT={}; G.hangarSaid={}; G.credits=600; G.kills=0; G.deaths=0; G.score=0; G.camMode=0;
   baseBarEls.forEach(el=>el.classList.remove('on'));
   tagEls.forEach(el=>el.remove()); tagEls.clear();
   for(const id of ['pause','over','shop','dead','tut','mission']) $(id).classList.remove('on');
@@ -7884,7 +7937,7 @@ function frame(now){
     }
     stepMission(dt);
     stepWeather(dt);
-    stepPulses(dt); stepEMPCharge(dt); sweepWrecks(dt);
+    stepPulses(dt); stepBlasts(dt); stepEMPCharge(dt); sweepWrecks(dt);
     musicTick();
     netTick(dt);
     updateCamera(dt);
