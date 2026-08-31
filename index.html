@@ -2223,7 +2223,7 @@ const STRUCTS={
   flak:   {name:'Flak Cannon',      hp:280,  cost:1100, range:1000, r:11, y:6,  turret:'flak', cd:0.26, dmg:8,
            short:'FLAK', desc:'Twin rapid-fire AA guns. Shreds anything that gets close to the base.'},
   radar:  {name:'Radar Dish',       hp:220,  cost:700,  range:2800, r:10, y:14, turret:'radar',
-           short:'RADAR', desc:'Paints every enemy inside 2.8&nbsp;km on your minimap and sharpens SAM lock-on.'},
+           short:'RADAR', desc:'Paints enemy aircraft on your <b>cockpit scope</b> out to its full range — without one your own sensors only see about a kilometre. Your minimap shows the whole field either way.'},
   repair: {name:'Repair Pad',       hp:260,  cost:850,  range:340,  r:24, y:2,  turret:null, heal:16,
            short:'REPAIR PAD', desc:'Friendly aircraft flying low over the pad repair and rearm rapidly.'},
   dome:   {name:'Force Dome',       short:'DOME', hp:2200, cost:0, range:0, r:DOME_R, y:0, turret:null,
@@ -3858,8 +3858,9 @@ function stepMissiles(dt){
     m.pos[0]+=m.vel[0]*dt; m.pos[1]+=m.vel[1]*dt; m.pos[2]+=m.vel[2]*dt;
     // a warhead lays a heavy column of smoke you can follow right across the map
     if(m.nuke){
-      if(Math.random()<dt*20)
-        addPart(m.pos,[rnd(-11,11),rnd(-4,13),rnd(-11,11)],[.88,.88,.92],rnd(2.8,4.8),rnd(1.3,2.1));
+      if(Math.random()<dt*(m.arc?30:20))
+        addPart(m.pos,[rnd(-13,13),rnd(-4,15),rnd(-13,13)],[.90,.90,.94],
+          rnd(4.5,8.5)*(m.arc?1.5:1),rnd(1.6,2.6));
     }
     else if(Math.random()<dt*45) addPart(m.pos,[rnd(-4,4),rnd(-2,6),rnd(-4,4)],[.85,.85,.9],.45,rnd(.9,2.0));
 
@@ -4983,9 +4984,32 @@ function render(){
   for(const m of G.missiles){
     const l=Math.hypot(...m.vel)||1;
     const q=qLookDir([0,0,0,1],[m.vel[0]/l,m.vel[1]/l,m.vel[2]/l],[0,1,0]);
-    // a warhead has a body of its own, built at the size it deserves
-    M4.fromRTS(model,q,m.pos,1);
-    draw(m.nuke?MESH.nuke:MESH.missile,model,{});
+    if(!m.nuke){
+      M4.fromRTS(model,q,m.pos,1);
+      draw(MESH.missile,model,{});
+      continue;
+    }
+    /* A warhead is meant to be watchable from anywhere on the field, and the
+       field is eleven kilometres across — at that range anything drawn at its
+       true size is a couple of pixels. So it is grown with distance, the same
+       trick the tracers use: full size in close, and beyond that it holds a
+       constant angle on screen instead of shrinking away to nothing. One out of
+       a silo is drawn larger again, because that is the one you are meant to
+       see coming from the other end of the map. */
+    const md=dist(m.pos,G.camPos);
+    const sc=(m.arc?2.1:1.5)*clamp(md/1800,1,7);
+    M4.fromRTS(model,q,m.pos,sc);
+    draw(MESH.nuke,model,{});
+    // the motor, burning hard enough to spot on its own
+    gl.enable(gl.BLEND); gl.depthMask(false);
+    const fl=.85+Math.random()*.30;
+    for(const [len,wid,col,a] of [[34,13,[1,.45,.10],.30],[22,8.5,[1,.72,.24],.55],[13,4.6,[1,.96,.72],1]]){
+      const o=qrot([0,0,0],[0,0,(14+len*.5)*sc],q);
+      M4.fromRTS(model,q,[m.pos[0]+o[0],m.pos[1]+o[1],m.pos[2]+o[2]],1);
+      M4.mul(model,model,M4.scl(tmpM,wid*sc*fl,wid*sc*fl,len*sc*fl));
+      draw(MESH.cube,model,{unlit:true,tint:col,alpha:a});
+    }
+    gl.depthMask(true); gl.disable(gl.BLEND);
   }
   // --- shield domes ---
   gl.enable(gl.BLEND); gl.depthMask(false); gl.disable(gl.CULL_FACE);
@@ -5466,7 +5490,6 @@ function drawMini(){
     mc.lineWidth=1.5;
     mc.beginPath(); mc.arc(x,y,Math.max(3,W*(DOME_R/(WORLD*2))),0,7); mc.stroke();
   }
-  const hasRadar=G.structures.some(s=>s.alive&&s.type==='radar'&&s.team===p.team);
   // structures
   for(const s of G.structures){
     if(!s.alive||s.type==='dome') continue;
@@ -5486,14 +5509,22 @@ function drawMini(){
     mc.fillStyle='#ffd451';
     mc.beginPath(); mc.arc(x,y,2.6,0,7); mc.fill();
   }
-  // everything flying, yours and theirs
+  /* Everything flying, wherever it is. This used to hide any enemy more than
+     900m off unless you had bought a radar dish, which on a chart of the whole
+     map meant they simply appeared out of nowhere once they were already on top
+     of you — the one moment the chart was no longer any use to you. The dish
+     still earns its keep on the cockpit scope, which is the display that is
+     actually about detection. */
   for(const q of G.planes.values()){
     if(!q.alive||q===p) continue;
     const friendly=q.team===p.team;
-    if(!friendly&&!hasRadar&&dist(q.pos,p.pos)>900) continue;
     const [x,y]=map(q.pos[0],q.pos[2]);
     mc.fillStyle=friendly?'#7fe6c0':teamHex(q.team);
-    mc.beginPath(); mc.arc(x,y,2.8,0,7); mc.fill();
+    mc.beginPath(); mc.arc(x,y,friendly?2.6:3.2,0,7); mc.fill();
+    if(!friendly){                       // a ring, so hostiles read at a glance
+      mc.strokeStyle='rgba(255,255,255,.45)'; mc.lineWidth=1;
+      mc.beginPath(); mc.arc(x,y,4.6,0,7); mc.stroke();
+    }
   }
   // and you, pointed the way you are actually flying
   const f=fwdOf(p,[0,0,0]);
