@@ -204,6 +204,13 @@ kbd{background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.16);bord
 /* must outrank #menu and #pause, which are declared later in the document and
    would otherwise paint over it at the same stacking level */
 #settings{z-index:30}
+/* Asking before something irreversible. Above the settings panel it is asked
+   from, because it is a question about what is behind it. */
+#confirm{z-index:40}
+#confirm .mid{max-width:470px;text-align:left;padding:26px 28px}
+#confirm h2{font-size:20px;letter-spacing:3px;color:#ff8a7a;margin-bottom:10px}
+#confirm p{font-size:13px;color:#c9d8e8;line-height:1.65}
+#confirm .btns{margin-top:20px;display:flex;gap:10px}
 #settings .box{width:min(620px,94vw);padding:28px 32px;max-height:92vh;overflow-y:auto}
 .srow{padding:14px 0;border-bottom:1px solid rgba(110,180,255,.12)}
 .srow:last-child{border-bottom:none}
@@ -502,8 +509,10 @@ td{padding:6px 8px;border-bottom:1px solid rgba(255,255,255,.045)}
     <div class="srow">
       <h4>ACCOUNT</h4>
       <p id="acctLine"></p>
+      <p id="btnMissionsLine" style="font-size:11px;color:#8fa8c4;margin:2px 0 8px"></p>
       <div class="seg">
         <button class="danger" id="btnResetLevel">RESET CAMPAIGN LEVEL</button>
+        <button class="danger" id="btnResetMissions">RESET MISSION PROGRESS</button>
         <button class="danger" id="btnResetAll">ERASE ALL PROGRESS</button>
       </div>
     </div>
@@ -524,6 +533,17 @@ td{padding:6px 8px;border-bottom:1px solid rgba(255,255,255,.045)}
       <button class="sndbtn" id="btnSound2">SOUND: ON</button>
       <button id="btnSettings2">SETTINGS</button>
       <button id="btnQuit">EXIT TO MENU</button>
+    </div>
+  </div>
+</div>
+
+<div id="confirm" class="ovl">
+  <div class="mid panel">
+    <h2 id="cfTitle">ARE YOU SURE?</h2>
+    <p id="cfBody"></p>
+    <div class="btns">
+      <button class="danger" id="cfYes">CONFIRM</button>
+      <button id="cfNo">CANCEL</button>
     </div>
   </div>
 </div>
@@ -1287,7 +1307,11 @@ const MAPS=[
   {id:'sea',   name:'OPEN SEA',   note:'Blue water from edge to edge. Each side flies off a carrier — the deck is the whole base, and there is nowhere else to put down.'},
   {id:'mesas', name:'MESA COUNTRY',note:'Flat-topped buttes standing out of the desert. Cover if you fly low enough to use it, and hard edges if you do not.'},
   {id:'isles', name:'ISLAND CHAIN',note:'Scattered islands in deep water. Land where you can find it, sea everywhere else, and somewhere to dive if a pulse is coming.'},
-  {id:'basin', name:'GREAT BASIN', note:'A broad bowl ringed by high ground, with a lake in the bottom of it. Everything funnels toward the middle.'}
+  {id:'basin', name:'GREAT BASIN', note:'A broad bowl ringed by high ground, with a lake in the bottom of it. Everything funnels toward the middle.'},
+  {id:'dunes', name:'DUNE SEA',    note:'Long parallel sand ridges running across your path. Nothing tall, but nothing flat either — fly it low and you are threading the troughs the whole way.'},
+  {id:'fjord', name:'FJORDS',      note:'Deep sea inlets cut between sheer headlands. Water down every channel to dive into, rock down both sides of it, and no way across the high ground in a hurry.'},
+  {id:'craters',name:'THE BREAKS', note:'Ground blown into overlapping craters, rim on rim. Broken cover everywhere and a floor that is never where you expect it.'},
+  {id:'plateau',name:'HIGH TABLE', note:'One enormous flat-topped massif standing across the middle of the map, sheer down every side. Climb over the table in the open, or take the long way round it.'}
 ];
 function setTerrain(lv,kind){
   if(kind===true) kind='canyon';
@@ -1300,6 +1324,10 @@ function setTerrain(lv,kind){
   TERRAIN.mesas=kind==='mesas';
   TERRAIN.isles=kind==='isles';
   TERRAIN.basin=kind==='basin';
+  TERRAIN.dunes=kind==='dunes';
+  TERRAIN.fjord=kind==='fjord';
+  TERRAIN.craters=kind==='craters';
+  TERRAIN.plateau=kind==='plateau';
   TERRAIN.amp=kind==='plains'?.22:1;           // how much of the rolling ground survives
   // The mesa used to top the flight ceiling, which made the trench the only
   // way through at all. It now tops out well below it: climbing over is a real
@@ -1355,6 +1383,54 @@ function terrainH(x,z){
     const f=q*4, idx=Math.floor(f), frac=f-idx;
     const w=clamp(frac*9,0,1), ws=w*w*(3-2*w);        // sheer for the first ninth
     h=30+120*(Math.min(idx,3)+ws*(idx<3?1:0));
+  }else if(TERRAIN.dunes){
+    /* Long parallel sand ridges. A single low frequency across one axis gives
+       the marching crests; wandering that axis with a slow noise stops them
+       being a corrugated iron roof, and a little of the base relief keeps the
+       whole field from being perfectly repetitive. */
+    const wander=vnoise((x+ox)/2600+31,(z+oz)/2600+17)*900;
+    const ridge=Math.sin((z+oz+wander)/300)*.5+.5;
+    h=46+Math.pow(ridge,1.5)*250+(h-52)*.16;
+  }else if(TERRAIN.fjord){
+    /* Sea inlets cut into high ground. The land is tall by default and the
+       channels are carved out of it where a ridged noise runs low, so you get
+       sheer headlands with deep water winding between them. */
+    const a=vnoise((x+ox)/1400+7,(z+oz)/1400+29);
+    const b2=vnoise((x+ox)/520+13,(z+oz)/520+3);
+    const cut=Math.abs(a*.68+b2*.32-.5)*2;            // 0 along the channel lines
+    const land=clamp((cut-0.22)/0.34,0,1);
+    h=lerp(-210, 300+(h-52)*.45, land*land*(3-2*land));
+  }else if(TERRAIN.craters){
+    /* Overlapping blast craters. Each cell of a coarse grid gets one crater at
+       a jittered centre; a bowl inside its radius with a raised rim at the lip,
+       and the deepest of the overlapping ones wins so the rims read as ridges
+       between neighbouring holes. */
+    const CS=620;
+    const gx=Math.floor((x+ox)/CS), gz=Math.floor((z+oz)/CS);
+    let dent=0, rim=0;
+    for(let i=-1;i<=1;i++)for(let j=-1;j<=1;j++){
+      const cx0=gx+i, cz0=gz+j;
+      const jx=(hash2(cx0*2.1,cz0*3.7)-.5)*CS*.7;
+      const jz=(hash2(cx0*5.3,cz0*1.9)-.5)*CS*.7;
+      const cx=(cx0+.5)*CS+jx-ox, cz=(cz0+.5)*CS+jz-oz;
+      const rad=170+hash2(cx0*7.1,cz0*4.3)*190;
+      const d=Math.hypot(x-cx,z-cz)/rad;
+      if(d>1.35) continue;
+      if(d<1){ dent=Math.min(dent,-(1-d*d)*(90+hash2(cx0*1.3,cz0*6.7)*90)); }
+      const lip=1-Math.abs(d-1)/.35;                  // a raised lip at the edge
+      if(lip>0) rim=Math.max(rim,lip*lip*70);
+    }
+    h=70+(h-52)*.30+dent+rim;
+  }else if(TERRAIN.plateau){
+    /* One enormous flat-topped massif standing across the middle of the map,
+       with the bases out on the low ground at either end. Level on top, sheer
+       down the sides, so you either climb over the table or go round it. It has
+       to sit in the midfield rather than under the compounds: a base is always
+       at BASE_Y, and everything that flies assumes it. */
+    const r=Math.hypot(x*.72,z)/(WORLD*.52);
+    const e=clamp((1-r)/.16,0,1);                     // 1 on top, 0 off the edge
+    const s=e*e*(3-2*e);
+    h=lerp(40+(h-52)*.25, 520+(h-52)*.15, s);
   }
   if(TERRAIN.trench){
     // raise the whole midfield into a plateau, then cut the trench back out
@@ -1398,7 +1474,7 @@ function terrainH(x,z){
   // then straight over the side, because a carrier has no beach.
   for(const k in BASES){
     const b=BASES[k], d=Math.hypot(x-b[0],z-b[2]);
-    if(TERRAIN.isles||TERRAIN.basin){
+    if(TERRAIN.isles||TERRAIN.basin||TERRAIN.fjord){
       // an island big enough to hold a base, cut out of whatever is there
       if(d<520) h=Math.max(h,BASE_Y);
       if(d<430) h=BASE_Y;
@@ -2294,6 +2370,16 @@ function loadProfile(){
     saveProfile();
   }
 }
+/* Mission progress on its own. Contracts get harder and pay more the more of
+   them you fly, and that count is the only thing driving it — so putting it back
+   to zero puts the contracts back to their first tier without touching the
+   campaign, the tokens or anything bought with them. The running order is
+   reshuffled too, or you would carry on from wherever the old bag had got to. */
+function resetMissions(){
+  PROFILE.missions=0;
+  missionBag.length=0;
+  saveProfile(); renderPerm(); renderSettings();
+}
 function resetProfile(all){
   PROFILE.level=1;
   if(all){
@@ -2854,6 +2940,13 @@ const keys={}, stick={x:0,y:0};
 let mouseLocked=false;
 addEventListener('keydown',e=>{
   keys[e.code]=true;
+  // A question about something irreversible answers to ESCAPE before anything
+  // else does, and it is asked from the menu as often as from a running round,
+  // so this sits above the "not playing yet" gate below.
+  if(confirmOpen()){
+    if(e.code==='Escape'){ e.preventDefault(); closeConfirm(); }
+    return;
+  }
   if(e.code==='KeyM'){ setMuted(!PROFILE.muted); }
   if(!G.started) return;
   /* Reading the briefing. Nothing else may act on a key while it is up — Enter
@@ -5282,7 +5375,7 @@ function drawMini(){
   // world (-WORLD..WORLD on both axes) straight onto the square, north up
   const map=(wx,wz)=>[PAD+(wx+WORLD)/(WORLD*2)*W, PAD+(wz+WORLD)/(WORLD*2)*W];
   // the sea, where there is any, so the chart reads as this map and not just any
-  if(TERRAIN.sea||TERRAIN.isles||TERRAIN.basin){
+  if(TERRAIN.sea||TERRAIN.isles||TERRAIN.basin||TERRAIN.fjord){
     mc.fillStyle='rgba(20,60,110,.45)'; mc.fillRect(PAD,PAD,W,W);
   }
   // a grid to judge distance by, and the edge of the playable area
@@ -6455,6 +6548,176 @@ const MISSIONS=[
    won(){ return G.mission.killed>=G.mission.goal },
    label(){ return G.mission.killed+' / '+G.mission.goal+' SAM sites down' }},
 
+  {id:'silo', name:'Counterforce', tokens:16, map:'dunes', time:0,
+   desc(){ return `${G.mission.goal} live silos, already counting down. Your own HQ is what they are counting down to.` },
+   brief:[
+     'Their silos are armed and firing on your Command HQ. Every one of them has to be flattened.',
+     'They stand <b>outside</b> the shield, which is the only reason this is possible at all — go straight at them.',
+     'Every minute one of them is still standing is another pair of warheads walking toward your base.',
+     '<b>If your HQ falls, you have failed.</b> This is a race, not a patrol — do not stop to dogfight.'],
+   setup(){
+     const M=G.mission, me=G.me;
+     const n=Math.min(6,2+Math.round(msTier()*.6)+rndi(0,1));
+     M.goal=n; M.killed=0; M.silos=[];
+     const foe=foeBaseOf(G.team);
+     for(let i=0;i<n;i++){
+       const st=addStruct('nuke',foe,null);
+       st.hp=st.maxHp=Math.round(STRUCTS.nuke.hp*msScale());
+       st.cd=rnd(12,30);                       // already part way through a cycle
+       M.silos.push(st);
+     }
+     M.hq=G.structures.find(s=>s.alive&&s.type==='hq'&&s.team===G.team);
+     me.upg={mg:2,rocket:2,missile:2,flare:2,engine:1};
+     applyUpgrades(me); rearm(me); me.wep='rocket';
+     const b=BASES[G.team];
+     me.pos=[b[0],620,b[2]]; me.speed=250; me.thr=1;
+     const to=[BASES[foe][0]-b[0],0,BASES[foe][2]-b[2]], l=Math.hypot(to[0],to[2])||1;
+     qLookDir(me.quat,[to[0]/l,0,to[2]/l],[0,1,0]);
+     M.time=Math.round(150+n*40);
+     ringAt(M.silos[0].pos,[0,0,1]);
+     updateWeps();
+   },
+   tick(){
+     const M=G.mission;
+     M.killed=M.silos.filter(s=>!s.alive).length;
+     const next=M.silos.find(s=>s.alive);
+     if(next&&(!G.rings[0]||dist(G.rings[0].pos,next.pos)>5)){ G.rings.length=0; ringAt(next.pos,[0,0,1]); }
+   },
+   progress(){ return clamp(G.mission.killed/G.mission.goal,0,1) },
+   won(){ return G.mission.killed>=G.mission.goal },
+   fail(){ const M=G.mission; return !!(M.hq&&!M.hq.alive) },
+   label(){ const M=G.mission;
+     return M.killed+' / '+M.goal+' silos down'+(M.hq?'  ·  HQ '+Math.max(0,Math.round(M.hq.hp)):'') }},
+
+  {id:'domebreak', name:'Breaking the Shield', tokens:18, map:'plateau', time:0,
+   desc(){ return G.mission.phase==='dome'
+     ? 'Their HQ is under a force dome. Beat the shield down before you can touch the building.'
+     : 'The shield is down. Finish the Command HQ.' },
+   brief:[
+     'Their Command HQ sits under a force dome, and while it stands nothing you carry can reach the building.',
+     'The shield soaks everything — guns, rockets, missiles, fire. It has to come down first, and it has a lot in it.',
+     'You are loaded heavy for it. Keep the pressure on rather than making one pass and leaving.',
+     'Once the shell breaks, <b>the HQ is bare</b> — and that is what you are actually here for.'],
+   setup(){
+     const M=G.mission, me=G.me;
+     const foe=foeBaseOf(G.team);
+     M.phase='dome';
+     let d=domeOf(foe); if(!d) d=addStruct('dome',foe);
+     d.hp=d.maxHp=Math.round(2600*msScale());
+     M.dome=d;
+     M.hq=G.structures.find(s=>s.alive&&s.type==='hq'&&s.team===foe);
+     M.hq.hp=M.hq.maxHp=Math.round(3400*msScale());
+     me.upg={mg:2,cannon:2,rocket:2,missile:2,flare:2,engine:1};
+     applyUpgrades(me); rearm(me); me.wep='rocket';
+     const b=BASES[G.team];
+     me.pos=[b[0],700,b[2]]; me.speed=250; me.thr=1;
+     const to=[BASES[foe][0]-b[0],0,BASES[foe][2]-b[2]], l=Math.hypot(to[0],to[2])||1;
+     qLookDir(me.quat,[to[0]/l,0,to[2]/l],[0,1,0]);
+     M.time=Math.round(200+70*msScale());
+     ringAt(M.hq.pos,[0,0,1]);
+     updateWeps();
+   },
+   tick(){
+     const M=G.mission;
+     if(M.phase==='dome'&&M.dome&&!M.dome.alive){
+       M.phase='hq';
+       toast('THE SHIELD IS DOWN — FINISH THE HQ','gold',3.4);
+     }
+   },
+   progress(){ const M=G.mission;
+     const dw=M.dome?clamp(1-M.dome.hp/M.dome.maxHp,0,1):1;
+     const hw=M.hq?clamp(1-M.hq.hp/M.hq.maxHp,0,1):1;
+     return clamp(dw*.55+hw*.45,0,1) },
+   won(){ return !!(G.mission.hq&&!G.mission.hq.alive) },
+   label(){ const M=G.mission;
+     return M.phase==='dome'
+       ? 'shield '+Math.max(0,Math.round(M.dome?M.dome.hp:0))+' left'
+       : 'HQ '+Math.max(0,Math.round(M.hq?M.hq.hp:0))+' left' }},
+
+  {id:'gauntlet', name:'Low Level', tokens:12, map:'fjord', time:0,
+   desc(){ return `Thread all ${G.mission.goal} gates down the inlets. They are hunting you the whole way.` },
+   brief:[
+     'A navigation run at low level, gate to gate down the sea inlets, against the clock.',
+     'The next gate is always ringed ahead of you. Fly <b>through</b> it — going round does not count.',
+     'They have fighters up looking for you. You are not here to fight them, and turning to will cost you the clock.',
+     'The water is right there under you the whole way, if something worse than a fighter turns up.'],
+   setup(){
+     const M=G.mission, me=G.me;
+     const n=Math.min(10,4+Math.round(msTier()*.7));
+     M.goal=n; M.ring=0; M.gates=[];
+     // a course strung down the map, low, following whatever water it can find
+     for(let i=0;i<n;i++){
+       const z=-2600+(5200*i/(n-1||1))+rnd(-260,260);
+       const x=rnd(-2400,2400);
+       M.gates.push([x,Math.max(SEA,groundH(x,z))+rnd(120,220),z]);
+     }
+     me.upg={mg:2,missile:1,flare:2,engine:2}; applyUpgrades(me); rearm(me); me.wep='mg';
+     me.pos=[M.gates[0][0],M.gates[0][1]+180,M.gates[0][2]-700]; me.speed=260; me.thr=1;
+     qLookDir(me.quat,[0,0,1],[0,1,0]);
+     // a few hunters, enough to be a nuisance rather than a fight
+     M.foes=[];
+     for(let i=0;i<Math.min(6,2+msTier());i++){
+       const q=newPlane({name:botName(),team:'red',isBot:true,role:'ace',noRespawn:true});
+       q.upg={mg:2,engine:1,flare:1}; applyUpgrades(q); rearm(q);
+       q.pos=[rnd(-2200,2200),rnd(500,900),rnd(-2200,2200)];
+       q.speed=205; q.thr=1; q.alive=true; q.cruiseY=q.pos[1];
+       G.planes.set(q.id,q); M.foes.push(q);
+     }
+     M.time=Math.round(46+n*17);
+     G.rings.length=0; ringAt(M.gates[0],[0,0,1]);
+     updateWeps();
+   },
+   tick(){
+     const M=G.mission, me=G.me;
+     if(M.ring>=M.goal||!me||!me.alive) return;
+     if(dist(me.pos,M.gates[M.ring])<130){
+       M.ring++;
+       sfx('buy',.6);
+       if(M.ring<M.goal){ G.rings.length=0; ringAt(M.gates[M.ring],[0,0,1]); }
+       else { G.rings.length=0; toast('COURSE COMPLETE','grn',3); }
+     }
+   },
+   progress(){ return clamp(G.mission.ring/G.mission.goal,0,1) },
+   won(){ return G.mission.ring>=G.mission.goal },
+   label(){ return G.mission.ring+' / '+G.mission.goal+' gates' }},
+
+  {id:'exfil', name:'Run For Home', tokens:15, map:'craters', time:0,
+   desc(){ return 'You are deep over their ground with a broken aircraft. Get back to your own base.' },
+   brief:[
+     'You start over <b>their</b> base, badly shot up, with everything they have coming after you.',
+     'This is not a fight you can win. Point it at home and go.',
+     'Your hull is what it is — there is no repairing it out here, and it will not take much more.',
+     'Cross into your own compound and you are done. Anything else and you are not.'],
+   setup(){
+     const M=G.mission, me=G.me;
+     const foe=foeBaseOf(G.team);
+     const fb=BASES[foe], hb=BASES[G.team];
+     M.home=[hb[0],hb[1],hb[2]];
+     me.upg={mg:1,flare:2,engine:2}; applyUpgrades(me); rearm(me); me.wep='mg';
+     me.hp=Math.max(24,Math.round(me.maxHp*(.34-msTier()*.02)));   // limping, and worse later on
+     me.pos=[fb[0]+rnd(-260,260),620,fb[2]+rnd(-260,260)];
+     const to=[hb[0]-me.pos[0],0,hb[2]-me.pos[2]], l=Math.hypot(to[0],to[2])||1;
+     qLookDir(me.quat,[to[0]/l,0,to[2]/l],[0,1,0]);
+     me.speed=250; me.thr=1;
+     M.foes=[];
+     for(let i=0;i<Math.min(10,4+msTier());i++){
+       const q=newPlane({name:botName(),team:foe,isBot:true,role:'ace',noRespawn:true});
+       q.upg={mg:2,engine:1,flare:1}; applyUpgrades(q); rearm(q);
+       const a=i/6*Math.PI*2;
+       q.pos=[fb[0]+Math.cos(a)*rnd(500,1100),rnd(500,860),fb[2]+Math.sin(a)*rnd(500,1100)];
+       q.speed=215; q.thr=1; q.alive=true; q.cruiseY=q.pos[1];
+       G.planes.set(q.id,q); M.foes.push(q);
+     }
+     M.d0=dist(me.pos,M.home);
+     M.time=Math.round(120+40*msScale());
+     G.rings.length=0; ringAt(M.home,[0,0,1]);
+     updateWeps();
+   },
+   progress(){ const M=G.mission;
+     return clamp(1-dist(G.me.pos,M.home)/Math.max(1,M.d0),0,1) },
+   won(){ return dist(G.me.pos,G.mission.home)<420 },
+   label(){ return Math.round(dist(G.me.pos,G.mission.home))+' m from home' }},
+
   {id:'escort', name:'Shepherd', tokens:14, map:'hills', time:0,
    desc(){ return 'Bring the transport home. It is slow, it is unarmed, and they know it is coming.' },
    brief:[
@@ -6876,7 +7139,6 @@ function renderCustom(){
 }
 
 /* ------------------------------ settings --------------------------------- */
-let confirmArm={level:0,all:0};
 const CREWS=[
   {id:'plane', name:'AIRCRAFT',    note:'Fly. Everything in the game is built around this.'},
   {id:'sniper',name:'SNIPER TOWER',note:'A 1.5 km railgun on a tower. Pinpoint, slow to cycle.'},
@@ -6944,8 +7206,8 @@ function renderSettings(){
   $('acctLine').innerHTML=`Campaign level <b style="color:#c9a3ff">${PROFILE.level}</b> · `+
     `${PROFILE.tokens} tokens · ${PROFILE.wins}W/${PROFILE.losses}L · ${PROFILE.kills} career kills.`+
     ` Progress is stored in this browser.`;
-  $('btnResetLevel').textContent=confirmArm.level?'TAP AGAIN TO CONFIRM':'RESET CAMPAIGN LEVEL';
-  $('btnResetAll').textContent=confirmArm.all?'TAP AGAIN TO ERASE EVERYTHING':'ERASE ALL PROGRESS';
+  $('btnMissionsLine').textContent=(PROFILE.missions||0)+' missions flown'+
+    (msLabel()?'  ·  '+msLabel()+' contracts':'  ·  first contracts');
 }
 /* The menu is tabbed. Settings and Your Aircraft are the same panels the pause
    screen uses, so their bodies are moved between the menu pane and the overlay
@@ -6956,7 +7218,7 @@ function selectTab(id){
   for(const b of document.querySelectorAll('#mtabs button')) b.classList.toggle('on',b.dataset.tab===id);
   for(const t of ['play','net','perm','aircraft','settings','help'])
     $('pane'+t).classList.toggle('on',t===id);
-  if(id==='settings'){ confirmArm={level:0,all:0}; renderSettings(); }
+  if(id==='settings'){ closeConfirm(); renderSettings(); }
   if(id==='perm') renderPerm();
   if(id==='net'){ refreshRooms(); }
   if(id==='aircraft'){ customOpen=true; renderCustom(); }
@@ -7020,21 +7282,46 @@ $('btnSignOut').onclick=()=>{
   showSignIn();
 };
 function openSettings(){
-  confirmArm={level:0,all:0};
+  closeConfirm();
   if(!G.started){ selectTab('settings'); return; }        // it is a tab in the menu
   $('settingsHost').appendChild($('settingsBody'));
   renderSettings(); $('settings').classList.add('on');
 }
 $('btnCloseSettings').onclick=()=>{ $('settings').classList.remove('on'); homePanels(); };
 $('sensRange').oninput=e=>{ PROFILE.sens=(+e.target.value)/100; $('sensVal').textContent=PROFILE.sens.toFixed(2); saveProfile(); };
-$('btnResetLevel').onclick=()=>{
-  if(!confirmArm.level){ confirmArm.level=1; renderSettings(); return; }
-  confirmArm.level=0; resetProfile(false); toast('CAMPAIGN LEVEL RESET','gold',2);
-};
-$('btnResetAll').onclick=()=>{
-  if(!confirmArm.all){ confirmArm.all=1; renderSettings(); return; }
-  confirmArm.all=0; resetProfile(true);
-};
+/* Asking properly, rather than making you tap the same button twice. Tapping
+   twice reads as the button not having worked the first time, and it puts the
+   confirmation on the same control as the mistake. */
+let confirmYes=null;
+function confirmOpen(){ const e=$('confirm'); return !!e&&e.classList.contains('on') }
+function askConfirm(title,body,yesLabel,onYes){
+  $('cfTitle').textContent=title;
+  $('cfBody').innerHTML=body;
+  $('cfYes').textContent=yesLabel||'CONFIRM';
+  confirmYes=onYes;
+  $('confirm').classList.add('on');
+}
+function closeConfirm(){ $('confirm').classList.remove('on'); confirmYes=null; }
+$('cfNo').onclick=()=>closeConfirm();
+$('cfYes').onclick=()=>{ const f=confirmYes; closeConfirm(); if(f) f(); };
+
+$('btnResetLevel').onclick=()=>askConfirm('RESET CAMPAIGN LEVEL',
+  'Puts your campaign back to <b>level 1</b>. Your tokens, permanent upgrades, '+
+  'aircraft and missions flown are all kept — only the campaign level goes back.',
+  'RESET LEVEL',
+  ()=>{ resetProfile(false); toast('CAMPAIGN LEVEL RESET','gold',2); });
+$('btnResetMissions').onclick=()=>askConfirm('RESET MISSION PROGRESS',
+  'Sets missions flown back to <b>zero</b>. Contracts go back to their easiest '+
+  'tier and pay their lowest rate, and the running order is reshuffled. Your '+
+  'campaign level, tokens and upgrades are untouched.',
+  'RESET MISSIONS',
+  ()=>{ resetMissions(); toast('MISSION PROGRESS RESET','gold',2); });
+$('btnResetAll').onclick=()=>askConfirm('ERASE ALL PROGRESS',
+  'Erases <b>everything</b> under this name — campaign level, tokens, every '+
+  'permanent upgrade, your aircraft, your record and every mission flown. '+
+  'There is no way back from this.',
+  'ERASE EVERYTHING',
+  ()=>resetProfile(true));
 
 /* --------------------- permanent upgrade shop (menu) --------------------- */
 function renderPerm(){
