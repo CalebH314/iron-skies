@@ -182,6 +182,25 @@ kbd{background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.16);bord
 #warn .six{color:#ffd451}
 #warn .gold{color:#ffd451;animation:warnpulse .7s infinite}
 #warn .ok{color:#7fe6c0}
+/* A nuclear launch is the one announcement that ought to stop you in your
+   tracks, so it is set far bigger than an ordinary warning and beats harder.
+   It carries no colour of its own — .gold or .crit sits alongside it and says
+   whether these are yours going out or theirs coming in — and it is declared
+   after both so its size and its heavier pulse win. It scales with the window
+   rather than being pinned at forty pixels, so it still fits on a phone. */
+#warn .nuke{font-size:clamp(21px,4.3vw,40px);letter-spacing:6px;line-height:1.2;
+  font-weight:800;margin-bottom:10px;
+  text-shadow:0 3px 16px #000,0 0 38px rgba(255,130,50,.85),0 0 96px rgba(255,70,20,.55);
+  animation:nukepulse .55s infinite}
+@keyframes nukepulse{
+  0%,100%{opacity:1;transform:scale(1)}
+  50%{opacity:.60;transform:scale(1.05)}
+}
+/* the whole screen takes a breath with it */
+#nukeFlash{position:absolute;inset:0;pointer-events:none;z-index:6;opacity:0;
+  background:radial-gradient(ellipse at 50% 42%,rgba(255,150,60,0) 42%,rgba(255,90,30,.30) 100%)}
+#nukeFlash.on{animation:nukeflash 1.5s ease-out}
+@keyframes nukeflash{0%{opacity:0}18%{opacity:1}100%{opacity:0}}
 
 /* --- mission tracker --- */
 #mission{position:absolute;right:14px;top:222px;width:250px;padding:13px 15px;display:none}
@@ -395,6 +414,7 @@ td{padding:6px 8px;border-bottom:1px solid rgba(255,255,255,.045)}
   <div id="autoHud">AUTOPILOT — <kbd>K</kbd> TO TAKE OVER</div>
   <div id="empHud"></div>
   <div id="nukeHud"></div>
+  <div id="nukeFlash"></div>
   <div id="weps"></div>
   <div id="feed"></div>
   <div id="toast"></div>
@@ -3765,14 +3785,20 @@ function fireNukeSalvo(s){
      sides need to know about it — the side that fired because its own aircraft
      have to be nowhere near where those land, and the side receiving because a
      dome is the only thing that will stop them. */
-  sfxAt('launch',s.pos,1); sfx('lock',.95);
+  sfxAt('launch',s.pos,1); sfx('boom',.7);
   const n=cfg.salvo||1;
+  // the screen takes a breath with it, restarted each time by taking the class
+  // off and putting it straight back
+  const fl=$('nukeFlash');
+  if(fl){ fl.classList.remove('on'); void fl.offsetWidth; fl.classList.add('on'); }
   if(s.team===G.team){
-    pushWarn('nuke','☢ NUKES FIRING — '+n+' AWAY FROM YOUR SILO','gold',3.2,5);
-    toast('NUKES FIRING — KEEP YOUR OWN AIRCRAFT CLEAR','gold',3.4);
+    pushWarn('nuke','☢ NUKES FIRING ☢','nuke gold',4.4,5);
+    pushWarn('nuke2',n+' AWAY FROM YOUR SILO — KEEP CLEAR','gold',4.0,5);
+    toast('NUKES FIRING — KEEP YOUR OWN AIRCRAFT CLEAR','gold',3.6);
   }else{
-    pushWarn('nuke','☢ NUKES FIRING — WARHEADS INBOUND','crit',3.6,5);
-    toast('ENEMY NUKES FIRING — GET BEHIND YOUR DOME','red',3.4);
+    pushWarn('nuke','☢ NUKES FIRING ☢','nuke crit',4.8,5);
+    pushWarn('nuke2','WARHEADS INBOUND — GET BEHIND YOUR DOME','crit',4.4,5);
+    toast('ENEMY NUKES FIRING','red',3.6);
   }
   feed(`<span class="${s.team}">NUCLEAR SILO</span> — ${n} warheads away`);
 }
@@ -5237,7 +5263,7 @@ function updateHUD(dt){
 /* Threat callouts. Each has its own cooldown so they announce a change in the
    situation rather than nagging every frame. */
 const warns=[];
-let warnCd={six:0,msl:0,base:0,emp:0,nuke:0};
+let warnCd={six:0,msl:0,base:0,emp:0,nuke:0,nuke2:0};
 function pushWarn(key,txt,cls,hold,cool){
   if(warnCd[key]>0) return;
   warnCd[key]=cool;
