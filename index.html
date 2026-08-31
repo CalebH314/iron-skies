@@ -470,10 +470,9 @@ td{padding:6px 8px;border-bottom:1px solid rgba(255,255,255,.045)}
     </div>
 
     <div class="srow">
-      <h4>YOU FLY / YOU CREW</h4>
-      <p id="crewDesc">Take an aircraft, or man an emplacement at your own base and hold the line
-      from the ground. Gun crews cannot move, but they see everything and hit hard.</p>
+      <h4>WHAT YOU FLY</h4>
       <div class="seg" id="crewSeg"></div>
+      <p id="crewDesc"></p>
     </div>
 
     <div class="srow">
@@ -2357,7 +2356,7 @@ const DIFFS=[
 ];
 const PROFILE={tokens:0,perks:{},muted:false,level:1,wins:0,losses:0,
                kills:0,deaths:0,missions:0,callsign:'',difficulty:1,sens:1,
-               plane:{frame:0,paint:0,frames:[0],paints:[0]},gTol:7,playAs:'plane',map:'auto',
+               plane:{frame:0,paint:0,frames:[0],paints:[0]},gTol:7,playAs:'fighter',map:'auto',
                autopilot:false,gfx:'bal'};
 const DK=()=>DIFFS[clamp(PROFILE.difficulty|0,0,DIFFS.length-1)];
 function loadProfile(){
@@ -2365,7 +2364,7 @@ function loadProfile(){
   // progress into another
   PROFILE.tokens=0; PROFILE.perks={}; PROFILE.level=1; PROFILE.wins=0; PROFILE.losses=0;
   PROFILE.kills=0; PROFILE.deaths=0; PROFILE.missions=0; PROFILE.callsign='';
-  PROFILE.gTol=7; PROFILE.playAs='plane'; PROFILE.map='auto'; PROFILE.autopilot=false;
+  PROFILE.gTol=7; PROFILE.playAs='fighter'; PROFILE.map='auto'; PROFILE.autopilot=false;
   PROFILE.gfx='bal';
   try{
     const raw=(ACC.name&&ACC.list[ACC.name]&&ACC.list[ACC.name].profile)
@@ -2378,7 +2377,11 @@ function loadProfile(){
       PROFILE.difficulty=d.difficulty===undefined?1:clamp(d.difficulty|0,0,DIFFS.length-1);
       PROFILE.sens=d.sens||1;
       if(d.plane) PROFILE.plane=d.plane;
-      PROFILE.gTol=d.gTol||7; PROFILE.playAs=d.playAs||'plane';
+      PROFILE.gTol=d.gTol||7;
+      /* This used to name a gun emplacement to man instead of flying. Those are
+         gone, so a saved 'sniper', 'sam', 'flak' or the old 'plane' all become
+         the fighter — anything that is not one of the aircraft is. */
+      PROFILE.playAs=PLANES.some(a=>a.id===d.playAs)?d.playAs:'fighter';
       PROFILE.map=MAPS.some(m=>m.id===d.map)?d.map:'auto';
       PROFILE.autopilot=!!d.autopilot;
       PROFILE.gfx=GFX.some(g=>g.id===d.gfx)?d.gfx:'bal'; }
@@ -2668,10 +2671,13 @@ function applyUpgrades(p){
   // targets rather than as rivals. stepBot also holds them near one altitude.
   const pl=!p.isBot&&p.isLocal;   // permanent perks apply to you only
   const fr=pl?curFrame():null, pm=pl?partMods():null;
+  // the aircraft you chose to take up, and what it brings with it
+  const ac=pl?planeType():null;
   const foeBot=p.isBot&&campaign()&&p.team!==G.team;
   const sq=p.isBot?1+(G.botLvl[p.team]||0)*.25:1;     // Squadron Refit
   let hp=p.isBot?BOT_HP*(foeBot?DK().botHp:1)*sq:100+(u.armor||0)*40+(pl?perk('hull')*30:0);
   if(fr) hp*=fr.hull;
+  if(ac) hp*=ac.hull;
   if(p.drone) hp*=.5;                          // drones are glass
   p.maxHp=Math.round(hp);
   // the shield covers the whole team, bought once by the player
@@ -2680,10 +2686,13 @@ function applyUpgrades(p){
   p.maxFlares=(u.flare||0)*6+(pl?perk('chaff')*8:0);
   p.topSpeed=(p.isBot?BOT_SPEED*(1+(G.botLvl[p.team]||0)*.08)
                      :270+(u.engine||0)*30+(pl?perk('thrust')*22/3.6:0))*(p.drone?1.35:1)
-             *(fr?fr.speed:1)*(pm?pm.spd:1);
-  p.agility=(1+(u.agility||0)*.15)*(p.isBot?BOT_AGILITY:(1+(pl?perk('wings')*.10:0))*(fr?fr.agility:1)*(pm?pm.turn:1));
+             *(fr?fr.speed:1)*(pm?pm.spd:1)*(ac?ac.speed:1);
+  p.agility=(1+(u.agility||0)*.15)*(p.isBot?BOT_AGILITY:(1+(pl?perk('wings')*.10:0))*(fr?fr.agility:1)*(pm?pm.turn:1))
+            *(ac?ac.agility:1);
   p.have={mg:true, cannon:(u.cannon||0)>0, rocket:(u.rocket||0)>0, missile:(u.missile||0)>0,
           laser:(u.laser||0)>0, inferno:pl&&perk('inferno')>0};
+  // the aircraft's own weapon is fitted from the start — it is what the thing is for
+  if(ac&&ac.wep) p.have[ac.wep]=true;
   let gp=pl?1+perk('guns')*.12:1;
   if(p.drone) gp*=1.6;
   if(foeBot) gp*=DK().botDmg;
@@ -5652,7 +5661,7 @@ function buyStruct(type,cost){
    not a separate, simpler pilot: it takes a role, picks its own targets, breaks
    off when it is hurt and goes home to rearm, exactly as the rest of the sky
    does. You keep the camera. */
-function autoOn(){ return !!PROFILE.autopilot && !G.crew }
+function autoOn(){ return !!PROFILE.autopilot }
 function setAutopilot(on){
   PROFILE.autopilot=!!on; saveProfile();
   const p=G.me;
@@ -5924,7 +5933,7 @@ function quitToMenu(){
   for(let i=0;i<3;i++) FOG[i]=WEATHERS[0].fog[i];
   if(gl&&U&&U.uFogCol) gl.uniform3fv(U.uFogCol,FOG);
   { const el=$('wxflash'); if(el) el.style.opacity=0; }
-  G.me=null; G.crew=null; G.roster=[]; G.emp=0; G.nukes=0; G.pulses.length=0; G.foeEmp={}; G.foeEmpT=0; G.empWarn=null; G.netLevel=null; G.netMap=null; G.netWx=null; G.hangarT={}; G.hangarSaid={}; G.credits=600; G.kills=0; G.deaths=0; G.score=0; G.camMode=0;
+  G.me=null; G.roster=[]; G.emp=0; G.nukes=0; G.pulses.length=0; G.foeEmp={}; G.foeEmpT=0; G.empWarn=null; G.netLevel=null; G.netMap=null; G.netWx=null; G.hangarT={}; G.hangarSaid={}; G.credits=600; G.kills=0; G.deaths=0; G.score=0; G.camMode=0;
   baseBarEls.forEach(el=>el.classList.remove('on'));
   tagEls.forEach(el=>el.remove()); tagEls.clear();
   for(const id of ['pause','over','shop','dead','tut','mission']) $(id).classList.remove('on');
@@ -7146,8 +7155,12 @@ function partMods(){
 /** rebuild the player's airframe mesh from the saved configuration */
 function buildCustomPlane(){
   if(MESH.custom) freeMesh(MESH.custom);
+  /* Left on the stock airframe you fly the shape your aircraft type implies, so
+     a bomber looks like a bomber before you have spent anything. Buy a frame in
+     the hangar and that choice wins instead — it was made on purpose. */
+  const shape=planeCfg().frame===0?planeType().shape:curFrame();
   MESH.custom=buildPlaneMesh(curPaint().col,{
-    frame:curFrame(), nose:curPart('nose').id, wing:curPart('wing').id,
+    frame:shape, nose:curPart('nose').id, wing:curPart('wing').id,
     tail:curPart('tail').id, engine:curPart('engine').id, canopy:curPart('canopy').id,
     trim:curTrim().col||curPaint().col
   });
@@ -7233,21 +7246,52 @@ function renderCustom(){
 }
 
 /* ------------------------------ settings --------------------------------- */
-const CREWS=[
-  {id:'plane', name:'AIRCRAFT',    note:'Fly. Everything in the game is built around this.'},
-  {id:'sniper',name:'SNIPER TOWER',note:'A 1.5 km railgun on a tower. Pinpoint, slow to cycle.'},
-  {id:'sam',   name:'SAM SITE',    note:'Radar-guided missiles that chase aircraft across the map.'},
-  {id:'flak',  name:'FLAK CANNON', note:'Twin rapid-fire guns. Shreds anything that comes close.'}
+/* The aircraft you take up. Each one comes with a different weapon already
+   fitted and selected — that weapon is the whole point of the aeroplane — and
+   pays for it in the airframe wrapped around it. The one that starts with
+   nothing special is the toughest and the handiest; the one that starts with a
+   particle beam is made of paper. Everything here is still upgradable in the
+   hangar on top, so a choice here is a starting hand, not a ceiling.
+   `frame` names the shape it is built in, from FRAMES. */
+const PLANES=[
+  {id:'fighter', name:'FIGHTER', wep:'mg', shape:{span:1,sweep:1,len:1},
+   hull:1.15, speed:1, agility:1.05,
+   note:'Nose guns, and nothing you did not earn. The sturdiest airframe and the '+
+        'easiest to fly — what everything else is measured against.'},
+  {id:'gunship', name:'GUNSHIP', wep:'cannon', shape:{span:1.15,sweep:.7,len:1.1},
+   hull:1.30, speed:.90, agility:.86,
+   note:'A 40&nbsp;mm autocannon in the nose. One burst wrecks a fighter and it hurts '+
+        'buildings badly. Heavy, armoured, and slow to answer the stick.'},
+  {id:'bomber',  name:'BOMBER',  wep:'rocket', shape:{span:1.28,sweep:.55,len:1.22},
+   hull:1.45, speed:.82, agility:.76,
+   note:'Rocket pods as standard — salvo fire with splash, the fastest way to level '+
+        'a tower or a hangar. The toughest thing in the sky and the clumsiest.'},
+  {id:'interceptor', name:'INTERCEPTOR', wep:'missile', shape:{span:.85,sweep:1.5,len:1.15},
+   hull:.82, speed:1.20, agility:1.06,
+   note:'Radar-locking missiles from the first sortie, and the legs to reach anything '+
+        'that runs. Thin skinned — you cannot afford to be caught turning.'},
+  {id:'fifthgen', name:'FIFTH GEN', wep:'laser', shape:{span:1.3,sweep:1.8,len:.92},
+   hull:.85, speed:1.10, agility:1.20,
+   note:'A continuous particle beam that melts armour at range with no travel time, '+
+        'on a huge delta that turns inside anything. Almost no hull to speak of.'}
 ];
+function planeType(){ return PLANES.find(a=>a.id===(PROFILE.playAs||'fighter'))||PLANES[0] }
 function renderSettings(){
-  $('crewSeg').innerHTML=CREWS.map(c=>
-    `<button data-crew="${c.id}" class="${c.id===(PROFILE.playAs||'plane')?'on':''}">${c.name}</button>`).join('');
+  $('crewSeg').innerHTML=PLANES.map(a=>
+    `<button data-crew="${a.id}" class="${a.id===planeType().id?'on':''}">${a.name}</button>`).join('');
   [...document.querySelectorAll('[data-crew]')].forEach(b=>b.onclick=()=>{
-    PROFILE.playAs=b.dataset.crew; saveProfile(); renderSettings(); sfx('buy',.4);
+    PROFILE.playAs=b.dataset.crew; saveProfile();
+    buildCustomPlane();                     // it is a different shape now
+    renderSettings(); sfx('buy',.4);
   });
-  const cur=CREWS.find(c=>c.id===(PROFILE.playAs||'plane'))||CREWS[0];
-  $('crewDesc').textContent=cur.note+(cur.id==='plane'?'':
-    '  You will man this emplacement at your base; destroyed, it rebuilds and you take it again.');
+  {
+    const a=planeType(), w=WEAPONS[a.wep];
+    const pc=v=>(v>=1?'+':'−')+Math.round(Math.abs(v-1)*100)+'%';
+    $('crewDesc').innerHTML=a.note+
+      `<br/><span style="color:#7fe6c0">Comes up with <b>${w?w.name:'nose guns'}</b> fitted and selected`+
+      `  ·  hull ${pc(a.hull)}  ·  speed ${pc(a.speed)}  ·  turn ${pc(a.agility)}</span>`+
+      `<br/><span style="color:#6f88a3">Everything is still upgradable in the hangar on top of this.</span>`;
+  }
   $('gfxSeg').innerHTML=GFX.map(g=>
     `<button data-gfx="${g.id}" class="${g.id===(PROFILE.gfx||'bal')?'on':''}">${g.name}</button>`).join('');
   [...document.querySelectorAll('[data-gfx]')].forEach(b=>b.onclick=()=>{
@@ -7583,71 +7627,6 @@ function finishTutorial(){
 /* You occupy one of your own emplacements: it stops firing by itself, you aim it
    with the mouse and shoot with the trigger. Everything else — its health bar,
    the enemy targeting it — carries on as normal. */
-function crewMode(){ return G.started&&!G.tut&&!G.mission&&(PROFILE.playAs||'plane')!=='plane' }
-function takeEmplacement(){
-  const want=PROFILE.playAs;
-  let s=G.structures.find(x=>x.alive&&x.type===want&&x.team===G.team);
-  if(!s) s=addStruct(want,G.team,G.myId);
-  s.crewed=true;
-  G.crew=s;
-  toast('YOU HAVE THE '+STRUCTS[want].short+' — MOUSE AIMS, TRIGGER FIRES','grn',5);
-  return s;
-}
-function stepCrew(dt){
-  const s=G.crew;
-  if(!s) return;
-  if(!s.alive){                      // blown up: rebuild and climb back in
-    G.crewT=(G.crewT||0)-dt;
-    $('deadTitle').textContent='EMPLACEMENT DESTROYED';
-    setTxt($('deadTxt'),'REBUILDING IN '+Math.max(1,Math.ceil(G.crewT)));
-    $('dead').classList.add('on');
-    if(G.crewT<=0){ G.crew=null; takeEmplacement(); $('dead').classList.remove('on'); }
-    return;
-  }
-  G.crewT=6;
-  const cfg=STRUCTS[s.type];
-  // the mouse walks the turret round and up
-  s.yaw-=stick.x*2.4*dt*(PROFILE.sens||1)*14;
-  s.pitch=clamp(s.pitch-stick.y*1.6*dt*(PROFILE.sens||1)*14,-.15,1.15);
-  stick.x=lerp(stick.x,0,clamp(dt*9,0,1));
-  stick.y=lerp(stick.y,0,clamp(dt*9,0,1));
-  s.cd=Math.max(0,(s.cd||0)-dt);
-  if((mouse.fire||keys.Space)&&s.cd<=0){
-    s.cd=cfg.cd;
-    const cy=s.pos[1]+(cfg.y||8)+6;
-    const org=[s.pos[0],cy,s.pos[2]];
-    const dir=[Math.sin(s.yaw)*Math.cos(s.pitch),Math.sin(s.pitch),Math.cos(s.yaw)*Math.cos(s.pitch)];
-    if(s.type==='sam'){
-      let best=null,bd=cfg.range;
-      for(const q of G.planes.values()){
-        if(!q.alive||q.team===s.team) continue;
-        const to=[q.pos[0]-org[0],q.pos[1]-org[1],q.pos[2]-org[2]];
-        const l=Math.hypot(...to)||1;
-        if(l>cfg.range) continue;
-        if((to[0]*dir[0]+to[1]*dir[1]+to[2]*dir[2])/l<.93) continue;   // roughly where you point
-        if(l<bd){ bd=l; best=q; }
-      }
-      spawnMissile({pos:org.slice(),vel:[dir[0]*180,220,dir[2]*180],team:s.team,owner:G.myId,
-        target:best,dmg:cfg.dmg,turn:2.0,speed:400,life:16,fromStruct:true});
-      sfxAt('launch',org,.9);
-      if(!best) toast('NO LOCK — POINT AT A TARGET','red',1.4);
-    }else{
-      const sp=s.type==='sniper'?1500:900, sprd=s.type==='sniper'?0:.02;
-      spawnBullet({pos:org.slice(),
-        vel:[(dir[0]+rnd(-sprd,sprd))*sp,(dir[1]+rnd(-sprd,sprd))*sp,(dir[2]+rnd(-sprd,sprd))*sp],
-        dmg:cfg.dmg,team:s.team,owner:G.myId,
-        col:s.type==='sniper'?[.6,1,1]:[1,.7,.3],len:s.type==='sniper'?20:7,
-        wid:s.type==='sniper'?3.0:2.4,life:2.5,splash:s.type==='flak'?10:0});
-      sfxAt(s.type==='sniper'?'cannon':'gun',org,.6);
-    }
-  }
-  // sit at the gunsight
-  const cy=s.pos[1]+(cfg.y||8)+7;
-  const dir=[Math.sin(s.yaw)*Math.cos(s.pitch),Math.sin(s.pitch),Math.cos(s.yaw)*Math.cos(s.pitch)];
-  G.camPos=[s.pos[0]-dir[0]*3,cy+2,s.pos[2]-dir[2]*3];
-  G.camLook=[s.pos[0]+dir[0]*400,cy+dir[1]*400,s.pos[2]+dir[2]*400];
-}
-
 /* ------------------------------ bootstrap -------------------------------- */
 const BOT_NAMES=['VIPER','GHOST','RAZOR','TALON','HAWK','COBRA','WRAITH','FANG','BOLT','ZERO','ECHO','NOVA'];
 function botName(){ return BOT_NAMES[rndi(0,BOT_NAMES.length-1)]+'-'+rndi(10,99) }
@@ -7740,6 +7719,9 @@ function startGame(team,nteams){
   PROFILE.callsign=nm; saveProfile();
   const me=newPlane({id:G.myId,name:nm,team:G.team,isLocal:true});
   me.upg={}; applyUpgrades(me); rearm(me); doRespawn(me);
+  // up with the weapon the aircraft was chosen for, already selected
+  const acw=planeType().wep;
+  if(acw&&me.have[acw]) me.wep=acw;
   G.me=me; G.planes.set(me.id,me);
 
   if(net.isHost||net.mode==='solo'){
@@ -7753,7 +7735,6 @@ function startGame(team,nteams){
   $('menu').classList.remove('on');
   $('hud').classList.add('on');
   updateWeps();
-  if(crewMode()){ G.me.alive=false; G.me.respawn=1e9; takeEmplacement(); }
   toast('CLICK TO CAPTURE MOUSE · <kbd>B</kbd> OPENS THE HANGAR','grn',5);
   if(diff.foeDome()>0)
     toast('THEIR COMMAND HQ IS UNDER A FORCE DOME — BEAT THE SHELL DOWN FIRST','red',7);
@@ -7821,8 +7802,7 @@ function frame(now){
     buildPlaneGrid(ownedPlanes());
     const p=G.me;
     if(p){
-      if(G.crew){ /* crewing a gun: the aircraft stays parked */ }
-      else if(autoOn()&&p.alive&&!shopOpen){
+      if(autoOn()&&p.alive&&!shopOpen){
         if(!p.role) p.role=roleFor(p.team);
         stepBot(p,dt);                       // the same pilot every bot uses
       }
@@ -7907,7 +7887,7 @@ function frame(now){
     stepPulses(dt); stepEMPCharge(dt); sweepWrecks(dt);
     musicTick();
     netTick(dt);
-    if(G.crew) stepCrew(dt); else updateCamera(dt);
+    updateCamera(dt);
     updateHUD(dt);
     if(shopOpen&&Math.floor(G.t*4)%2===0) $('shopCred').textContent=Math.floor(G.credits);
   }else if(!G.started){
