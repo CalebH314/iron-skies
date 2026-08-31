@@ -2183,7 +2183,11 @@ function buildTurrets(){
        touched. A dome is the answer to a nuke.
      — put on a Command HQ and it takes a tremendous piece out of the building
        and flattens whatever is standing near it. */
-const NUKE_AIR_R=500, NUKE_BLAST_R=320, NUKE_DMG=1100, NUKE_DOME_DMG=900;
+const NUKE_AIR_R=900, NUKE_BLAST_R=560, NUKE_DMG=1100, NUKE_DOME_DMG=900;
+/* How high a warhead climbs before it goes anywhere. Well clear of the highest
+   ground in the game — a canyon rim tops out at 980m — so the run across the
+   map is over everything rather than through it. */
+const NUKE_APEX=2100;
 /* The one you carry is a different proposition from the ones a silo lobs every
    minute. It costs sixteen thousand, you get one, and it is a single shot — so
    it hits like it. Four times the warhead, half again the radius, and enough to
@@ -2211,7 +2215,7 @@ const STRUCTS={
   spawner:{name:'Aircraft Hangar',  hp:520,  cost:1900, range:0,    r:28, y:10, turret:null, cd:9, cap:12,
            short:'HANGAR', desc:'Sits beside the HQ and launches a fighter every 9&nbsp;seconds, up to twelve airborne. Buy <b>Hangar Crews</b> to go faster still. It is lightly built — destroy the enemy hangar and their reinforcements stop dead.'},
   nuke:   {name:'Nuclear Silo',     hp:640,  cost:6500, range:0,    r:16, y:12, turret:null, cd:60, salvo:2,
-           short:'SILO', desc:'Stands <b>outside</b> your force dome — it cannot shelter under the shield it is meant to out-range, and it can be attacked in its own right. Every minute it puts a pair of warheads into the air and walks them to the enemy Command HQ. Anything flying near where one lands comes down, whichever side it belongs to. An enemy dome will stop them dead, so beat the shield down first.'}
+           short:'SILO', desc:'Stands <b>outside</b> your force dome — it cannot shelter under the shield it is meant to out-range, and it can be attacked in its own right. Every minute it puts a pair of warheads straight up, across the map at altitude, and back down almost vertically onto the enemy Command HQ, so no amount of ground in the way matters. Anything flying within half a mile of where one lands comes down, whichever side it belongs to. An enemy dome will stop them dead, so beat the shield down first.'}
 };
 const BOT_HP=55;        // deliberately fragile — a short burst downs one
 const BOT_SPEED=165;    // well under the player's 270+, so you can always disengage
@@ -2707,9 +2711,20 @@ function structPos(team,idx){
 let nukeSlot={};
 function nukePos(team){
   const b=BASES[team], i=(nukeSlot[team]=(nukeSlot[team]||0)+1)-1;
-  const a=1.9+i*1.37, r=DOME_R+180;      // clear of the dome by a good margin
-  const x=b[0]+Math.cos(a)*r, z=b[2]+Math.sin(a)*r;
-  return [x,groundH(x,z),z];
+  const a=1.9+i*1.37;
+  /* Outside the dome, but it still has to be standing on something. At sea the
+     entire base is a carrier deck barely wider than the shield itself, and the
+     stand-off that works everywhere else put the silo over the side and into the
+     water — where its warheads detonated on the pad the moment they were built.
+     So the stand-off is tried from the outside in, and the first ring that is
+     actually dry wins. */
+  for(const r of [DOME_R+180, DOME_R+120, DOME_R+70, DOME_R+40]){
+    const x=b[0]+Math.cos(a)*r, z=b[2]+Math.sin(a)*r;
+    const h=groundH(x,z);
+    if(h>SEA+2) return [x,h,z];
+  }
+  const r=DOME_R+40, x=b[0]+Math.cos(a)*r, z=b[2]+Math.sin(a)*r;
+  return [x,Math.max(groundH(x,z),BASE_Y),z];
 }
 /** hangars sit right beside the HQ they defend, alternating left and right */
 let hangarSlot={blue:0,red:0};
@@ -3739,9 +3754,12 @@ function fireNukeSalvo(s){
   if(!tgt) return;
   for(let i=0;i<(cfg.salvo||1);i++){
     spawnMissile({pos:[s.pos[0]+rnd(-9,9), s.pos[1]+(cfg.y||8)+12, s.pos[2]+rnd(-9,9)],
-      vel:[rnd(-40,40),330,rnd(-40,40)],
+      vel:[rnd(-14,14),340,rnd(-14,14)],           // straight up out of the tube
       team:s.team,owner:s.owner||null,target:tgt,dmg:NUKE_DMG,
-      turn:1.1,speed:300,life:40,fuse:70,nuke:true,fromStruct:true});
+      // a firmer hand than an air-to-air round, because it has two corners to
+      // turn: over at the top of the climb, and onto its nose at the far end
+      turn:1.9,speed:330,life:60,fuse:70,nuke:true,fromStruct:true,
+      arc:true,apexY:NUKE_APEX,arm:2.0});
   }
   /* A nuclear launch is the loudest thing that happens in a round, and both
      sides need to know about it — the side that fired because its own aircraft
@@ -3777,13 +3795,28 @@ function stepMissiles(dt){
     if(tgt&&(!tgt.alive)) tgt=m.target=null;
     if(tgt){
       const v=m.vel, vl=Math.hypot(...v)||1;
+      /* A warhead out of a silo flies a ballistic profile rather than driving
+         itself across the map at treetop height: straight up out of the tube,
+         across at altitude once it is above everything, and then over onto its
+         nose so it arrives more or less vertically. It is the only way one of
+         these gets from one side of a canyon map to the other without ploughing
+         into a mesa on the way, and it is how they ought to look anyway. */
+      let gp=tgt.pos;
+      if(m.arc){
+        const hd=Math.hypot(tgt.pos[0]-m.pos[0],tgt.pos[2]-m.pos[2]);
+        if(m.arcPhase!=='down'&&hd<820){ m.arcPhase='down'; }
+        if(m.arcPhase==='down') gp=tgt.pos;
+        else if(m.pos[1]<m.apexY-60) gp=[m.pos[0],m.apexY+900,m.pos[2]];   // straight up
+        else gp=[tgt.pos[0],m.apexY,tgt.pos[2]];                            // across the top
+      }
       // Aim at where the target will be, not where it is: without this lead the
       // missile chases the tail and a turning target simply outruns the arc.
-      const rel=[tgt.pos[0]-m.pos[0],tgt.pos[1]-m.pos[1],tgt.pos[2]-m.pos[2]];
+      const rel=[gp[0]-m.pos[0],gp[1]-m.pos[1],gp[2]-m.pos[2]];
       const range=Math.hypot(...rel)||1;
       // a building has no heading and does not move, so there is nothing to lead
-      const tf=tgt.quat?fwdOf(tgt,[0,0,0]):[0,0,0];
-      const tspd=tgt.quat?(tgt.speed||0):0;
+      // — and a waypoint on the way up is not something to lead either
+      const tf=(tgt.quat&&!m.arc)?fwdOf(tgt,[0,0,0]):[0,0,0];
+      const tspd=(tgt.quat&&!m.arc)?(tgt.speed||0):0;
       const lead=clamp(range/Math.max(vl,1),0,3.2);
       const aim=[rel[0]+tf[0]*tspd*lead, rel[1]+tf[1]*tspd*lead, rel[2]+tf[2]*tspd*lead];
       const al=Math.hypot(...aim)||1;
@@ -3811,7 +3844,11 @@ function stepMissiles(dt){
       if(!s.alive||s.type!=='dome'||s.team===m.team) continue;
       if(dist(m.pos,s.pos)<DOME_R){ domeStop=s; boom=true; break; }
     }
-    if(!boom) for(const p of myPlanes){
+    // A warhead climbing out of its own silo is still over its own compound, and
+    // with a blast this size it must not be set off on the pad by the first
+    // hostile that happens to be overhead.
+    if(m.arm>0) m.arm-=dt;
+    if(!boom&&!(m.arm>0)) for(const p of myPlanes){
       if(p.team===m.team||p.id===m.owner) continue;
       if(dist(p.pos,m.pos)<m.fuse){ boom=true; break; }
     }
