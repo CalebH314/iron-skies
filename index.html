@@ -23,9 +23,12 @@ html,body{width:100%;height:100%;overflow:hidden;background:#05080f;color:#dbe7f
 #hud{position:absolute;inset:0;pointer-events:none;z-index:4;opacity:0;transition:opacity .3s}
 #hurt{position:absolute;inset:0;pointer-events:none;z-index:6;opacity:0;
   background:radial-gradient(ellipse at center,rgba(255,0,0,0) 42%,rgba(255,20,10,.55) 82%,rgba(140,0,0,.9) 100%)}
+/* The tunnel closes right down: clear only in the very middle, black by a third
+   of the way out, and solid past that. At full stress there is nothing left to
+   see at all, which is the point of a limit you can exceed. */
 #gvig{position:absolute;inset:0;pointer-events:none;z-index:7;opacity:0;
-  background:radial-gradient(ellipse at center,rgba(0,0,0,0) 12%,rgba(0,0,0,.85) 62%,#000 100%)}
-#gvig.red{background:radial-gradient(ellipse at center,rgba(120,0,0,0) 12%,rgba(150,0,0,.8) 62%,#900 100%)}
+  background:radial-gradient(ellipse at center,rgba(0,0,0,0) 3%,rgba(0,0,0,.92) 30%,#000 52%)}
+#gvig.red{background:radial-gradient(ellipse at center,rgba(120,0,0,0) 3%,rgba(150,0,0,.92) 30%,#7a0000 52%)}
 #hud.on{opacity:1}
 
 /* --- crosshair --- */
@@ -2356,7 +2359,7 @@ const DIFFS=[
 ];
 const PROFILE={tokens:0,perks:{},muted:false,level:1,wins:0,losses:0,
                kills:0,deaths:0,missions:0,callsign:'',difficulty:1,sens:1,
-               plane:{frame:0,paint:0,frames:[0],paints:[0]},gTol:7,playAs:'fighter',map:'auto',
+               plane:{frame:0,paint:0,frames:[0],paints:[0]},playAs:'fighter',map:'auto',
                autopilot:false,gfx:'bal'};
 const DK=()=>DIFFS[clamp(PROFILE.difficulty|0,0,DIFFS.length-1)];
 /* Declared up here, above loadProfile, and not down with the settings panel
@@ -2401,7 +2404,7 @@ function loadProfile(){
   // progress into another
   PROFILE.tokens=0; PROFILE.perks={}; PROFILE.level=1; PROFILE.wins=0; PROFILE.losses=0;
   PROFILE.kills=0; PROFILE.deaths=0; PROFILE.missions=0; PROFILE.callsign='';
-  PROFILE.gTol=7; PROFILE.playAs='fighter'; PROFILE.map='auto'; PROFILE.autopilot=false;
+  PROFILE.playAs='fighter'; PROFILE.map='auto'; PROFILE.autopilot=false;
   PROFILE.gfx='bal';
   try{
     const raw=(ACC.name&&ACC.list[ACC.name]&&ACC.list[ACC.name].profile)
@@ -2414,7 +2417,6 @@ function loadProfile(){
       PROFILE.difficulty=d.difficulty===undefined?1:clamp(d.difficulty|0,0,DIFFS.length-1);
       PROFILE.sens=d.sens||1;
       if(d.plane) PROFILE.plane=d.plane;
-      PROFILE.gTol=d.gTol||7;
       /* This used to name a gun emplacement to man instead of flying. Those are
          gone, so a saved 'sniper', 'sam', 'flak' or the old 'plane' all become
          the fighter — anything that is not one of the aircraft is. */
@@ -2449,7 +2451,7 @@ function resetProfile(all){
   if(all){
     PROFILE.tokens=0; PROFILE.perks={}; PROFILE.wins=0; PROFILE.losses=0;
     PROFILE.kills=0; PROFILE.deaths=0; PROFILE.missions=0; PROFILE.callsign='';
-    PROFILE.plane={...DEFCFG}; PROFILE.gTol=7;
+    PROFILE.plane={...DEFCFG};
     buildCustomPlane();
   }
   saveProfile(); renderPerm(); renderSettings();
@@ -3129,7 +3131,15 @@ const LIFT_SPEED=90, STRAFE_SPEED=85;   // m/s of direct movement
    Past your tolerance vision greys out from the edges and the controls go
    heavy; push negative and it reddens instead. Tolerance grows with training. */
 const G_SCALE=.26;   // arcade turn rates -> believable g readings
-function gTolerance(){ return PROFILE.gTol||7 }
+/* Everybody blacks out at the same number. It used to creep upward as a reward
+   for flying missions, which meant two pilots in identical aircraft could pull
+   very different turns and neither of them knew why — and the one who had not
+   been grinding missions was simply worse at the game for reasons nothing on
+   screen explained. It is a property of the human being in the seat, so it is
+   the same seven and a half for everyone, and going past it costs you the
+   picture fast. */
+const G_TOL=7.5;
+function gTolerance(){ return G_TOL }
 function updateG(p,dt){
   const f=fwdOf(p,[0,0,0]);
   if(!p.pf){ p.pf=f.slice(); p.g=1; p.gStress=0; return; }
@@ -3142,7 +3152,10 @@ function updateG(p,dt){
   p.g=lerp(p.g===undefined?1:p.g,signed,clamp(dt*6,0,1));
   const tol=gTolerance();
   const over=Math.abs(p.g)>tol?(Math.abs(p.g)-tol)/tol:0;
-  p.gStress=clamp((p.gStress||0)+(over>0?over*dt*1.7:-dt*.75),0,1.4);
+  /* Past the limit it closes in hard — about three times as fast as it used to
+     — and it clears slowly, so a long heavy turn really does take the picture
+     away from you rather than dimming the edges a little. */
+  p.gStress=clamp((p.gStress||0)+(over>0?over*dt*5.4:-dt*.60),0,1.7);
   p.gNeg=p.g<-1.5;
 }
 const _f=[0,0,0],_u=[0,0,0],_r=[0,0,0],_dq=[0,0,0,1],_tmp=[0,0,0];
@@ -3180,7 +3193,7 @@ function simPlane(p,dt){
     qAxis(_dq,1,0,0, WX.gustY*.24*g*dt); qmul(p.quat,p.quat,_dq);
     p.pos[1]+=WX.gustY*7*g*dt;
   }
-  const c=p.ctrl, gDrag=p.isLocal?clamp(1-(p.gStress||0)*.55,.35,1):1;
+  const c=p.ctrl, gDrag=p.isLocal?clamp(1-(p.gStress||0)*.62,.22,1):1;
   const ag=(p.agility||1)*(p.canyonBoost||1)*gDrag;
   const stall=clamp((p.speed-40)/70,.25,1);
   const rP=1.35*ag*stall, rY=0.55*ag*stall, rR=2.5*ag*stall;
@@ -5347,7 +5360,7 @@ function updateHUD(dt){
     setSty(gEl,'color',(p.gStress||0)>.05?'#ff7a6b':Math.abs(p.g||1)>gTolerance()*.75?'#ffd451':'#7fe6c0');
   }
   const gv=$('gvig');
-  setSty(gv,'opacity',clamp((p.gStress||0)*1.15,0,1).toFixed(2));
+  setSty(gv,'opacity',clamp((p.gStress||0)*1.55,0,1).toFixed(2));
   gv.classList.toggle('red',!!p.gNeg);
   setTxt($('spd'),String(Math.round(p.speed*3.6)));
   setTxt($('alt'),String(Math.round(Math.max(0,p.pos[1]-surfaceH(p.pos[0],p.pos[2])))));
@@ -7181,14 +7194,15 @@ function endMission(won){
   const M=G.mission; if(!M||M.done) return;
   M.done=true; G.over=true; G.paused=false;
   if(mouseLocked) document.exitPointerLock();
-  let tok=0, gGain=0, bonus=0;
+  let tok=0, bonus=0;
   if(won){
     tok=msPay(M.def.tokens);
     // finishing with time in hand pays up to half again on top
     bonus=Math.round(tok*.5*clamp(1-M.t/M.time,0,1));
     tok+=bonus;
     PROFILE.tokens+=tok; PROFILE.missions++;
-    gGain=.4; PROFILE.gTol=Math.round((gTolerance()+gGain)*10)/10;
+    // no g tolerance any more: it is the same for every pilot, so there is
+    // nothing here to raise. Contracts pay in tokens.
   }
   PROFILE.kills+=G.kills; PROFILE.deaths+=G.deaths; saveProfile();
   $('overTitle').textContent=won?'MISSION COMPLETE':'MISSION FAILED';
@@ -7196,7 +7210,7 @@ function endMission(won){
   $('overText').innerHTML=M.def.name+(msLabel()?' · <span style="color:#c9a3ff">'+msLabel()+'</span>':'')+
     '<br/>'+M.def.label();
   $('tokline').innerHTML=(tok?`+${tok} ⬢ TOKENS EARNED`+(bonus?` <span style="color:#8fa8c4">(${tok-bonus} + ${bonus} for the time left)</span>`:''):'No tokens awarded')+
-    (gGain?`<br/><span style="color:#7fe6c0">G TOLERANCE NOW ${gTolerance().toFixed(1)} G</span>`:'');
+    '';
   $('over').classList.add('on');
   $('btnAgain').textContent='NEW MISSION';
   sfx(won?'buy':'boom',.9);
@@ -7577,7 +7591,7 @@ function renderPerm(){
     `<div style="font-size:11px;color:#8fa8c4;letter-spacing:1.5px;margin-bottom:12px">
       CAMPAIGN LEVEL <b style="color:#c9a3ff">${PROFILE.level}</b> ·
       ${PROFILE.wins}W / ${PROFILE.losses}L ·
-      ${PROFILE.kills} kills · ${PROFILE.missions} canyon runs · ${gTolerance().toFixed(1)}G tolerance
+      ${PROFILE.kills} kills · ${PROFILE.missions} missions flown
       ${PROFILE.level>1?'<span style="color:#ff9a3c"> · enemy HQ +'+Math.round((diff.hq()-1)*100)+'% hull</span>':''}
      </div>`;
   if($('nameIn')&&!$('nameIn').value&&PROFILE.callsign) $('nameIn').value=PROFILE.callsign;
