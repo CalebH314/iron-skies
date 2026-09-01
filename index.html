@@ -2671,8 +2671,10 @@ function applyUpgrades(p){
   // targets rather than as rivals. stepBot also holds them near one altitude.
   const pl=!p.isBot&&p.isLocal;   // permanent perks apply to you only
   const fr=pl?curFrame():null, pm=pl?partMods():null;
-  // the aircraft you chose to take up, and what it brings with it
-  const ac=pl?planeType():null;
+  /* The aircraft this one is flying. For you that is what you picked in the
+     settings; for a bot it is whatever its job called for. Either way the type
+     is what makes a bomber heavy and slow and a fifth gen quick and frail. */
+  const ac=pl?planeType():(p.acType?PLANES.find(a=>a.id===p.acType):null);
   const foeBot=p.isBot&&campaign()&&p.team!==G.team;
   const sq=p.isBot?1+(G.botLvl[p.team]||0)*.25:1;     // Squadron Refit
   let hp=p.isBot?BOT_HP*(foeBot?DK().botHp:1)*sq:100+(u.armor||0)*40+(pl?perk('hull')*30:0);
@@ -3353,6 +3355,12 @@ function fireWeapon(p,dt){
   // and this makes it impossible regardless of what a loadout ever says.
   const wantMissile=!p.isBot&&(c.fire2||(c.fire&&p.wep==='missile'));
   const wantPrimary=c.fire&&p.wep!=='missile';
+  /* A bot that empties its rockets or its cannon falls back on its guns rather
+     than flying around for the rest of its life with nothing to shoot. */
+  if(p.isBot&&p.wep!=='mg'){
+    const pw=WEAPONS[p.wep];
+    if(pw&&pw.ammo>0&&(p.ammo[p.wep]||0)<1) p.wep='mg';
+  }
   // ---- primary ----
   const w=WEAPONS[p.wep], id=p.wep;
   if(wantPrimary && (p.cool[id]||0)<=0 && p.have[id]){
@@ -4122,6 +4130,34 @@ function fireStruct(s,target){
 function roleFor(team){
   const r=pickRole();
   return (r==='ace'&&team===G.team) ? 'hunter' : r;
+}
+/* Which aeroplane a job calls for. Both sides fly the same five types the player
+   picks from, and the job an aircraft is given decides which one turns up: a
+   flight sent at the enemy HQ arrives as bombers with rockets, one sent to work
+   the defensive ring arrives as gunships with cannon, and the ones hunting come
+   as fighters with a few fifth gens among them.
+   The interceptor is never dealt to anybody but the player. Its weapon is the
+   homing missile, and a sky full of those chasing you is not a fight. */
+const BOT_TYPES={
+  hq:     ['bomber'],
+  bomber: ['gunship'],
+  hunter: ['fighter','fighter','fighter','fighter','fighter','fifthgen'],
+  ace:    ['fighter','fighter','fighter','fighter','fighter','fifthgen'],
+  shy:    ['fighter']
+};
+function botTypeFor(role){
+  const list=BOT_TYPES[role]||BOT_TYPES.hunter;
+  const id=list[rndi(0,list.length-1)];
+  return PLANES.find(a=>a.id===id)||PLANES[0];
+}
+/** the airframe a given side flies a given type in, built once and kept */
+function planeMeshFor(team,typeId){
+  const key='plane_'+team+'_'+(typeId||'fighter');
+  if(!MESH[key]){
+    const a=PLANES.find(x=>x.id===typeId)||PLANES[0];
+    MESH[key]=buildPlaneMesh(TEAMCOL[team]||[.6,.6,.6],{frame:a.shape});
+  }
+  return MESH[key];
 }
 /* Four jobs, and an aircraft keeps the one it is given for its whole life.
    There is deliberately no "loiter" role — an aircraft with nothing to do is
@@ -4940,7 +4976,7 @@ function render(){
     if(!boxVisible(p.pos[0]-18,p.pos[1]-18,p.pos[2]-18,p.pos[0]+18,p.pos[1]+18,p.pos[2]+18)) continue;
     M4.fromRTS(model,p.quat,p.pos,p.drone?.72:1);
     const hurt=clamp(p.hp/p.maxHp,0,1);
-    draw(p.drone?MESH['drone_'+p.team]:((p.isLocal&&MESH.custom)||MESH['plane_'+p.team]),
+    draw(p.drone?MESH['drone_'+p.team]:((p.isLocal&&MESH.custom)||planeMeshFor(p.team,p.acType)),
          model,{tint:[1,.55+hurt*.45,.5+hurt*.5]});
     // afterburner flame
     if(p.ctrl.ab||p.thr>.92){
@@ -7683,6 +7719,20 @@ function finishTutorial(){
 /* ------------------------------ bootstrap -------------------------------- */
 const BOT_NAMES=['VIPER','GHOST','RAZOR','TALON','HAWK','COBRA','WRAITH','FANG','BOLT','ZERO','ECHO','NOVA'];
 function botName(){ return BOT_NAMES[rndi(0,BOT_NAMES.length-1)]+'-'+rndi(10,99) }
+/* Fits a bot out as the aeroplane its job calls for: the type's own weapon,
+   loaded and selected, and the airframe that goes with it. A drone is left
+   alone — it is its own machine and flies with guns. */
+function armBot(p,role){
+  if(p.drone){ p.acType='fighter'; p.upg={mg:2,engine:1}; return; }
+  const a=botTypeFor(role);
+  p.acType=a.id;
+  const u = role==='ace' ? {mg:2,engine:2,wings:1,flare:1}
+                         : {mg:rndi(1,2),engine:rndi(0,1),flare:0};
+  // never the homing missile, whatever else it is given
+  if(a.wep&&a.wep!=='mg'&&a.wep!=='missile') u[a.wep]=1;
+  p.upg=u;
+  p.wantWep=(a.wep&&a.wep!=='missile')?a.wep:'mg';
+}
 function addBots(n){
   for(let i=0;i<n;i++){
     const teams=teamList();
@@ -7690,10 +7740,9 @@ function addBots(n){
                              :(i%2===0?foeBaseOf(G.team):G.team);
     const role=roleFor(team);
     const p=newPlane({name:botName(),team,isBot:true,role});
-    p.upg = role==='ace'
-      ? {mg:2,engine:2,wings:1,flare:1}
-      : {mg:rndi(1,2),engine:rndi(0,1),flare:0};
+    armBot(p,role);
     applyUpgrades(p); rearm(p); doRespawn(p);
+    if(p.have[p.wantWep]) p.wep=p.wantWep;
     G.planes.set(p.id,p);
   }
 }
@@ -7702,11 +7751,9 @@ function spawnBotFrom(s){
   const drone=Math.random()<(G.droneLvl[s.team]||0)*.33;
   const role=roleFor(s.team);
   const p=newPlane({name:(drone?'UCAV-':'')+botName(),team:s.team,isBot:true,drone,role});
-  // the ones sent after the player fly the better aircraft and carry a missile
-  p.upg = role==='ace'
-    ? {mg:2,engine:2,wings:1,flare:1}
-    : {mg:rndi(1,2),engine:rndi(0,1)};
+  armBot(p,role);
   applyUpgrades(p); rearm(p);
+  if(p.have[p.wantWep]) p.wep=p.wantWep;
   p.pos=[s.pos[0]+rnd(-50,50), s.pos[1]+rnd(200,330), s.pos[2]+rnd(-50,50)];
   const to=[-p.pos[0],0,-p.pos[2]], l=Math.hypot(to[0],to[2])||1;
   qLookDir(p.quat,[to[0]/l,.03,to[2]/l],[0,1,0]);
