@@ -459,7 +459,7 @@ td{padding:6px 8px;border-bottom:1px solid rgba(255,255,255,.045)}
 <div id="settings" class="ovl">
   <div class="box panel">
     <h1 style="font-size:24px;letter-spacing:5px">SETTINGS</h1>
-    <div class="sub" style="margin:2px 0 16px">DIFFICULTY · GRAPHICS · MAP · CONTROLS · SIGN-IN</div>
+    <div class="sub" style="margin:2px 0 16px">DIFFICULTY · GRAPHICS · MAP · CONTROLS</div>
     <div id="settingsHost"></div>
     <div id="settingsBody">
 
@@ -507,7 +507,7 @@ td{padding:6px 8px;border-bottom:1px solid rgba(255,255,255,.045)}
       <div class="seg"><button id="btnSound3">SOUND: ON</button></div>
     </div>
 
-    <div class="srow">
+    <div class="srow" id="signRow">
       <h4>SIGN-IN</h4>
       <p id="signLine"></p>
       <div class="row" style="margin-top:6px">
@@ -2359,6 +2359,43 @@ const PROFILE={tokens:0,perks:{},muted:false,level:1,wins:0,losses:0,
                plane:{frame:0,paint:0,frames:[0],paints:[0]},gTol:7,playAs:'fighter',map:'auto',
                autopilot:false,gfx:'bal'};
 const DK=()=>DIFFS[clamp(PROFILE.difficulty|0,0,DIFFS.length-1)];
+/* Declared up here, above loadProfile, and not down with the settings panel
+   that draws it. loadProfile runs while the page is still being evaluated and
+   validates the saved aircraft against this list; from further down the file
+   the list did not exist yet, the lookup threw inside loadProfile's own catch,
+   and every setting after that line — the aircraft, the map, the autopilot and
+   the graphics tier — was quietly dropped on every single load. */
+/* The aircraft you take up. Each one comes with a different weapon already
+   fitted and selected — that weapon is the whole point of the aeroplane — and
+   pays for it in the airframe wrapped around it. The one that starts with
+   nothing special is the toughest and the handiest; the one that starts with a
+   particle beam is made of paper. Everything here is still upgradable in the
+   hangar on top, so a choice here is a starting hand, not a ceiling.
+   `frame` names the shape it is built in, from FRAMES. */
+const PLANES=[
+  {id:'fighter', name:'FIGHTER', wep:'mg', shape:{span:1,sweep:1,len:1},
+   hull:1.15, speed:1, agility:1.05,
+   note:'Nose guns, and nothing you did not earn. The sturdiest airframe and the '+
+        'easiest to fly — what everything else is measured against.'},
+  {id:'gunship', name:'GUNSHIP', wep:'cannon', shape:{span:1.15,sweep:.7,len:1.1},
+   hull:1.30, speed:.90, agility:.86,
+   note:'A 40&nbsp;mm autocannon in the nose. One burst wrecks a fighter and it hurts '+
+        'buildings badly. Heavy, armoured, and slow to answer the stick.'},
+  {id:'bomber',  name:'BOMBER',  wep:'rocket', shape:{span:1.28,sweep:.55,len:1.22},
+   hull:1.45, speed:.82, agility:.76,
+   note:'Rocket pods as standard — salvo fire with splash, the fastest way to level '+
+        'a tower or a hangar. The toughest thing in the sky and the clumsiest.'},
+  {id:'interceptor', name:'INTERCEPTOR', wep:'missile', shape:{span:.85,sweep:1.5,len:1.15},
+   hull:.82, speed:1.20, agility:1.06,
+   note:'Radar-locking missiles from the first sortie, and the legs to reach anything '+
+        'that runs. Thin skinned — you cannot afford to be caught turning.'},
+  {id:'fifthgen', name:'FIFTH GEN', wep:'laser', shape:{span:1.3,sweep:1.8,len:.92},
+   hull:.85, speed:1.10, agility:1.20,
+   note:'A continuous particle beam that melts armour at range with no travel time, '+
+        'on a huge delta that turns inside anything. Almost no hull to speak of.'}
+];
+function planeType(){ return PLANES.find(a=>a.id===(PROFILE.playAs||'fighter'))||PLANES[0] }
+
 function loadProfile(){
   // start from defaults so signing in and out does not leak one account's
   // progress into another
@@ -2452,6 +2489,16 @@ function campaign(){ return G.started&&!G.tut&&!G.mission }
    straight back to local, so a deployment going down never locks anybody out. */
 const BACKEND='';
 const API={ url:BACKEND, token:null, live:false, checked:false };
+/* Signing in is switched off for the moment. Nothing below has been deleted —
+   accounts, the password change, the server sync and the sign-in screen are all
+   still here and still work. Set this back to true and every one of them comes
+   back exactly as it was.
+   While it is off nobody is asked for a name: you go straight to the menu and
+   your progress is kept in this browser, under the same key the guest route has
+   always used. Anyone who *had* signed in keeps their account quietly active, so
+   their campaign, tokens and aircraft are all still there rather than being
+   stranded behind a screen that no longer appears. */
+const SIGNIN_ON=false;
 function apiOn(){ return !!API.url }
 async function apiCall(path,body,method){
   if(!apiOn()) throw new Error('offline');
@@ -7335,36 +7382,6 @@ function renderCustom(){
 }
 
 /* ------------------------------ settings --------------------------------- */
-/* The aircraft you take up. Each one comes with a different weapon already
-   fitted and selected — that weapon is the whole point of the aeroplane — and
-   pays for it in the airframe wrapped around it. The one that starts with
-   nothing special is the toughest and the handiest; the one that starts with a
-   particle beam is made of paper. Everything here is still upgradable in the
-   hangar on top, so a choice here is a starting hand, not a ceiling.
-   `frame` names the shape it is built in, from FRAMES. */
-const PLANES=[
-  {id:'fighter', name:'FIGHTER', wep:'mg', shape:{span:1,sweep:1,len:1},
-   hull:1.15, speed:1, agility:1.05,
-   note:'Nose guns, and nothing you did not earn. The sturdiest airframe and the '+
-        'easiest to fly — what everything else is measured against.'},
-  {id:'gunship', name:'GUNSHIP', wep:'cannon', shape:{span:1.15,sweep:.7,len:1.1},
-   hull:1.30, speed:.90, agility:.86,
-   note:'A 40&nbsp;mm autocannon in the nose. One burst wrecks a fighter and it hurts '+
-        'buildings badly. Heavy, armoured, and slow to answer the stick.'},
-  {id:'bomber',  name:'BOMBER',  wep:'rocket', shape:{span:1.28,sweep:.55,len:1.22},
-   hull:1.45, speed:.82, agility:.76,
-   note:'Rocket pods as standard — salvo fire with splash, the fastest way to level '+
-        'a tower or a hangar. The toughest thing in the sky and the clumsiest.'},
-  {id:'interceptor', name:'INTERCEPTOR', wep:'missile', shape:{span:.85,sweep:1.5,len:1.15},
-   hull:.82, speed:1.20, agility:1.06,
-   note:'Radar-locking missiles from the first sortie, and the legs to reach anything '+
-        'that runs. Thin skinned — you cannot afford to be caught turning.'},
-  {id:'fifthgen', name:'FIFTH GEN', wep:'laser', shape:{span:1.3,sweep:1.8,len:.92},
-   hull:.85, speed:1.10, agility:1.20,
-   note:'A continuous particle beam that melts armour at range with no travel time, '+
-        'on a huge delta that turns inside anything. Almost no hull to speak of.'}
-];
-function planeType(){ return PLANES.find(a=>a.id===(PROFILE.playAs||'fighter'))||PLANES[0] }
 function renderSettings(){
   $('crewSeg').innerHTML=PLANES.map(a=>
     `<button data-crew="${a.id}" class="${a.id===planeType().id?'on':''}">${a.name}</button>`).join('');
@@ -7421,6 +7438,8 @@ function renderSettings(){
     '  (enemy hull ×'+DK().k.toFixed(2)+', their aircraft ×'+DK().botHp.toFixed(2)+' hull)';
   $('sensRange').value=Math.round(PROFILE.sens*100);
   $('sensVal').textContent=PROFILE.sens.toFixed(2);
+  // the whole sign-in row goes away while signing in is switched off
+  { const r=$('signRow'); if(r) r.style.display=SIGNIN_ON?'':'none'; }
   const acc=ACC.name&&ACC.list[ACC.name];
   const where=apiOn()?(API.live?' Signed in on the server, so this name works on any device.'
                               :' The server is not answering — this account is local to this browser.')
@@ -8017,8 +8036,9 @@ function frame(now){
 
 buildTurrets();
 buildWorld();
-// the title screen is the sign-in screen until you are in
-if(!ACC.name) showSignIn(); else { $('nameIn').value=PROFILE.callsign||''; }
+// the title screen is the sign-in screen until you are in — unless signing in
+// is switched off, in which case there is nothing to get past
+if(SIGNIN_ON&&!ACC.name) showSignIn(); else { $('nameIn').value=PROFILE.callsign||''; }
 buildCustomPlane();
 renderPerm();
 setMuted(PROFILE.muted);
