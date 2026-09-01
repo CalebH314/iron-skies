@@ -228,6 +228,23 @@ kbd{background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.16);bord
 #settings{z-index:30}
 /* Asking before something irreversible. Above the settings panel it is asked
    from, because it is a question about what is behind it. */
+/* The break screen. Deliberately horrible: raw lime, a serif face nothing else
+   in here uses, no rounding, no glow, no easing. Everything else in this game
+   was made pleasant to sit in front of, and this is the one thing that should
+   not be — if it were nice to look at you would sit and look at it. */
+#grass{position:fixed;inset:0;z-index:9999;display:none;
+  background:#00ff00;color:#000;
+  font-family:"Times New Roman",Times,serif;
+  align-items:center;justify-content:center;text-align:center;
+  padding:20px;overflow:auto}
+#grass.on{display:flex}
+#grass b{display:block;font-size:clamp(48px,14vw,150px);font-weight:700;
+  line-height:.94;letter-spacing:-2px;text-transform:uppercase}
+#grass .sub{font-size:clamp(15px,3vw,26px);margin-top:18px;font-weight:700}
+#grass .cd{font-family:"Courier New",monospace;font-size:clamp(34px,9vw,86px);
+  margin-top:22px;font-weight:700;background:#000;color:#00ff00;
+  display:inline-block;padding:4px 14px}
+#grass .fine{font-size:13px;margin-top:22px;max-width:520px}
 #confirm{z-index:40}
 #confirm .mid{max-width:470px;text-align:left;padding:26px 28px}
 #confirm h2{font-size:20px;letter-spacing:3px;color:#ff8a7a;margin-bottom:10px}
@@ -556,6 +573,16 @@ td{padding:6px 8px;border-bottom:1px solid rgba(255,255,255,.045)}
       <button id="btnSettings2">SETTINGS</button>
       <button id="btnQuit">EXIT TO MENU</button>
     </div>
+  </div>
+</div>
+
+<div id="grass">
+  <div>
+    <b>Touch<br/>Grass</b>
+    <div class="sub">GO OUTSIDE.</div>
+    <div class="cd" id="grassCd">10:00</div>
+    <div class="fine">This screen will not go away until the clock runs out.
+    Closing the tab does not stop it.</div>
   </div>
 </div>
 
@@ -3034,6 +3061,7 @@ function sfxAt(type,pos,vol){
 const keys={}, stick={x:0,y:0};
 let mouseLocked=false;
 addEventListener('keydown',e=>{
+  if(grassLocked()){ e.preventDefault(); return; }   // the break is the break
   keys[e.code]=true;
   // A question about something irreversible answers to ESCAPE before anything
   // else does, and it is asked from the menu as often as from a running round,
@@ -3068,6 +3096,7 @@ addEventListener('keyup',e=>{
   keys[e.code]=false;
 });
 canvas.addEventListener('mousedown',e=>{
+  if(grassLocked()) return;
   if(customOpen&&!G.started){ previewDrag=e.clientX; return; }
   if(!G.started) return;
   if(briefOpen()) return;          // the briefing has buttons of its own to click
@@ -7925,10 +7954,57 @@ $('joinIn').addEventListener('keydown',e=>{if(e.key==='Enter')$('btnJoin').click
 
 /* -------------------------------- loop ----------------------------------- */
 let last=performance.now(), fpsT=0, fpsN=0;
+/* ------------------------------ the break -------------------------------- */
+/* Twenty minutes of flying, then ten minutes off. The tally only runs while a
+   round is actually in progress — sitting in the menu is not playing — and both
+   the tally and the finish time are kept in storage, so reloading the page or
+   closing the tab does not clear either. A break you can refresh your way out of
+   is not a break. */
+const PLAY_LIMIT=20*60, LOCK_FOR=10*60;
+const GRASS={played:0,until:0};
+function grassLoad(){
+  try{
+    const d=JSON.parse(localStorage.getItem('ironskies.grass')||'{}');
+    GRASS.played=+d.played||0; GRASS.until=+d.until||0;
+  }catch(e){}
+}
+function grassSave(){
+  try{ localStorage.setItem('ironskies.grass',
+    JSON.stringify({played:GRASS.played,until:GRASS.until})); }catch(e){}
+}
+function grassLocked(){ return Date.now()<GRASS.until }
+function grassStart(){
+  GRASS.until=Date.now()+LOCK_FOR*1000;
+  GRASS.played=0; grassSave();
+  G.paused=true;
+  try{ document.exitPointerLock(); }catch(e){}
+  $('grass').classList.add('on');
+}
+let _grassSaveT=0;
+function grassTick(dt){
+  if(grassLocked()){
+    $('grass').classList.add('on');
+    const left=Math.max(0,Math.ceil((GRASS.until-Date.now())/1000));
+    setTxt($('grassCd'),String(Math.floor(left/60))+':'+String(left%60).padStart(2,'0'));
+    return true;
+  }
+  if(GRASS.until){ GRASS.until=0; grassSave(); }
+  $('grass').classList.remove('on');
+  // only time in a live round counts toward it
+  if(G.started&&!G.paused&&!G.over){
+    GRASS.played+=dt;
+    if(GRASS.played>=PLAY_LIMIT){ grassStart(); return true; }
+    // written back now and then rather than every frame
+    if((_grassSaveT-=dt)<=0){ _grassSaveT=5; grassSave(); }
+  }
+  return false;
+}
 function frame(now){
   requestAnimationFrame(frame);
   let dt=(now-last)/1000; last=now;
   dt=Math.min(dt,.05); G.dt=dt; G.t+=dt;
+  // nothing else in the frame happens while the break is up
+  if(grassTick(dt)){ render(); return; }
 
   if(G.started&&!G.paused&&!G.over){
     // one bucket grid for the whole frame — the AI and the gunnery both use it
@@ -8048,6 +8124,8 @@ function frame(now){
   }
 }
 
+grassLoad();
+if(grassLocked()) $('grass').classList.add('on');
 buildTurrets();
 buildWorld();
 // the title screen is the sign-in screen until you are in — unless signing in
